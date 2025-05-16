@@ -12,7 +12,7 @@ ifeq ($(MODE), release)
 endif
 
 BASE ?= 0
-CHAPTER ?= 0
+CHAPTER ?= 8
 TEST ?= $(CHAPTER)
 
 ifeq ($(TEST), 0) # No test, deprecated, previously used in v3

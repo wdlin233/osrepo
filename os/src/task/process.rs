@@ -158,7 +158,7 @@ impl ProcessControlBlock {
     }
 
     /// Only support processes with a single thread.
-    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>) {
+    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: &mut Vec<String>) {
         trace!("kernel: exec");
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
         // memory_set with elf program headers/trampoline/trap context/user stack
@@ -179,8 +179,17 @@ impl ProcessControlBlock {
         // push arguments on user stack
         trace!("kernel: exec .. push arguments on user stack");
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
+        trace!("initial user_sp = {}", user_sp);
+
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+        }
+        let argv_st = user_sp;
+        // make the user_sp aligned to 8B for k210 platform
+        user_sp -= user_sp % core::mem::size_of::<usize>();
         user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
         let argv_base = user_sp;
+
         let mut argv: Vec<_> = (0..=args.len())
             .map(|arg| {
                 translated_refmut(
@@ -189,9 +198,9 @@ impl ProcessControlBlock {
                 )
             })
             .collect();
-        *argv[args.len()] = 0;
+
+        user_sp = argv_st;
         for i in 0..args.len() {
-            user_sp -= args[i].len() + 1;
             *argv[i] = user_sp;
             let mut p = user_sp;
             for c in args[i].as_bytes() {
@@ -199,9 +208,17 @@ impl ProcessControlBlock {
                 p += 1;
             }
             *translated_refmut(new_token, p as *mut u8) = 0;
-        }
-        // make the user_sp aligned to 8B for k210 platform
-        user_sp -= user_sp % core::mem::size_of::<usize>();
+            user_sp += args[i].len() + 1;
+        }        
+        *argv[args.len()] = 0;
+
+        user_sp = argv_base;
+        *translated_refmut(
+            new_token,
+            (user_sp - core::mem::size_of::<usize>()) as *mut usize,
+        ) = args.len().into();
+        user_sp -= core::mem::size_of::<usize>();
+        
         // initialize trap_cx
         trace!("kernel: exec .. initialize trap_cx");
         let mut trap_cx = TrapContext::app_init_context(
@@ -211,6 +228,10 @@ impl ProcessControlBlock {
             task.kstack.get_top(),
             trap_handler as usize,
         );
+        trace!("args.len() = {}", args.len());
+        trace!("args is {:?}", args);
+        trace!("argv = {:?}", argv);
+        trace!("argv_base = {}", argv_base);
         trap_cx.x[10] = args.len();
         trap_cx.x[11] = argv_base;
         *task_inner.get_trap_cx() = trap_cx;

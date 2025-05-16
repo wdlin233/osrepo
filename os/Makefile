@@ -4,7 +4,7 @@ MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
-FS_IMG := ../user/target/$(TARGET)/$(MODE)/fs.img
+FS_IMG := target/fs.img
 APPS := ../user/src/bin/*
 OFFLINE :=
 
@@ -25,7 +25,7 @@ KERNEL_ENTRY_PA := 0x80200000
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-CHAPTER ?= $(shell git rev-parse --abbrev-ref HEAD | sed -E 's/ch([0-9])/\1/')
+CHAPTER ?= 8
 TEST ?= $(CHAPTER)
 BASE ?= 1
 
@@ -50,8 +50,10 @@ $(KERNEL_BIN): kernel
 
 fs-img: $(APPS)
 	@make -C ../user build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
+	@make -C ../testcases build
 	@rm -f $(FS_IMG)
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
+	@cp ../user/build/elf/* ../testcases/build/
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
 
 kernel:
 	@echo Platform: $(BOARD)
