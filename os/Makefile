@@ -49,10 +49,13 @@ $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 fs-img: $(APPS)
-	@make -C ../user build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
+	@make -C ../user build
 	@make -C ../testcases build
 	@rm -f $(FS_IMG)
 	@cp ../user/build/elf/* ../testcases/build/
+	@cp -r ../testsuits/* ../testcases/build/
+	@rm ../testcases/build/run-all.sh ../testcases/build/text.txt
+	@rm -rf ../testcases/build/mnt
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
 
 kernel:
