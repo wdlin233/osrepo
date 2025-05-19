@@ -25,15 +25,12 @@ KERNEL_ENTRY_PA := 0x80200000
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-CHAPTER ?= 8
-TEST ?= $(CHAPTER)
-BASE ?= 1
-
 # Disassembly
 DISASM ?= -x
 
-# Run usertests or usershell
-TEST ?=
+# Tesecases
+TESTSUITS := $(wildcard ../testsuits/*)
+TESTCASES := $(filter-out %.sh %.txt %/mnt, $(TESTSUITS))
 
 build: env $(KERNEL_BIN) fs-img 
 
@@ -53,9 +50,7 @@ fs-img: $(APPS)
 	@make -C ../testcases build
 	@rm -f $(FS_IMG)
 	@cp ../user/build/elf/* ../testcases/build/
-	@cp -r ../testsuits/* ../testcases/build/
-	@rm ../testcases/build/run-all.sh ../testcases/build/text.txt
-	@rm -rf ../testcases/build/mnt
+	@cp -r $(TESTCASES) ../testcases/build/
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
 
 kernel:
