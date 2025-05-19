@@ -4,7 +4,7 @@ MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
-FS_IMG := ../user/target/$(TARGET)/$(MODE)/fs.img
+FS_IMG := target/fs.img
 APPS := ../user/src/bin/*
 OFFLINE :=
 
@@ -25,15 +25,12 @@ KERNEL_ENTRY_PA := 0x80200000
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-CHAPTER ?= 8
-TEST ?= $(CHAPTER)
-BASE ?= 1
-
 # Disassembly
 DISASM ?= -x
 
-# Run usertests or usershell
-TEST ?=
+# Tesecases
+TESTSUITS := $(wildcard ../testsuits/*)
+TESTCASES := $(filter-out %.sh %.txt %/mnt, $(TESTSUITS))
 
 build: env $(KERNEL_BIN) fs-img 
 
@@ -49,9 +46,12 @@ $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 fs-img: $(APPS)
-	@make -C ../user build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
+	@make -C ../user build
+	@make -C ../testcases build
 	@rm -f $(FS_IMG)
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
+	@cp ../user/build/elf/* ../testcases/build/
+	@cp -r $(TESTCASES) ../testcases/build/
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
 
 kernel:
 	@echo Platform: $(BOARD)
@@ -59,6 +59,7 @@ kernel:
 
 clean:
 	@cargo clean
+	@tmux kill-server
 
 disasm: kernel
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
@@ -82,7 +83,7 @@ run-inner:
 
 debug: build
 	@tmux new-session -d \
-		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s -S" && \
+		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -drive file=$(FS_IMG),if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -s -S" && \
 		tmux split-window -h "riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'" && \
 		tmux -2 attach-session -d
 

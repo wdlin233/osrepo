@@ -21,3 +21,4 @@ pushall.sh
 *.bak
 ci-user/
 os/vendor/
+testcases/build

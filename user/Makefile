@@ -11,34 +11,12 @@ ifeq ($(MODE), release)
 	MODE_ARG := --release
 endif
 
-BASE ?= 0
-CHAPTER ?= 0
-TEST ?= $(CHAPTER)
-
-ifeq ($(TEST), 0) # No test, deprecated, previously used in v3
-	APPS :=  $(filter-out $(wildcard $(APP_DIR)/ch*.rs), $(wildcard $(APP_DIR)/*.rs))
-else ifeq ($(TEST), 1) # All test
-	APPS :=  $(wildcard $(APP_DIR)/ch*.rs)
-else
-	TESTS := $(shell seq $(BASE) $(TEST))
-	ifeq ($(BASE), 0) # Normal tests only
-		APPS := $(foreach T, $(TESTS), $(wildcard $(APP_DIR)/ch$(T)_*.rs))
-	else ifeq ($(BASE), 1) # Basic tests only
-		APPS := $(foreach T, $(TESTS), $(wildcard $(APP_DIR)/ch$(T)b_*.rs))
-	else # Basic and normal
-		APPS := $(foreach T, $(TESTS), $(wildcard $(APP_DIR)/ch$(T)*.rs))
-	endif
-endif
-
+APPS := $(wildcard $(APP_DIR)/*.rs)
 ELFS := $(patsubst $(APP_DIR)/%.rs, $(TARGET_DIR)/%, $(APPS))
 
 binary:
 	@echo $(ELFS)
-	@if [ ${CHAPTER} -gt 3 ]; then \
-		cargo build $(MODE_ARG) ;\
-	else \
-		CHAPTER=$(CHAPTER) python3 build.py ;\
-	fi
+	cargo build $(MODE_ARG)
 	@$(foreach elf, $(ELFS), \
 		$(OBJCOPY) $(elf) --strip-all -O binary $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.bin, $(elf)); \
 		cp $(elf) $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.elf, $(elf));)
