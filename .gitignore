@@ -22,3 +22,4 @@ pushall.sh
 ci-user/
 os/vendor/
 testcases/build
+os/qemu.log
