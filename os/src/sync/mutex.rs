@@ -31,7 +31,7 @@ impl MutexSpin {
 impl Mutex for MutexSpin {
     /// Lock the spinlock mutex
     fn lock(&self) {
-        trace!("kernel: MutexSpin::lock");
+        //trace!("kernel: MutexSpin::lock");
         loop {
             let mut locked = self.locked.exclusive_access();
             if *locked {
@@ -46,7 +46,7 @@ impl Mutex for MutexSpin {
     }
 
     fn unlock(&self) {
-        trace!("kernel: MutexSpin::unlock");
+        //trace!("kernel: MutexSpin::unlock");
         let mut locked = self.locked.exclusive_access();
         *locked = false;
     }
@@ -65,7 +65,7 @@ pub struct MutexBlockingInner {
 impl MutexBlocking {
     /// Create a new blocking mutex
     pub fn new() -> Self {
-        trace!("kernel: MutexBlocking::new");
+        //trace!("kernel: MutexBlocking::new");
         Self {
             inner: unsafe {
                 UPSafeCell::new(MutexBlockingInner {
@@ -80,7 +80,7 @@ impl MutexBlocking {
 impl Mutex for MutexBlocking {
     /// lock the blocking mutex
     fn lock(&self) {
-        trace!("kernel: MutexBlocking::lock");
+        //trace!("kernel: MutexBlocking::lock");
         let mut mutex_inner = self.inner.exclusive_access();
         if mutex_inner.locked {
             mutex_inner.wait_queue.push_back(current_task().unwrap());
@@ -93,7 +93,7 @@ impl Mutex for MutexBlocking {
 
     /// unlock the blocking mutex
     fn unlock(&self) {
-        trace!("kernel: MutexBlocking::unlock");
+        //trace!("kernel: MutexBlocking::unlock");
         let mut mutex_inner = self.inner.exclusive_access();
         assert!(mutex_inner.locked);
         if let Some(waking_task) = mutex_inner.wait_queue.pop_front() {

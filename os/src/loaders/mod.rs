@@ -111,9 +111,9 @@ impl<'a> ElfLoader<'a> {
             },
         };
 
-        info!("info {:#?}", info);
+        //info!("info {:#?}", info);
         let init_stack = info.serialize(stack_top);
-        debug!("init user proc: stack len {}", init_stack.len());
+        //debug!("init user proc: stack len {}", init_stack.len());
         let stack_top = stack_top - init_stack.len();
         // stack_pma.write(USER_STACK_SIZE - init_stack.len(), &init_stack)?; could be written as followed:
         let stack = translated_byte_buffer(memory_token, stack_top as *const u8, init_stack.len());

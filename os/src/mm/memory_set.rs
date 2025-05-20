@@ -196,7 +196,7 @@ impl MemorySet {
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
+                //debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
                 let mut map_perm = MapPermission::U;
                 let ph_flags = ph.flags();
                 if ph_flags.is_read() {
@@ -494,13 +494,13 @@ impl MemorySet {
         let end_va = VirtAddr::from(start + len);
         let permission = MapPermission::from_port(port).with_user();
 
-        debug!("mmap: start_va: {:#x}, end_va: {:#x}, permission: {:?}", start, start + len, permission);
+        //debug!("mmap: start_va: {:#x}, end_va: {:#x}, permission: {:?}", start, start + len, permission);
         if !self.all_invalid(start_va, end_va) {
-            debug!("mmap: invalid range");
+            //debug!("mmap: invalid range");
             return -1;
         }
         self.insert_framed_area(start_va, end_va, permission);
-        debug!("mmap succeed");
+        //debug!("mmap succeed");
         assert!(self.all_valid(start_va, end_va));
         0
     }
@@ -509,7 +509,7 @@ impl MemorySet {
     pub fn munmap(&mut self, start: usize, len: usize) -> isize {
         let start_va = VirtAddr::from(start);
         let end_va = VirtAddr::from(start + len);
-        debug!("munmap: start_va: {:#x}, end_va: {:#x}", start, start + len);
+        //debug!("munmap: start_va: {:#x}, end_va: {:#x}", start, start + len);
         if !self.all_valid(start_va, end_va) {
             return -1;
         }

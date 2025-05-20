@@ -39,6 +39,7 @@ pub use processor::{
 };
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
+//pub use manager::{wakeup_parent,block_one};
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -73,10 +74,10 @@ use crate::board::QEMUExit;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
-    trace!(
-        "kernel: pid[{}] exit_current_and_run_next",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel: pid[{}] exit_current_and_run_next",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     // take from Processor
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
@@ -118,7 +119,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.is_zombie = true;
         // record exit code of main process
         process_inner.exit_code = exit_code;
-
         {
             // move all child processes under init process
             let mut initproc_inner = INITPROC.inner_exclusive_access();
@@ -140,7 +140,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
             // Mention that we do not need to consider Mutex/Semaphore since they
             // are limited in a single process. Therefore, the blocked tasks are
             // removed when the PCB is deallocated.
-            trace!("kernel: exit_current_and_run_next .. remove_inactive_task");
+            //trace!("kernel: exit_current_and_run_next .. remove_inactive_task");
             remove_inactive_task(Arc::clone(&task));
             let mut task_inner = task.inner_exclusive_access();
             if let Some(res) = task_inner.res.take() {
@@ -202,7 +202,7 @@ pub fn current_add_signal(signal: SignalFlags) {
 /// the inactive(blocked) tasks are removed when the PCB is deallocated.(called by exit_current_and_run_next)
 pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_task(Arc::clone(&task));
-    trace!("kernel: remove_inactive_task .. remove_timer");
+    //trace!("kernel: remove_inactive_task .. remove_timer");
     remove_timer(Arc::clone(&task));
     //add_task(INITPROC.clone());
 }

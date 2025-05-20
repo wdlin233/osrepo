@@ -20,34 +20,39 @@ pub struct TimeVal {
 ///
 /// exit the current task and run the next task in task list
 pub fn sys_exit(exit_code: i32) -> ! {
-    trace!(
-        "kernel:pid[{}] sys_exit",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_exit",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
+    let current_process = current_process();
+    let pid = current_process.getpid();
+    debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
+    drop(current_process);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
 /// yield syscall
 pub fn sys_yield() -> isize {
-    //trace!("kernel: sys_yield");
+    debug!("kernel: sys_yield");
     suspend_current_and_run_next();
     0
 }
 /// getpid syscall
 pub fn sys_getpid() -> isize {
-    trace!(
-        "kernel: sys_getpid pid:{}",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel: sys_getpid pid:{}",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     current_task().unwrap().process.upgrade().unwrap().getpid() as isize
 }
 /// fork child process syscall
 pub fn sys_fork() -> isize {
-    trace!(
-        "kernel:pid[{}] sys_fork",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_fork",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     let current_process = current_process();
+    //current_process.inner_exclusive_access().is_blocked+=1;
     let new_process = current_process.fork();
     let new_pid = new_process.getpid();
     // modify trap context of new_task, because it returns immediately after switching
@@ -57,16 +62,17 @@ pub fn sys_fork() -> isize {
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
     trap_cx.x[10] = 0;
+    debug!("the new pid is : {}",new_pid);
     new_pid as isize
 }
 /// exec syscall
 pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_exec(path: 0x{:x?}, args: 0x{:x?})",
-        current_task().unwrap().process.upgrade().unwrap().getpid(),
-        path,
-        args
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_exec(path: 0x{:x?}, args: 0x{:x?})",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid(),
+    //     path,
+    //     args
+    // );
     let token = current_user_token();
     let path = translated_str(token, path);
     let mut args_vec: Vec<String> = Vec::new();
@@ -84,8 +90,8 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
         let all_data = app_inode.read_all();
         let process = current_process();
         let argc = args_vec.len();
-        trace!("argc in syscall {}", argc);
-        trace!("args_vec {:?}", args_vec);
+        //trace!("argc in syscall {}", argc);
+        //trace!("args_vec {:?}", args_vec);
         process.exec(all_data.as_slice(), args_vec);
         // return argc because cx.x[10] will be covered with it later
         argc as isize
@@ -99,7 +105,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    //trace!("kernel: sys_waitpid");
+    //debug!("kernel: sys_waitpid");
     let process = current_process();
     // find a child process
 
@@ -109,6 +115,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         .iter()
         .any(|p| pid == -1 || pid as usize == p.getpid())
     {
+        //debug!("can not find the child");
         return -1;
         // ---- release current PCB
     }
@@ -117,6 +124,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
         // ++++ release child PCB
     });
+    debug!("can find the child pid:{}",pid);
     if let Some((idx, _)) = pair {
         let child = inner.children.remove(idx);
         // confirm that child will be deallocated after being removed from children list
@@ -128,6 +136,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
         found_pid as isize
     } else {
+        debug!("but return -2");
         -2
     }
     // ---- release current PCB automatically
@@ -135,10 +144,10 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 
 /// kill syscall
 pub fn sys_kill(pid: usize, signal: u32) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_kill",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_kill",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     if let Some(process) = pid2process(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
             process.inner_exclusive_access().signals |= flag;
@@ -157,12 +166,12 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time(ts: {:?}, tz: {})",
-        current_task().unwrap().process.upgrade().unwrap().getpid(),
-        ts,
-        _tz
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_get_time(ts: {:?}, tz: {})",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid(),
+    //     ts,
+    //     _tz
+    // );
     let us = crate::timer::get_time_us();
     let time_val = TimeVal {
         sec: us / 1_000_000,
@@ -174,17 +183,17 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 
 /// YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap)(start: 0x{start:x}, len: 0x{len:x}, port: 0x{port:x})",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_mmap)(start: 0x{start:x}, len: 0x{len:x}, port: 0x{port:x})",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     const PORT_MASK: usize = 0b111;
      
     let aligned_start = start % PAGE_SIZE == 0;
     let port_valid = (port & !PORT_MASK) == 0;
     let port_not_none = (port & PORT_MASK) != 0;
      
-    trace!("each condition: aligned_start={}, port_valid={}, port_not_none={}", aligned_start, port_valid, port_not_none);
+    //trace!("each condition: aligned_start={}, port_valid={}, port_not_none={}", aligned_start, port_valid, port_not_none);
     if aligned_start && port_valid && port_not_none {
         return mmap(start, len, port)
     }
@@ -193,10 +202,10 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
 
 /// YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap(start: 0x{start:x}, len: 0x{len:x})",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_munmap(start: 0x{start:x}, len: 0x{len:x})",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     let aligned_start = start % PAGE_SIZE == 0;
     if aligned_start {
         return munmap(start, len)
@@ -238,11 +247,11 @@ pub fn sys_spawn(path: *const u8) -> isize {
 
 // YOUR JOB: Set task priority.
 pub fn sys_set_priority(prio: isize) -> isize {
-    debug!(
-        "kernel:pid[{}] sys_set_priority(prio: {})",
-        current_task().unwrap().process.upgrade().unwrap().getpid(),
-        prio
-    );
+    // debug!(
+    //     "kernel:pid[{}] sys_set_priority(prio: {})",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid(),
+    //     prio
+    // );
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
     if prio >= 2 {

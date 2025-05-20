@@ -18,7 +18,7 @@ pub struct SemaphoreInner {
 impl Semaphore {
     /// Create a new semaphore
     pub fn new(res_count: usize) -> Self {
-        trace!("kernel: Semaphore::new");
+        //trace!("kernel: Semaphore::new");
         Self {
             inner: unsafe {
                 UPSafeCell::new(SemaphoreInner {
@@ -31,7 +31,7 @@ impl Semaphore {
 
     /// up operation of semaphore
     pub fn up(&self) {
-        trace!("kernel: Semaphore::up");
+        //trace!("kernel: Semaphore::up");
         let mut inner = self.inner.exclusive_access();
         inner.count += 1;
         if inner.count <= 0 {
@@ -43,12 +43,12 @@ impl Semaphore {
 
     /// down operation of semaphore
     pub fn down(&self) {
-        trace!("kernel: Semaphore::down");
+        //trace!("kernel: Semaphore::down");
         let mut inner = self.inner.exclusive_access();
         inner.count -= 1;
-        trace!("kernel: Semaphore::down count: {}", inner.count);
+        //trace!("kernel: Semaphore::down count: {}", inner.count);
         if inner.count < 0 {
-            trace!("kernel: Semaphore::down count < 0");
+            //trace!("kernel: Semaphore::down count < 0");
             inner.wait_queue.push_back(current_task().unwrap());
             drop(inner);
             block_current_and_run_next();

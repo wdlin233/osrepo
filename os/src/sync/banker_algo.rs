@@ -45,7 +45,7 @@ impl BankerAlgorithm {
     /// Add a resource to the available map
     pub fn init_available_resource(&mut self, resource: ResourceIdentifier, number: NumberOfResources) {
         *self.available.entry(resource).or_default() += number;
-        trace!("kernel: banker_algo init_available_resource: resource[{}] number[{}]", resource, number);
+        //trace!("kernel: banker_algo init_available_resource: resource[{}] number[{}]", resource, number);
     }
 
     fn init_task_resource(&mut self, tid: TaskIdentifier, resource: ResourceIdentifier, need: NumberOfResources) {
@@ -56,24 +56,24 @@ impl BankerAlgorithm {
 
     /// Allocate resources to a task
     pub fn alloc(&mut self, tid: TaskIdentifier, request: NumberOfResources, resource: ResourceIdentifier) {
-        trace!("kernel: banker_algo alloc: tid[{}] resource[{}] request[{}]", tid, resource, request);
+        //trace!("kernel: banker_algo alloc: tid[{}] resource[{}] request[{}]", tid, resource, request);
         let available = self.available.get_mut(&resource).unwrap();
         let task = self.task_state
             .get_mut(&tid)
             .unwrap()
             .get_mut(&resource)
             .unwrap();
-        trace!("kernel: banker_algo alloc: available[{}] allocation[{}] need[{}] with resource[{}]", available, task.allocation, task.need, resource);
+        //trace!("kernel: banker_algo alloc: available[{}] allocation[{}] need[{}] with resource[{}]", available, task.allocation, task.need, resource);
         assert!(request <= *available, "kernel: banker_algo alloc: request[{}] > available[{}]", request, available);
         *available -= request;
         task.allocation += request;
         task.need -= request;
-        trace!("kernel: banker_algo alloc: available[{}] allocation[{}] need[{}] with resource[{}]", available, task.allocation, task.need, resource);
+        //trace!("kernel: banker_algo alloc: available[{}] allocation[{}] need[{}] with resource[{}]", available, task.allocation, task.need, resource);
     }
 
     /// Deallocate resources from a task
     pub fn dealloc(&mut self, tid: TaskIdentifier, request: NumberOfResources, resource: ResourceIdentifier) {
-        trace!("kernel: banker_algo dealloc: tid[{}] resource[{}] request[{}]", tid, resource, request);
+        //trace!("kernel: banker_algo dealloc: tid[{}] resource[{}] request[{}]", tid, resource, request);
         let available = self.available.get_mut(&resource).unwrap();
         let task = self.task_state
             .get_mut(&tid)
@@ -82,7 +82,7 @@ impl BankerAlgorithm {
             .unwrap();
         *available += request;
         task.allocation -= request;
-        trace!("kernel: banker_algo dealloc: available[{}] allocation[{}] need[{}] with resource[{}]", available, task.allocation, task.need, resource);
+        //trace!("kernel: banker_algo dealloc: available[{}] allocation[{}] need[{}] with resource[{}]", available, task.allocation, task.need, resource);
     }
 
     /// Try to request resources to detect if the system is in a safe state

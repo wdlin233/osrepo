@@ -11,7 +11,6 @@ use lazy_static::*;
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
-    
     /// The stopping task, leave a reference so that the kernel stack will not be recycled when switching tasks
     stop_task: Option<Arc<TaskControlBlock>>,
 }
@@ -51,6 +50,7 @@ impl TaskManager {
         self.stop_task = Some(task);
     }
 
+
 }
 
 lazy_static! {
@@ -70,7 +70,7 @@ pub fn add_task(task: Arc<TaskControlBlock>) {
 
 /// Wake up a task
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
-    trace!("kernel: TaskManager::wakeup_task");
+    //trace!("kernel: TaskManager::wakeup_task");
     let mut task_inner = task.inner_exclusive_access();
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
@@ -114,6 +114,7 @@ pub fn remove_from_pid2process(pid: usize) {
 }
 /// Take a process out of the ready queue
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
-    trace!("kernel: TaskManager::fetch_task");
+    //trace!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
 }
+
