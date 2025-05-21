@@ -32,14 +32,16 @@ use switch::__switch;
 
 pub use context::TaskContext;
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle, IDLE_PID};
-pub use manager::{add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task};
+pub use manager::{
+    add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,add_block_task,
+    wakeup_task_by_pid,
+};
 pub use processor::{
     current_kstack_top, current_process, current_task, current_trap_cx, current_trap_cx_user_va,
     current_user_token, run_tasks, schedule, take_current_task, mmap, munmap,
 };
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
-//pub use manager::{wakeup_parent,block_one};
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -67,6 +69,7 @@ pub fn block_current_and_run_next() {
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     task_inner.task_status = TaskStatus::Blocked;
     drop(task_inner);
+    add_block_task(task);
     schedule(task_cx_ptr);
 }
 
@@ -121,13 +124,18 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.exit_code = exit_code;
         {
             // move all child processes under init process
+            debug!("to get init...");
             let mut initproc_inner = INITPROC.inner_exclusive_access();
+            debug!("get init ok");
             for child in process_inner.children.iter() {
                 child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
                 initproc_inner.children.push(child.clone());
             }
         }
-
+        // wakeup his parent
+        let parent = process_inner.parent.clone().unwrap();
+        wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
+        //debug!("move child ok");
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
         // otherwise they will be deallocated twice
@@ -152,7 +160,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // for now to avoid deadlock/double borrow problem.
         drop(process_inner);
         recycle_res.clear();
-
+        //debug!("recycle res ok");
         let mut process_inner = process.inner_exclusive_access();
         process_inner.children.clear();
         // deallocate other data in user space i.e. program code/data section
@@ -161,6 +169,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.fd_table.clear();
         // remove all tasks
         process_inner.tasks.clear();
+        //debug!("all clear ok");
     }
     drop(process);
     // we do not have to save task context

@@ -3,7 +3,8 @@ use crate::{
     mm::{copy_to_virt, translated_ref, translated_refmut, translated_str},
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
-        suspend_current_and_run_next, SignalFlags, mmap, munmap,
+        suspend_current_and_run_next, SignalFlags, mmap, munmap,block_current_and_run_next,
+
     }, 
     config::PAGE_SIZE,
 };
@@ -24,11 +25,12 @@ pub fn sys_exit(exit_code: i32) -> ! {
     //     "kernel:pid[{}] sys_exit",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    //let current_process = current_process();
-    //let pid = current_process.getpid();
-    //debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
-    //drop(current_process);
+    let current_process = current_process();
+    let pid = current_process.getpid();
+    debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
+    drop(current_process);
     exit_current_and_run_next(exit_code);
+    //debug!("exit ok");
     panic!("Unreachable in sys_exit!");
 }
 /// yield syscall
@@ -108,21 +110,29 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
 ///
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
-pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
+/// block to wait
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize {
     //debug!("kernel: sys_waitpid");
-    let process = current_process();
-    // find a child process
-
-    let mut inner = process.inner_exclusive_access();
-    if !inner
-        .children
-        .iter()
-        .any(|p| pid == -1 || pid as usize == p.getpid())
     {
-        //debug!("can not find the child");
-        return -1;
-        // ---- release current PCB
+        let process = current_process();
+        // find a child process
+        let inner = process.inner_exclusive_access();
+        if !inner
+            .children
+            .iter()
+            .any(|p| pid == -1 || pid as usize == p.getpid())
+        {
+            //debug!("can not find the child");
+            return -1;
+            // ---- release current PCB
+        }
     }
+    if options ==0 {
+        block_current_and_run_next();
+    }
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    
     let pair = inner.children.iter().enumerate().find(|(_, p)| {
         // ++++ temporarily access child PCB exclusively
         p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
@@ -139,10 +149,10 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         // ++++ release child PCB
         *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
         found_pid as isize
-    } else {
-        //debug!("but return -2");
+    }else {
         -2
     }
+
     // ---- release current PCB automatically
 }
 

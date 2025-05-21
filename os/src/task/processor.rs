@@ -9,6 +9,7 @@ use super::{fetch_task, TaskStatus};
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use crate::timer::check_timer;
 use alloc::sync::Arc;
 use lazy_static::*;
 
@@ -69,7 +70,8 @@ pub fn run_tasks() {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
         } else {
-            warn!("no tasks available in run_tasks");
+            //warn!("no tasks available in run_tasks");
+            check_timer();
         }
     }
 }

@@ -129,18 +129,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
     match syscall_id {
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID=>sys_getppid(),
-        SYSCALL_WAITPID => {
-            loop {
-                match sys_waitpid(args[0] as isize, args[1] as *mut i32) {
-                    -2 => {
-                        sys_yield();
-                    }
-                    n =>{ 
-                        return n;
-                    }
-                }
-            }
-        }
+        SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32,args[2]), 
+
         SYSCALL_FORK => sys_fork(),
         SYSCALL_YIELD => sys_yield(),
         SYSCALL_DUP => sys_dup(args[0]),
