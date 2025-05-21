@@ -2,13 +2,14 @@
 
 use super::ProcessControlBlock;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
-use crate::mm::{MapPermission, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{MapPermission, PhysPageNum};
 use crate::sync::UPSafeCell;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
 use lazy_static::*;
+use polyhal::VirtAddr;
 
 /// Allocator with a simple recycle strategy
 pub struct RecycleAllocator {
@@ -192,7 +193,7 @@ impl TaskUserRes {
         let ustack_bottom_va: VirtAddr = ustack_bottom_from_tid(self.ustack_base, self.tid).into();
         process_inner
             .memory_set
-            .remove_area_with_start_vpn(ustack_bottom_va.into());
+            .remove_area_with_start_vpn(ustack_bottom_va);
         // dealloc trap_cx manually
         let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
         process_inner

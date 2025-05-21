@@ -1,9 +1,12 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
-use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{PhysPageNum};
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use polyhal::pagetable::PageTable;
+use _core::slice;
+use _core::str::from_utf8_unchecked;
+use alloc::string::{ToString};
 
 bitflags! {
     /// page table entry flags
@@ -64,163 +67,37 @@ impl PageTableEntry {
     }
 }
 
-/// page table structure
-pub struct PageTable {
-    root_ppn: PhysPageNum,
-    frames: Vec<FrameTracker>,
+pub fn translated_byte_buffer(_token: PageTable, ptr: *mut u8, len: usize) -> &'static mut [u8] {
+    trace!("os::mm::page_table::translated_byte_buffer");
+    unsafe { core::slice::from_raw_parts_mut(ptr, len) }
 }
 
-/// Assume that it won't oom when creating/mapping.
-impl PageTable {
-    /// Create a new page table
-    pub fn new() -> Self {
-        let frame = frame_alloc().unwrap();
-        PageTable {
-            root_ppn: frame.ppn,
-            frames: vec![frame],
-        }
-    }
-    /// Temporarily used to get arguments from user space.
-    pub fn from_token(satp: usize) -> Self {
-        Self {
-            root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
-            frames: Vec::new(),
-        }
-    }
-    /// Find PageTableEntry by VirtPageNum, create a frame for a 4KB page table if not exist
-    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        let idxs = vpn.indexes();
-        let mut ppn = self.root_ppn;
-        let mut result: Option<&mut PageTableEntry> = None;
-        for (i, idx) in idxs.iter().enumerate() {
-            let pte = &mut ppn.get_pte_array()[*idx];
-            if i == 2 {
-                result = Some(pte);
-                break;
-            }
-            if !pte.is_valid() {
-                let frame = frame_alloc().unwrap();
-                *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
-                self.frames.push(frame);
-            }
-            ppn = pte.ppn();
-        }
-        result
-    }
-    /// Find PageTableEntry by VirtPageNum
-    fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        let idxs = vpn.indexes();
-        let mut ppn = self.root_ppn;
-        let mut result: Option<&mut PageTableEntry> = None;
-        for (i, idx) in idxs.iter().enumerate() {
-            let pte = &mut ppn.get_pte_array()[*idx];
-            if i == 2 {
-                result = Some(pte);
-                break;
-            }
-            if !pte.is_valid() {
-                return None;
-            }
-            ppn = pte.ppn();
-        }
-        result
-    }
-    /// set the map between virtual page number and physical page number
-    #[allow(unused)]
-    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
-        let pte = self.find_pte_create(vpn).unwrap();
-        trace!(
-            "map vpn {:?} to ppn {:?} with flags {:?}",
-            vpn, ppn, flags
-        );
-        assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
-        *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
-    }
-    /// remove the map between virtual page number and physical page number
-    #[allow(unused)]
-    pub fn unmap(&mut self, vpn: VirtPageNum) {
-        let pte = self.find_pte(vpn).unwrap();
-        assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
-        *pte = PageTableEntry::empty();
-    }
-    /// get the page table entry from the virtual page number
-    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
-        self.find_pte(vpn).map(|pte| *pte)
-    }
-    /// get the physical address from the virtual address
-    pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
-        self.find_pte(va.clone().floor()).map(|pte| {
-            let aligned_pa: PhysAddr = pte.ppn().into();
-            let offset = va.page_offset();
-            let aligned_pa_usize: usize = aligned_pa.into();
-            (aligned_pa_usize + offset).into()
-        })
-    }
-    /// get the token from the page table
-    pub fn token(&self) -> usize {
-        8usize << 60 | self.root_ppn.0
+/// Load a string from other address spaces into kernel space without an end `\0`.
+pub fn translated_str(_token: PageTable, ptr: *const u8) -> String {
+    unsafe {
+        let len = str_len(ptr);
+        from_utf8_unchecked(slice::from_raw_parts(ptr, len)).to_string()
     }
 }
 
-/// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
-pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
-    let page_table = PageTable::from_token(token);
-    let mut start = ptr as usize;
-    let end = start + len;
-    let mut v = Vec::new();
-    while start < end {
-        let start_va = VirtAddr::from(start);
-        let mut vpn = start_va.floor();
-        let ppn = page_table.translate(vpn).unwrap().ppn();
-        vpn.step();
-        let mut end_va: VirtAddr = vpn.into();
-        end_va = end_va.min(VirtAddr::from(end));
-        if end_va.page_offset() == 0 {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
-        } else {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
-        }
-        start = end_va.into();
-    }
-    v
-}
-
-/// Translate&Copy a ptr[u8] array end with `\0` to a `String` Vec through page table
-pub fn translated_str(token: usize, ptr: *const u8) -> String {
-    let page_table = PageTable::from_token(token);
-    let mut string = String::new();
-    let mut va = ptr as usize;
+unsafe fn str_len(ptr: *const u8) -> usize {
+    let mut i = 0;
     loop {
-        let ch: u8 = *(page_table
-            .translate_va(VirtAddr::from(va))
-            .unwrap()
-            .get_mut());
-        if ch == 0 {
-            break;
+        if *ptr.add(i) == 0 {
+            break i;
         }
-        string.push(ch as char);
-        va += 1;
+        i += 1;
     }
-    string
 }
 
 /// translate a pointer `ptr` in other address space to a immutable u8 slice in kernel address space. NOTICE: the content pointed to by the pointer `ptr` cannot cross physical pages, otherwise translated_byte_buffer should be used.
-pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
-    let page_table = PageTable::from_token(token);
-    page_table
-        .translate_va(VirtAddr::from(ptr as usize))
-        .unwrap()
-        .get_ref()
+pub fn translated_ref<T>(_token: PageTable, ptr: *const T) -> &'static T {
+    unsafe { ptr.as_ref().unwrap() }
 }
 
 /// translate a pointer `ptr` in other address space to a mutable u8 slice in kernel address space. NOTICE: the content pointed to by the pointer `ptr` cannot cross physical pages, otherwise translated_byte_buffer should be used.
-pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
-    let page_table = PageTable::from_token(token);
-    let va = ptr as usize;
-    page_table
-        .translate_va(VirtAddr::from(va))
-        .unwrap()
-        .get_mut()
+pub fn translated_refmut<T>(_token: PageTable, ptr: *mut T) -> &'static mut T {
+    unsafe { ptr.as_mut().unwrap() }
 }
 
 /// An abstraction over a buffer passed from user space to kernel space

@@ -1,136 +1,83 @@
-//! Implementation of [`FrameAllocator`] which
-//! controls all the frames in the operating system.
-use super::{PhysAddr, PhysPageNum};
-use crate::config::MEMORY_END;
-use crate::sync::UPSafeCell;
+use crate::config::PAGE_SIZE;
 use alloc::vec::Vec;
-use core::fmt::{self, Debug, Formatter};
-use lazy_static::*;
+use buddy_system_allocator::FrameAllocator;
+use core::{
+    fmt::{self, Debug, Formatter},
+    mem::size_of,
+};
+use log::trace;
+use polyhal::{pa, utils::MutexNoIrq, PhysAddr};
 
-/// tracker for physical page frame allocation and deallocation
 pub struct FrameTracker {
-    /// physical page number
-    pub ppn: PhysPageNum,
+    pub paddr: PhysAddr,
 }
 
 impl FrameTracker {
-    /// Create a new FrameTracker
-    pub fn new(ppn: PhysPageNum) -> Self {
+    pub fn new(paddr: PhysAddr) -> Self {
         // page cleaning
-        let bytes_array = ppn.get_bytes_array();
-        for i in bytes_array {
-            *i = 0;
-        }
-        Self { ppn }
+        paddr.clear_len(PAGE_SIZE);
+        Self { paddr }
     }
 }
 
 impl Debug for FrameTracker {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("FrameTracker:PPN={:#x}", self.ppn.0))
+        f.write_fmt(format_args!("FrameTracker:PA={:?}", self.paddr))
     }
 }
 
 impl Drop for FrameTracker {
     fn drop(&mut self) {
-        frame_dealloc(self.ppn);
+        trace!("drop frame tracker: {:?}", self.paddr);
+        frame_dealloc(self.paddr);
     }
 }
 
-trait FrameAllocator {
-    fn new() -> Self;
-    fn alloc(&mut self) -> Option<PhysPageNum>;
-    fn dealloc(&mut self, ppn: PhysPageNum);
-}
-/// an implementation for frame allocator
-pub struct StackFrameAllocator {
-    current: usize,
-    end: usize,
-    recycled: Vec<usize>,
+pub static FRAME_ALLOCATOR: MutexNoIrq<FrameAllocator> = MutexNoIrq::new(FrameAllocator::new());
+
+pub fn add_frames_range(mm_start: usize, mm_end: usize) {
+    unsafe {
+        core::slice::from_raw_parts_mut(
+            pa!(mm_start).get_mut_ptr::<u128>(),
+            (mm_end - mm_start) / size_of::<u128>(),
+        )
+        .fill(0);
+    }
+    let start = (mm_start + 0xfff) / PAGE_SIZE;
+    FRAME_ALLOCATOR.lock().add_frame(start, mm_end / PAGE_SIZE);
 }
 
-impl StackFrameAllocator {
-    pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
-        self.current = l.0;
-        self.end = r.0;
-        // trace!("last {} Physical Frames.", self.end - self.current);
-    }
-}
-impl FrameAllocator for StackFrameAllocator {
-    fn new() -> Self {
-        Self {
-            current: 0,
-            end: 0,
-            recycled: Vec::new(),
-        }
-    }
-    fn alloc(&mut self) -> Option<PhysPageNum> {
-        if let Some(ppn) = self.recycled.pop() {
-            Some(ppn.into())
-        } else if self.current == self.end {
-            None
-        } else {
-            self.current += 1;
-            Some((self.current - 1).into())
-        }
-    }
-    fn dealloc(&mut self, ppn: PhysPageNum) {
-        let ppn = ppn.0;
-        // validity check
-        if ppn >= self.current || self.recycled.iter().any(|&v| v == ppn) {
-            panic!("Frame ppn={:#x} has not been allocated!", ppn);
-        }
-        // recycle
-        self.recycled.push(ppn);
-    }
-}
-
-type FrameAllocatorImpl = StackFrameAllocator;
-
-lazy_static! {
-    /// frame allocator instance through lazy_static!
-    pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =
-        unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
-}
-/// initiate the frame allocator using `ekernel` and `MEMORY_END`
-pub fn init_frame_allocator() {
-    extern "C" {
-        fn ekernel();
-    }
-    FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
-    );
-}
-
-/// Allocate a physical page frame in FrameTracker style
 pub fn frame_alloc() -> Option<FrameTracker> {
     FRAME_ALLOCATOR
-        .exclusive_access()
-        .alloc()
+        .lock()
+        .alloc(1)
+        .map(|x| pa!(x * PAGE_SIZE))
         .map(FrameTracker::new)
+        .inspect(|x| x.paddr.clear_len(PAGE_SIZE))
 }
 
-/// Deallocate a physical page frame with a given ppn
-pub fn frame_dealloc(ppn: PhysPageNum) {
-    FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
+pub fn frames_alloc(count: usize) -> Option<Vec<FrameTracker>> {
+    let start = FRAME_ALLOCATOR
+        .lock()
+        .alloc(count)
+        .map(|x| pa!(x * PAGE_SIZE))?;
+    let ret = (0..count)
+        .into_iter()
+        .map(|idx| (start + idx * PAGE_SIZE))
+        .map(FrameTracker::new)
+        .inspect(|x| x.paddr.clear_len(PAGE_SIZE))
+        .collect();
+    Some(ret)
 }
 
-#[allow(unused)]
-/// a simple test for frame allocator
-pub fn frame_allocator_test() {
-    let mut v: Vec<FrameTracker> = Vec::new();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    v.clear();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    drop(v);
-    println!("frame_allocator_test passed!");
+pub fn frame_alloc_persist() -> Option<PhysAddr> {
+    FRAME_ALLOCATOR
+        .lock()
+        .alloc(1)
+        .map(|x| pa!(x * PAGE_SIZE))
+        .inspect(|x| x.clear_len(PAGE_SIZE))
+}
+
+pub fn frame_dealloc(paddr: PhysAddr) {
+    FRAME_ALLOCATOR.lock().dealloc(paddr.raw() / PAGE_SIZE, 1);
 }

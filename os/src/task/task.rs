@@ -2,9 +2,11 @@
 
 use super::id::TaskUserRes;
 use super::{kstack_alloc, KernelStack, ProcessControlBlock, TaskContext};
-use crate::trap::TrapContext;
-use crate::{mm::PhysPageNum, sync::UPSafeCell};
+use crate::sync::UPSafeCell;
 use alloc::sync::{Arc, Weak};
+use polyhal::kcontext::KContext;
+use polyhal::PageTable;
+use polyhal_trap::trapframe::TrapFrame;
 use core::cell::RefMut;
 
 /// Task control block structure
@@ -23,7 +25,7 @@ impl TaskControlBlock {
         self.inner.exclusive_access()
     }
     /// Get the address of app's page table
-    pub fn get_user_token(&self) -> usize {
+    pub fn get_user_token(&self) -> PageTable {
         let process = self.process.upgrade().unwrap();
         let inner = process.inner_exclusive_access();
         inner.memory_set.token()
@@ -33,19 +35,25 @@ impl TaskControlBlock {
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
     /// The physical page number of the frame where the trap context is placed
-    pub trap_cx_ppn: PhysPageNum,
+    pub trap_cx: TrapFrame,
     /// Save task context
-    pub task_cx: TaskContext,
+    pub task_cx: KContext,
 
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
+
+    /// backup trap context
+    pub trap_ctx_backup: Option<TrapFrame>,
 }
 
 impl TaskControlBlockInner {
-    pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        self.trap_cx_ppn.get_mut()
+    pub fn get_trap_cx(&self) -> &'static mut TrapFrame {
+        let paddr = &self.trap_cx as *const TrapFrame as usize as *mut TrapFrame;
+        // let paddr: PhysAddr = self.trap_cx.into();
+        // unsafe { paddr.get_mut_ptr::<TrapFrame>().as_mut().unwrap() }
+        unsafe { paddr.as_mut().unwrap() }
     }
 
     #[allow(unused)]
@@ -75,6 +83,7 @@ impl TaskControlBlock {
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
+                    trap_ctx_backup: None,
                 })
             },
         }

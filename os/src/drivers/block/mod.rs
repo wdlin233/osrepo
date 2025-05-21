@@ -1,21 +1,29 @@
-//! virtio_blk device driver
+#[cfg(any(target_arch = "x86_64", target_arch = "loongarch64"))]
+mod ram_blk;
 
+#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 mod virtio_blk;
-
+#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 pub use virtio_blk::VirtIOBlock;
 
-use crate::board::BlockDeviceImpl;
 use alloc::sync::Arc;
 use easy_fs::BlockDevice;
 use lazy_static::*;
 
+#[cfg(any(target_arch = "x86_64", target_arch = "loongarch64"))]
+use ram_blk::RamDiskBlock;
+
+#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 lazy_static! {
-    /// The global block device driver instance: BLOCK_DEVICE with BlockDevice trait
-    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());
+    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(VirtIOBlock::new());
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "loongarch64"))]
+lazy_static! {
+    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(RamDiskBlock::new());
 }
 
 #[allow(unused)]
-/// Test the block device
 pub fn block_device_test() {
     let block_device = BLOCK_DEVICE.clone();
     let mut write_buffer = [0u8; 512];

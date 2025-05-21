@@ -10,21 +10,13 @@ mod frame_allocator;
 mod heap_allocator;
 mod memory_set;
 mod page_table;
+mod vpn_range;
 
-use address::VPNRange;
 pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
-pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
-pub use memory_set::remap_test;
-pub use memory_set::{kernel_token, MapPermission, MemorySet, KERNEL_SPACE};
-use page_table::PTEFlags;
+pub use frame_allocator::{frame_alloc, frame_alloc_persist, frame_dealloc, frames_alloc, FrameTracker};
+pub use memory_set::{MapPermission, MemorySet};
 pub use page_table::{
-    translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
+    translated_byte_buffer, translated_ref, translated_refmut, translated_str,
     PageTableEntry, UserBuffer, UserBufferIterator,
 };
 
-/// initiate heap allocator, frame allocator and kernel space
-pub fn init() {
-    heap_allocator::init_heap();
-    frame_allocator::init_frame_allocator();
-    KERNEL_SPACE.exclusive_access().activate();
-}

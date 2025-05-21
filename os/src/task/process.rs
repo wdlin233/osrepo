@@ -2,20 +2,22 @@
 
 use super::id::RecycleAllocator;
 use super::manager::insert_into_pid2process;
+use super::signal::SignalActions;
 use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{MemorySet, KERNEL_SPACE};
+use crate::mm::MemorySet;
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
-use crate::trap::{trap_handler, TrapContext};
 use crate::loaders::ElfLoader;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
+use polyhal::PageTable;
 use core::cell::RefMut;
+use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
 
 /// Process Control Block
 pub struct ProcessControlBlock {
@@ -41,6 +43,16 @@ pub struct ProcessControlBlockInner {
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
     /// signal flags
     pub signals: SignalFlags,
+    /// signal mask
+    pub signal_mask: SignalFlags,
+    // the signal which is being handling
+    pub handling_sig: isize,
+    // Signal actions
+    pub signal_actions: SignalActions,
+    // if the task is killed
+    pub killed: bool,
+    // if the task is frozen by a signal
+    pub frozen: bool,
     /// tasks(also known as threads)
     pub tasks: Vec<Option<Arc<TaskControlBlock>>>,
     /// task resource allocator
@@ -60,7 +72,7 @@ pub struct ProcessControlBlockInner {
 impl ProcessControlBlockInner {
     #[allow(unused)]
     /// get the address of app's page table
-    pub fn get_user_token(&self) -> usize {
+    pub fn get_user_token(&self) -> PageTable {
         self.memory_set.token()
     }
     /// allocate a new file descriptor
@@ -119,6 +131,11 @@ impl ProcessControlBlock {
                         Some(Arc::new(Stdout)),
                     ],
                     signals: SignalFlags::empty(),
+                    signal_mask: SignalFlags::empty(),
+                    handling_sig: -1,
+                    signal_actions: SignalActions::default(),
+                    killed: false,
+                    frozen: false,
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),
                     mutex_list: Vec::new(),
@@ -139,15 +156,11 @@ impl ProcessControlBlock {
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
         let ustack_top = task_inner.res.as_ref().unwrap().ustack_top();
-        let kstack_top = task.kstack.get_top();
+        //let kstack_top = task.kstack.get_top();
         drop(task_inner);
-        *trap_cx = TrapContext::app_init_context(
-            entry_point,
-            ustack_top,
-            KERNEL_SPACE.exclusive_access().token(),
-            kstack_top,
-            trap_handler as usize,
-        );
+        trap_cx[TrapFrameArgs::SEPC] = entry_point;
+        trap_cx[TrapFrameArgs::SP] = ustack_top;
+
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
         process_inner.tasks.push(Some(Arc::clone(&task)));
@@ -177,7 +190,11 @@ impl ProcessControlBlock {
         let mut task_inner = task.inner_exclusive_access();
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
-        task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+        
+        // FIXME: This is a temporary solution
+        task_inner.trap_cx = TrapFrame::new();
+        //task_inner.trap_cx = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+        
         // push arguments on user stack
         trace!("kernel: exec .. push arguments on user stack");
         let user_sp = task_inner.res.as_mut().unwrap().ustack_top();
@@ -191,15 +208,12 @@ impl ProcessControlBlock {
 
         // initialize trap_cx
         trace!("kernel: exec .. initialize trap_cx");
-        let mut trap_cx = TrapContext::app_init_context(
-            entry_point,
-            user_sp,
-            KERNEL_SPACE.exclusive_access().token(),
-            task.kstack.get_top(),
-            trap_handler as usize,
-        );
-        trap_cx.x[10] = args_len; // a0, the same with previous stack frame
-        trap_cx.x[11] = user_sp + 8; // a1
+        // initialize trap_cx
+        let mut trap_cx = TrapFrame::new();
+        trap_cx[TrapFrameArgs::SEPC] = entry_point;
+        trap_cx[TrapFrameArgs::SP] = user_sp;
+        trap_cx[TrapFrameArgs::ARG0] = args_len; // a0, the same with previous stack frame
+        trap_cx[TrapFrameArgs::ARG1] = user_sp + 8; // a1
         *task_inner.get_trap_cx() = trap_cx;
     }
 
@@ -233,6 +247,11 @@ impl ProcessControlBlock {
                     exit_code: 0,
                     fd_table: new_fd_table,
                     signals: SignalFlags::empty(),
+                    signal_mask: parent.signal_mask,
+                    handling_sig: -1,
+                    signal_actions: parent.signal_actions.clone(),
+                    killed: false,
+                    frozen: false,
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),
                     mutex_list: Vec::new(),
@@ -264,10 +283,11 @@ impl ProcessControlBlock {
         child_inner.tasks.push(Some(Arc::clone(&task)));
         drop(child_inner);
         // modify kstack_top in trap_cx of this thread
-        let task_inner = task.inner_exclusive_access();
-        let trap_cx = task_inner.get_trap_cx();
-        trap_cx.kernel_sp = task.kstack.get_top();
-        drop(task_inner);
+        // TEST: delete this part
+        // let task_inner = task.inner_exclusive_access();
+        // let trap_cx = task_inner.get_trap_cx();
+        // trap_cx.kernel_sp = task.kstack.get_top();
+        // drop(task_inner);
         insert_into_pid2process(child.getpid(), Arc::clone(&child));
         // add this thread to scheduler
         add_task(task);

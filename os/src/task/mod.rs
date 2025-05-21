@@ -27,8 +27,9 @@ use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
+use polyhal::kcontext::KContext;
 use process::ProcessControlBlock;
-use switch::__switch;
+use signal::MAX_SIG;
 
 pub use context::TaskContext;
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle, IDLE_PID};
@@ -39,6 +40,7 @@ pub use processor::{
 };
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
+use polyhal_trap::trapframe::TrapFrameArgs;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -47,7 +49,7 @@ pub fn suspend_current_and_run_next() {
 
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
-    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    let task_cx_ptr = &mut task_inner.task_cx as *mut KContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
@@ -63,7 +65,7 @@ pub fn suspend_current_and_run_next() {
 pub fn block_current_and_run_next() {
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
-    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    let task_cx_ptr = &mut task_inner.task_cx as *mut KContext;
     task_inner.task_status = TaskStatus::Blocked;
     drop(task_inner);
     schedule(task_cx_ptr);
@@ -164,7 +166,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
     drop(process);
     // we do not have to save task context
-    let mut _unused = TaskContext::zero_init();
+    let mut _unused = KContext::blank();
     schedule(&mut _unused as *mut _);
 }
 
@@ -205,4 +207,128 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     trace!("kernel: remove_inactive_task .. remove_timer");
     remove_timer(Arc::clone(&task));
     //add_task(INITPROC.clone());
+}
+
+pub fn check_signals_error_of_current() -> Option<(i32, &'static str)> {
+    trace!("os::task::check_signals_error_of_current");
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    // println!(
+    //     "[K] check_signals_error_of_current {:?}",
+    //     inner.signals
+    // );
+    inner.signals.check_error()
+}
+
+pub fn handle_signals() {
+    trace!("os::task::handle_signals");
+    loop {
+        check_pending_signals();
+        let (frozen, killed) = {
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            (inner.frozen, inner.killed)
+        };
+        if !frozen || killed {
+            break;
+        }
+        suspend_current_and_run_next();
+    }
+}
+
+fn check_pending_signals() {
+    trace!("os::task::check_pending_signals");
+    for sig in 0..(MAX_SIG + 1) {
+        let process = current_process();
+        let inner = process.inner_exclusive_access();
+        let signal = SignalFlags::from_bits(1 << sig).unwrap();
+        if inner.signals.contains(signal) && (!inner.signal_mask.contains(signal)) {
+            let mut masked = true;
+            let handling_sig = inner.handling_sig;
+            if handling_sig == -1 {
+                masked = false;
+            } else {
+                let handling_sig = handling_sig as usize;
+                if !inner.signal_actions.table[handling_sig]
+                    .mask
+                    .contains(signal)
+                {
+                    masked = false;
+                }
+            }
+            if !masked {
+                drop(inner);
+                drop(process);
+                if signal == SignalFlags::SIGKILL
+                    || signal == SignalFlags::SIGSTOP
+                    || signal == SignalFlags::SIGCONT
+                    || signal == SignalFlags::SIGDEF
+                {
+                    // signal is a kernel signal
+                    call_kernel_signal_handler(signal);
+                } else {
+                    // signal is a user signal
+                    call_user_signal_handler(sig, signal);
+                    return;
+                }
+            }
+        }
+    }
+}
+
+fn call_kernel_signal_handler(signal: SignalFlags) {
+    trace!("os::task::call_kernel_signal_handler");
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    match signal {
+        SignalFlags::SIGSTOP => {
+            inner.frozen = true;
+            inner.signals ^= SignalFlags::SIGSTOP;
+        }
+        SignalFlags::SIGCONT => {
+            if inner.signals.contains(SignalFlags::SIGCONT) {
+                inner.signals ^= SignalFlags::SIGCONT;
+                inner.frozen = false;
+            }
+        }
+        _ => {
+            // println!(
+            //     "[K] call_kernel_signal_handler:: current task sigflag {:?}",
+            //     inner.signals
+            // );
+            inner.killed = true;
+        }
+    }
+}
+
+fn call_user_signal_handler(sig: usize, signal: SignalFlags) {
+    trace!("os::task::call_user_signal_handler");
+    let task = current_task().unwrap();
+    let process_block = task.process.upgrade().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let mut process_inner = process_block.inner_exclusive_access();
+
+    let handler = process_inner.signal_actions.table[sig].handler;
+    if handler != 0 {
+        // user handler
+
+        // handle flag
+        process_inner.handling_sig = sig as isize;
+        process_inner.signals ^= signal;
+
+        // backup trapframe
+        let trap_ctx = task_inner.get_trap_cx();
+        task_inner.trap_ctx_backup = Some(trap_ctx.clone());
+
+        // modify trapframe
+        trap_ctx[TrapFrameArgs::SEPC] = handler;
+
+        // put args (a0)
+        trap_ctx[TrapFrameArgs::ARG0] = sig;
+    } else {
+        info!("process id: {}", process_block.getpid());
+        info!("{:#x?}", task_inner.get_trap_cx());
+        // default action
+        println!("[kernel] task/call_user_signal_handler: default action: ignore it or kill process");
+    }
 }

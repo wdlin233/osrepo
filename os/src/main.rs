@@ -53,6 +53,70 @@ pub mod loaders;
 
 use core::arch::global_asm;
 
+//use polyhal::{common::PageAlloc, mem::get_mem_areas, PhysAddr};
+use polyhal_boot::define_entry;
+use polyhal_trap::{
+    trap::TrapType::{self, *},
+    trapframe::{TrapFrame, TrapFrameArgs},
+};
+use crate::{
+    syscall::syscall,
+    task::{
+        check_signals_error_of_current, current_add_signal, exit_current_and_run_next,
+        handle_signals, suspend_current_and_run_next, SignalFlags,
+    },
+};
+
+
+/// kernel interrupt
+#[polyhal::arch_interrupt]
+fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
+    // trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
+    match trap_type {
+        Breakpoint => return,
+        SysCall => {
+            // jump to next instruction anyway
+            ctx.syscall_ok();
+            let args = ctx.args();
+            // get system call return value
+            // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
+
+            let result = syscall(ctx[TrapFrameArgs::SYSCALL], [args[0], args[1], args[2]]);
+            // cx is changed during sys_exec, so we have to call it again
+            ctx[TrapFrameArgs::RET] = result as usize;
+        }
+        StorePageFault(_paddr) | LoadPageFault(_paddr) | InstructionPageFault(_paddr) => {
+            /*
+            println!(
+                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+                scause.cause(),
+                stval,
+                current_trap_cx().sepc,
+            );
+            */
+            current_add_signal(SignalFlags::SIGSEGV);
+        }
+        IllegalInstruction(_) => {
+            current_add_signal(SignalFlags::SIGILL);
+        }
+        Timer => {
+            suspend_current_and_run_next();
+        }
+        _ => {
+            warn!("unsuspended trap type: {:?}", trap_type);
+        }
+    }
+    // handle signals (handle the sent signal)
+    // println!("[K] trap_handler:: handle_signals");
+    handle_signals();
+
+    // check error signals (if error then exit)
+    if let Some((errno, msg)) = check_signals_error_of_current() {
+        println!("[kernel] {}", msg);
+        exit_current_and_run_next(errno);
+    }
+}
+
 global_asm!(include_str!("entry.asm"));
 fn clear_bss() {
     extern "C" {
@@ -81,3 +145,5 @@ pub fn rust_main() -> ! {
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }
+
+define_entry!(rust_main);

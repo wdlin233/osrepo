@@ -1,9 +1,8 @@
 use crate::{
-    mm::kernel_token,
     task::{add_task, current_task, TaskControlBlock},
-    trap::{trap_handler, TrapContext},
 };
 use alloc::sync::Arc;
+use polyhal_trap::trapframe::TrapFrameArgs;
 /// thread create syscall
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     trace!(
@@ -42,14 +41,9 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     }
     tasks[new_task_tid] = Some(Arc::clone(&new_task));
     let new_task_trap_cx = new_task_inner.get_trap_cx();
-    *new_task_trap_cx = TrapContext::app_init_context(
-        entry,
-        new_task_res.ustack_top(),
-        kernel_token(),
-        new_task.kstack.get_top(),
-        trap_handler as usize,
-    );
-    (*new_task_trap_cx).x[10] = arg;
+    (*new_task_trap_cx)[TrapFrameArgs::SEPC] = entry;
+    (*new_task_trap_cx)[TrapFrameArgs::SP] = new_task_res.ustack_top();
+    (*new_task_trap_cx)[TrapFrameArgs::ARG0] = arg;
     new_task_tid as isize
 }
 /// get current thread id syscall

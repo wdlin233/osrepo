@@ -4,32 +4,34 @@
 //! the current running state of CPU is recorded,
 //! and the replacement and transfer of control flow of different applications are executed.
 
-use super::__switch;
 use super::{fetch_task, TaskStatus};
-use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
+use super::{ProcessControlBlock, TaskControlBlock};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
+use lazyinit::LazyInit;
+use polyhal::kcontext::{context_switch_pt, KContext};
+use polyhal::PageTable;
 
 /// Processor management structure
 pub struct Processor {
     current: Option<Arc<TaskControlBlock>>,
 
     ///The basic control flow of each core, helping to select and switch process
-    idle_task_cx: TaskContext,
+    idle_task_cx: KContext,
 }
 
 impl Processor {
     pub fn new() -> Self {
         Self {
             current: None,
-            idle_task_cx: TaskContext::zero_init(),
+            idle_task_cx: KContext::blank(),
         }
     }
 
     ///Get mutable reference to `idle_task_cx`
-    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
+    fn get_idle_task_cx_ptr(&mut self) -> *mut KContext {
         &mut self.idle_task_cx as *mut _
     }
 
@@ -57,8 +59,12 @@ pub fn run_tasks() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
-            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
+            let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
             task_inner.task_status = TaskStatus::Running;
+            let token = current_process()
+                .inner_exclusive_access()
+                .memory_set
+                .token();
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -66,7 +72,7 @@ pub fn run_tasks() {
             // release processor manually
             drop(processor);
             unsafe {
-                __switch(idle_task_cx_ptr, next_task_cx_ptr);
+                context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, token)
             }
         } else {
             warn!("no tasks available in run_tasks");
@@ -90,7 +96,7 @@ pub fn current_process() -> Arc<ProcessControlBlock> {
 }
 
 /// Get the current user token(addr of page table)
-pub fn current_user_token() -> usize {
+pub fn current_user_token() -> PageTable {
     let task = current_task().unwrap();
     task.get_user_token()
 }
@@ -119,13 +125,15 @@ pub fn current_kstack_top() -> usize {
     current_task().unwrap().kstack.get_top()
 }
 
+static BOOT_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
+
 /// Return to idle control flow for new scheduling
-pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
+pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     let mut processor = PROCESSOR.exclusive_access();
     let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);
     unsafe {
-        __switch(switched_task_cx_ptr, idle_task_cx_ptr);
+        context_switch_pt(switched_task_cx_ptr, idle_task_cx_ptr, *BOOT_PAGE_TABLE);
     }
 }
 
