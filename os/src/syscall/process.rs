@@ -124,7 +124,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
         // ++++ release child PCB
     });
-    debug!("can find the child pid:{}",pid);
+    //debug!("can find the child pid:{}",pid);
     if let Some((idx, _)) = pair {
         let child = inner.children.remove(idx);
         // confirm that child will be deallocated after being removed from children list
@@ -133,10 +133,10 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         // ++++ temporarily access child PCB exclusively
         let exit_code = child.inner_exclusive_access().exit_code;
         // ++++ release child PCB
-        *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+        *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
         found_pid as isize
     } else {
-        debug!("but return -2");
+        //debug!("but return -2");
         -2
     }
     // ---- release current PCB automatically
