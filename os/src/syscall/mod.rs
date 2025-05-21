@@ -44,6 +44,8 @@ pub const SYSCALL_SIGRETURN: usize = 139;
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
 /// getpid syscall
 pub const SYSCALL_GETPID: usize = 172;
+/// getppid syscall
+pub const SYSCALL_GETPPID: usize = 173;
 /// gettid syscall
 pub const SYSCALL_GETTID: usize = 178;
 /// fork syscall
@@ -125,6 +127,7 @@ use crate::fs::Stat;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
     match syscall_id {
+        SYSCALL_GETPPID=>sys_getppid(),
         SYSCALL_WAITPID => {
             loop {
                 match sys_waitpid(args[0] as isize, args[1] as *mut i32) {
@@ -139,7 +142,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
         }
         SYSCALL_FORK => sys_fork(),
         SYSCALL_YIELD => sys_yield(),
-
         SYSCALL_DUP => sys_dup(args[0]),
         SYSCALL_LINKAT => sys_linkat(args[1] as *const u8, args[3] as *const u8),
         SYSCALL_UNLINKAT => sys_unlinkat(args[1] as *const u8),

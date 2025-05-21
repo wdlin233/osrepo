@@ -45,6 +45,10 @@ pub fn sys_getpid() -> isize {
     // );
     current_task().unwrap().process.upgrade().unwrap().getpid() as isize
 }
+/// getppid syscall
+pub fn sys_getppid() -> isize {
+    current_task().unwrap().process.upgrade().unwrap().getppid() as isize
+}
 /// fork child process syscall
 pub fn sys_fork() -> isize {
     // trace!(

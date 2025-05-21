@@ -278,10 +278,12 @@ impl ProcessControlBlock {
     pub fn getpid(&self) -> usize {
         self.pid.0
     }
-    // ///block
-    // pub fn add_block(&mut self) {
-    //     self.inner.exclusive_access().is_blocked +=1;
-    // }
+    /// get parent pid
+    pub fn getppid(&self)->usize {
+        let inner = self.inner_exclusive_access();
+        let parent = inner.parent.clone().unwrap();
+        parent.upgrade().unwrap().getpid()
+    }
 }
 
 // impl ProcessControlBlock {
