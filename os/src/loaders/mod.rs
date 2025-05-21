@@ -13,6 +13,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use polyhal::PageTable;
 
 use crate::config::PAGE_SIZE;
 use crate::mm::translated_byte_buffer;
@@ -52,7 +53,7 @@ impl<'a> ElfLoader<'a> {
     /// argv = *(sp+8);
     pub fn init_stack(
         &self,
-        memory_token: usize,
+        memory_token: PageTable,
         stack_top: usize,
         args: Vec<String>,
     ) -> usize {
@@ -116,7 +117,7 @@ impl<'a> ElfLoader<'a> {
         debug!("init user proc: stack len {}", init_stack.len());
         let stack_top = stack_top - init_stack.len();
         // stack_pma.write(USER_STACK_SIZE - init_stack.len(), &init_stack)?; could be written as followed:
-        let stack = translated_byte_buffer(memory_token, stack_top as *const u8, init_stack.len());
+        let stack = translated_byte_buffer(memory_token, stack_top as *mut u8, init_stack.len());
         // 接下来要把 init_stack 复制到 stack 上
         let mut pos = 0;
         for page in stack {

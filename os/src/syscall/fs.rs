@@ -3,7 +3,7 @@ use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserB
 use crate::task::{current_process, current_task, current_user_token};
 use alloc::sync::Arc;
 /// write syscall
-pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
+pub fn sys_write(fd: usize, buf: *mut u8, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_write",
         current_task().unwrap().process.upgrade().unwrap().getpid()
@@ -27,7 +27,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 /// read syscall
-pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
+pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_read",
         current_task().unwrap().process.upgrade().unwrap().getpid()

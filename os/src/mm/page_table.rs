@@ -1,9 +1,9 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
-use super::{PhysPageNum};
+use super::{PhysPageNum, StepByOne};
 use alloc::string::String;
 use alloc::vec::Vec;
 use bitflags::*;
-use polyhal::pagetable::PageTable;
+use polyhal::{pagetable::PageTable, VirtAddr};
 use _core::slice;
 use _core::str::from_utf8_unchecked;
 use alloc::string::{ToString};
@@ -67,10 +67,65 @@ impl PageTableEntry {
     }
 }
 
-pub fn translated_byte_buffer(_token: PageTable, ptr: *mut u8, len: usize) -> &'static mut [u8] {
-    trace!("os::mm::page_table::translated_byte_buffer");
-    unsafe { core::slice::from_raw_parts_mut(ptr, len) }
+// pub fn translated_byte_buffer(_token: PageTable, ptr: *mut u8, len: usize) -> &'static mut [u8] {
+//     trace!("os::mm::page_table::translated_byte_buffer");
+//     unsafe { core::slice::from_raw_parts_mut(ptr, len) }
+// }
+
+/// 跨页安全地获取用户空间虚拟地址区间的可变切片集合
+pub fn translated_byte_buffer(pgtable: PageTable, ptr: *mut u8, len: usize) -> Vec<&'static mut [u8]> {
+    let mut start = ptr as usize;
+    let end = start + len;
+    let mut v = Vec::new();
+    while start < end {
+        let start_va = VirtAddr::from(start);
+        let mut vpn = start_va.floor();
+        // 这里假设 page_table.translate 返回 (PhysAddr, MappingFlags)
+        let (paddr, _) = pgtable.translate(vpn).expect("invalid address in translated_byte_buffer");
+        vpn.step();
+        let mut end_va: VirtAddr = vpn.into();
+        end_va = end_va.min(VirtAddr::from(end));
+
+        // n = 4?
+        let page_offset = start_va.pn_offest(4);
+        let slice_end = if end_va.pn_offest(4) == 0 {
+            crate::config::PAGE_SIZE
+        } else {
+            end_va.pn_offest(4)
+        };
+        let phys_ptr = paddr.get_mut_ptr() as *const usize as usize + page_offset; // 直接用物理地址
+        let slice_len = slice_end - page_offset;
+        unsafe {
+            v.push(core::slice::from_raw_parts_mut(phys_ptr as *mut u8, slice_len));
+        }
+        start = end_va.into();
+    }
+    v
 }
+
+/// Original ver: Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
+// pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
+//     let page_table = PageTable::from_token(token);
+//     let mut start = ptr as usize;
+//     let end = start + len;
+//     let mut v = Vec::new();
+//     while start < end {
+//         let start_va = VirtAddr::from(start);
+//         let mut vpn = start_va.floor();
+//         let ppn = page_table.translate(vpn).unwrap().ppn();
+//         vpn.step();
+//         let mut end_va: VirtAddr = vpn.into();
+//         end_va = end_va.min(VirtAddr::from(end));
+
+//         if end_va.page_offset() == 0 {
+//             v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+//         } else {
+//             v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+//         }
+//         start = end_va.into();
+//     }
+//     v
+// }
 
 /// Load a string from other address spaces into kernel space without an end `\0`.
 pub fn translated_str(_token: PageTable, ptr: *const u8) -> String {

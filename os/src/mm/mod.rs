@@ -12,7 +12,7 @@ mod memory_set;
 mod page_table;
 mod vpn_range;
 
-pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
+pub use address::{PhysPageNum, StepByOne, VirtPageNum, copy_to_virt};
 pub use frame_allocator::{frame_alloc, frame_alloc_persist, frame_dealloc, frames_alloc, FrameTracker};
 pub use memory_set::{MapPermission, MemorySet};
 pub use page_table::{
