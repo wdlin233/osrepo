@@ -122,19 +122,19 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.is_zombie = true;
         // record exit code of main process
         process_inner.exit_code = exit_code;
-        {
-            // move all child processes under init process
-            debug!("to get init...");
-            let mut initproc_inner = INITPROC.inner_exclusive_access();
-            debug!("get init ok");
-            for child in process_inner.children.iter() {
-                child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
-                initproc_inner.children.push(child.clone());
-            }
-        }
         // wakeup his parent
         let parent = process_inner.parent.clone().unwrap();
         wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
+        // {
+        //     // move all child processes under init process
+        //     //debug!("to get init...");
+        //     let mut initproc_inner = INITPROC.inner_exclusive_access();
+        //     //debug!("get init ok");
+        //     for child in process_inner.children.iter() {
+        //         child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
+        //         initproc_inner.children.push(child.clone());
+        //     }
+        // }
         //debug!("move child ok");
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set

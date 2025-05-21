@@ -75,12 +75,13 @@ impl TaskManager {
         //debug!("remove block by pid:{}",pid);
         if let Some(task) = self.block_map.remove(&pid){
             let mut inner = task.inner_exclusive_access();
-            inner.task_status = TaskStatus::Ready;
-            drop(inner);
-            //debug!("set task ready ok");
-            self.add(task);
+            if inner.task_status != TaskStatus::Ready{
+                inner.task_status = TaskStatus::Ready;
+                drop(inner);
+                self.add(task);
+                debug!("add task ok : {}",pid);
+            }
         }
-    
     }
   
 
@@ -118,7 +119,7 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
 pub fn wakeup_task_by_pid(pid: usize){
     //debug!("block task id:{}",pid);
     TASK_MANAGER.exclusive_access().remove_block_by_pid(pid);
-    debug!("wake up task {} ok",pid);
+    //debug!("wake up task {} ok",pid);
 }
 
 /// Remove a task from the ready queue
