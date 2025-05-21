@@ -10,7 +10,7 @@ use crate::{
 use alloc::{string::String, sync::Arc, vec::Vec};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug,Copy,Clone)]
 pub struct TimeVal {
     pub sec: usize,
     pub usec: usize,
@@ -24,16 +24,16 @@ pub fn sys_exit(exit_code: i32) -> ! {
     //     "kernel:pid[{}] sys_exit",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    let current_process = current_process();
-    let pid = current_process.getpid();
-    debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
-    drop(current_process);
+    //let current_process = current_process();
+    //let pid = current_process.getpid();
+    //debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
+    //drop(current_process);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
 /// yield syscall
 pub fn sys_yield() -> isize {
-    debug!("kernel: sys_yield");
+    //debug!("kernel: sys_yield");
     suspend_current_and_run_next();
     0
 }

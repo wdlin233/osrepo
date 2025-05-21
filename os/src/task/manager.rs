@@ -3,6 +3,7 @@
 //! It is only used to manage processes and schedule process based on ready queue.
 //! Other CPU process monitoring functions are in Processor.
 
+use crate::timer::check_timer;
 use super::{ProcessControlBlock, TaskControlBlock, TaskStatus};
 use crate::sync::UPSafeCell;
 use alloc::collections::{BTreeMap, VecDeque};
@@ -11,6 +12,8 @@ use lazy_static::*;
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
+    ///block queue
+    //block_queue: VecDeque<Arc<TaskControlBlock>>,
     /// The stopping task, leave a reference so that the kernel stack will not be recycled when switching tasks
     stop_task: Option<Arc<TaskControlBlock>>,
 }
@@ -21,6 +24,7 @@ impl TaskManager {
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
+            //block_queue: VecDeque::new(),
             stop_task: None,
         }
     }
@@ -30,6 +34,11 @@ impl TaskManager {
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
+        if self.ready_queue.is_empty(){
+            debug!("ready_queue is empty");
+            check_timer();
+        }
+        //debug!("ready queue size:{}",self.ready_queue.len());
         self.ready_queue.pop_front()
     }
     pub fn remove(&mut self, task: Arc<TaskControlBlock>) {
@@ -49,6 +58,12 @@ impl TaskManager {
         // case) so that we can simply replace it;
         self.stop_task = Some(task);
     }
+    // /// Add a task to block task
+    // pub fn add_block(&mut self,task: Arc<TaskControlBlock>) {
+    //     //The blocking queue
+    //     // which temporarily holds tasks waiting for timer expiration.
+    //     self.block_queue.push_back(task);
+    // }
 
 
 }
@@ -67,6 +82,10 @@ pub fn add_task(task: Arc<TaskControlBlock>) {
     //trace!("kernel: TaskManager::add_task");
     TASK_MANAGER.exclusive_access().add(task);
 }
+// /// Add a task to block queue
+// pub fn add_block_task(task: Arc<TaskControlBlock>) {
+//     TASK_MANAGER.exclusive_access().add_block(task);
+// }
 
 /// Wake up a task
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
@@ -114,7 +133,7 @@ pub fn remove_from_pid2process(pid: usize) {
 }
 /// Take a process out of the ready queue
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
-    //trace!("kernel: TaskManager::fetch_task");
+    //debug!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
 }
 
