@@ -7,12 +7,12 @@
 use super::{fetch_task, TaskStatus};
 use super::{ProcessControlBlock, TaskControlBlock};
 use crate::sync::UPSafeCell;
-use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
 use lazyinit::LazyInit;
 use polyhal::kcontext::{context_switch_pt, KContext};
 use polyhal::PageTable;
+use polyhal_trap::trapframe::TrapFrame;
 
 /// Processor management structure
 pub struct Processor {
@@ -102,7 +102,7 @@ pub fn current_user_token() -> PageTable {
 }
 
 /// Get the mutable reference to trap context of current task
-pub fn current_trap_cx() -> &'static mut TrapContext {
+pub fn current_trap_cx() -> &'static mut TrapFrame {
     current_task()
         .unwrap()
         .inner_exclusive_access()
@@ -121,8 +121,8 @@ pub fn current_trap_cx_user_va() -> usize {
 }
 
 /// get the top addr of kernel stack
-pub fn current_kstack_top() -> usize {
-    current_task().unwrap().kstack.get_top()
+pub fn current_kstack_position() -> (usize, usize) {
+    current_task().unwrap().kstack.get_position()
 }
 
 static BOOT_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
@@ -135,6 +135,10 @@ pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     unsafe {
         context_switch_pt(switched_task_cx_ptr, idle_task_cx_ptr, *BOOT_PAGE_TABLE);
     }
+}
+
+pub fn init_kernel_page() {
+    BOOT_PAGE_TABLE.init_once(PageTable::current());
 }
 
 /// Create a MapArea for the current task

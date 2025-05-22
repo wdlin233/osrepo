@@ -2,14 +2,14 @@
 
 use super::ProcessControlBlock;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
-use crate::mm::{MapPermission, PhysPageNum};
+use crate::mm::{MapPermission};
 use crate::sync::UPSafeCell;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
 use lazy_static::*;
-use polyhal::VirtAddr;
+use polyhal::{MappingFlags, PhysAddr, VirtAddr};
 
 /// Allocator with a simple recycle strategy
 pub struct RecycleAllocator {
@@ -80,50 +80,20 @@ pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     (bottom, top)
 }
 
-/// Kernel stack for a task
-pub struct KernelStack(pub usize);
-
-/// Allocate a kernel stack for a task
-pub fn kstack_alloc() -> KernelStack {
-    let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
-    let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
-    KERNEL_SPACE.exclusive_access().insert_framed_area(
-        kstack_bottom.into(),
-        kstack_top.into(),
-        MapPermission::R | MapPermission::W,
-    );
-    KernelStack(kstack_id)
-}
-
-impl Drop for KernelStack {
-    fn drop(&mut self) {
-        let (kernel_stack_bottom, _) = kernel_stack_position(self.0);
-        let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
-        KERNEL_SPACE
-            .exclusive_access()
-            .remove_area_with_start_vpn(kernel_stack_bottom_va.into());
-        KSTACK_ALLOCATOR.exclusive_access().dealloc(self.0);
-    }
+pub struct KernelStack {
+    inner: Arc<[u128; KERNEL_STACK_SIZE / size_of::<u128>()]>,
 }
 
 impl KernelStack {
-    /// Push a variable of type T into the top of the KernelStack and return its raw pointer
-    #[allow(unused)]
-    pub fn push_on_top<T>(&self, value: T) -> *mut T
-    where
-        T: Sized,
-    {
-        let kernel_stack_top = self.get_top();
-        let ptr_mut = (kernel_stack_top - core::mem::size_of::<T>()) as *mut T;
-        unsafe {
-            *ptr_mut = value;
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new([0u128; KERNEL_STACK_SIZE / size_of::<u128>()]),
         }
-        ptr_mut
     }
-    /// return the top of the kernel stack
-    pub fn get_top(&self) -> usize {
-        let (_, kernel_stack_top) = kernel_stack_position(self.0);
-        kernel_stack_top
+
+    pub fn get_position(&self) -> (usize, usize) {
+        let bottom = self.inner.as_ptr() as usize;
+        (bottom, bottom + KERNEL_STACK_SIZE)
     }
 }
 
@@ -222,7 +192,7 @@ impl TaskUserRes {
         trap_cx_bottom_from_tid(self.tid)
     }
     /// The physical page number(ppn) of the trap context for a task with tid
-    pub fn trap_cx_ppn(&self) -> PhysPageNum {
+    pub fn get_trap_cx(&self) -> (PhysAddr, MappingFlags) {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
         let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
@@ -230,7 +200,6 @@ impl TaskUserRes {
             .memory_set
             .translate(trap_cx_bottom_va.into())
             .unwrap()
-            .ppn()
     }
     /// the bottom addr (low addr) of the user stack for a task
     pub fn ustack_base(&self) -> usize {

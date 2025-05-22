@@ -9,13 +9,11 @@
 //! Be careful when you see [`__switch`]. Control flow around this function
 //! might not be what you expect.
 
-mod context;
 mod id;
 mod manager;
 mod process;
 mod processor;
 mod signal;
-mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 mod stride;
@@ -31,12 +29,12 @@ use polyhal::kcontext::KContext;
 use process::ProcessControlBlock;
 use signal::MAX_SIG;
 
-pub use context::TaskContext;
-pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle, IDLE_PID};
+pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task};
 pub use processor::{
-    current_kstack_top, current_process, current_task, current_trap_cx, current_trap_cx_user_va,
+    current_process, current_task, current_trap_cx, current_trap_cx_user_va,
     current_user_token, run_tasks, schedule, take_current_task, mmap, munmap,
+    init_kernel_page
 };
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};

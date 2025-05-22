@@ -1,23 +1,15 @@
 //! PhysAddr, VirtAddr, PhysPageNum, VirtPageNum, raw address
 
 use super::{translated_byte_buffer, PageTableEntry};
-use crate::{config::{PAGE_SIZE, PAGE_SIZE_BITS}, task::current_user_token};
-use core::fmt::{self, Debug, Formatter};
+use crate::{config::PAGE_SIZE_BITS, task::current_user_token};
+use core::{fmt::{self, Debug, Formatter}, iter::Step};
+use polyhal::pagetable::{PAGE_SIZE};
+use polyhal::{VirtAddr, PhysAddr};
 
 const PA_WIDTH_SV39: usize = 56;
 const VA_WIDTH_SV39: usize = 39;
 const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - PAGE_SIZE_BITS;
 const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - PAGE_SIZE_BITS;
-
-/// Physical Address
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct PhysAddr(pub usize);
-
-/// Virtual Address
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct VirtAddr(pub usize);
 
 /// Physical Page Number PPN
 #[repr(C)]
@@ -288,19 +280,4 @@ where
 /// a simple range structure for virtual page number
 pub type VPNRange = SimpleRange<VirtPageNum>;
 
-/// write a value(`$T`) to the virtual address(dst)
-pub fn copy_to_virt<T>(src: &T, dst: *mut T) {
-    let src_buf_ptr: *const u8 = unsafe { core::mem::transmute(src) };
-    let dst_buf_ptr: *mut u8 = unsafe { core::mem::transmute(dst) };
-    let len = core::mem::size_of::<T>();
 
-    let dst_frame_buffers = translated_byte_buffer(current_user_token(), dst_buf_ptr, len);
-
-    let mut offset = 0;
-    for dst_frame in dst_frame_buffers {
-        dst_frame.copy_from_slice(
-            unsafe { core::slice::from_raw_parts(src_buf_ptr.add(offset), dst_frame.len()) },
-        );
-        offset += dst_frame.len();
-    }
-}

@@ -1,11 +1,13 @@
 //! Types related to task management & Functions for completely changing TCB
 
 use super::id::TaskUserRes;
-use super::{kstack_alloc, KernelStack, ProcessControlBlock, TaskContext};
+use super::{KernelStack, ProcessControlBlock};
 use crate::sync::UPSafeCell;
+use crate::task::current_task;
 use alloc::sync::{Arc, Weak};
-use polyhal::kcontext::KContext;
+use polyhal::kcontext::{read_current_tp, KContext, KContextArgs};
 use polyhal::PageTable;
+use polyhal_trap::trap::run_user_task;
 use polyhal_trap::trapframe::TrapFrame;
 use core::cell::RefMut;
 
@@ -70,22 +72,20 @@ impl TaskControlBlock {
         alloc_user_res: bool,
     ) -> Self {
         let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
-        let trap_cx_ppn = res.trap_cx_ppn();
-        let kstack = kstack_alloc();
-        let kstack_top = kstack.get_top();
+        let kstack = KernelStack::new();
         Self {
             process: Arc::downgrade(&process),
-            kstack,
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
                     res: Some(res),
-                    trap_cx_ppn,
-                    task_cx: TaskContext::goto_trap_return(kstack_top),
+                    trap_cx: TrapFrame::new(),
+                    task_cx: blank_kcontext(kstack.get_position().1),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
                     trap_ctx_backup: None,
                 })
             },
+            kstack: kstack,
         }
     }
 }
@@ -101,4 +101,41 @@ pub enum TaskStatus {
     Blocked,
 }
 
+fn task_entry() {
+    trace!("os::task::task_entry");
+    let task = current_task()
+        .unwrap()
+        .inner
+        .exclusive_access()
+        .get_trap_cx() as *mut TrapFrame;
+    // run_user_task_forever(unsafe { task.as_mut().unwrap() })
+    let ctx_mut = unsafe { task.as_mut().unwrap() };
+    loop {
+        run_user_task(ctx_mut);
+    }
+}
 
+fn blank_kcontext(ksp: usize) -> KContext {
+    let mut kcx = KContext::blank();
+    kcx[KContextArgs::KPC] = task_entry as usize;
+    kcx[KContextArgs::KSP] = ksp;
+    kcx[KContextArgs::KTP] = read_current_tp();
+    kcx
+}
+
+// pub struct KernelStack {
+//     inner: Arc<[u128; KERNEL_STACK_SIZE / size_of::<u128>()]>,
+// }
+
+// impl KernelStack {
+//     pub fn new() -> Self {
+//         Self {
+//             inner: Arc::new([0u128; KERNEL_STACK_SIZE / size_of::<u128>()]),
+//         }
+//     }
+
+//     pub fn get_position(&self) -> (usize, usize) {
+//         let bottom = self.inner.as_ptr() as usize;
+//         (bottom, bottom + KERNEL_STACK_SIZE)
+//     }
+// }
