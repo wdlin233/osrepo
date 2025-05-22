@@ -40,6 +40,8 @@ pub const SYSCALL_SIGPROCMASK: usize = 135;
 /// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
 */
+/// set priority syscall
+pub const SYSCALL_SET_PRIORITY: usize = 140;
 /// gettimeofday syscall
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
 /// getpid syscall
@@ -52,18 +54,14 @@ pub const SYSCALL_GETTID: usize = 178;
 pub const SYSCALL_FORK: usize = 220;
 /// exec syscall
 pub const SYSCALL_EXEC: usize = 221;
-/// waitpid syscall
-pub const SYSCALL_WAITPID: usize = 260;
-/// set priority syscall
-pub const SYSCALL_SET_PRIORITY: usize = 140;
-/*
 /// sbrk syscall
-pub const SYSCALL_SBRK: usize = 214;
-*/
+pub const SYSCALL_BRK: usize = 214;
 /// munmap syscall
 pub const SYSCALL_MUNMAP: usize = 215;
 /// mmap syscall
 pub const SYSCALL_MMAP: usize = 222;
+/// waitpid syscall
+pub const SYSCALL_WAITPID: usize = 260;
 /// spawn syscall
 pub const SYSCALL_SPAWN: usize = 400;
 /*
@@ -127,6 +125,7 @@ use crate::fs::Stat;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
     match syscall_id {
+        SYSCALL_BRK=>sys_brk(args[0] as i32),
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID=>sys_getppid(),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32,args[2]), 

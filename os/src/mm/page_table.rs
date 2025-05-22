@@ -129,7 +129,7 @@ impl PageTable {
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
-        // trace!(
+        // debug!(
         //     "map vpn {:?} to ppn {:?} with flags {:?}",
         //     vpn, ppn, flags
         // );

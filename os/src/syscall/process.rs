@@ -25,10 +25,10 @@ pub fn sys_exit(exit_code: i32) -> ! {
     //     "kernel:pid[{}] sys_exit",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    let current_process = current_process();
-    let pid = current_process.getpid();
-    debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
-    drop(current_process);
+    // let current_process = current_process();
+    // let pid = current_process.getpid();
+    // debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
+    // drop(current_process);
     exit_current_and_run_next(exit_code);
     //debug!("exit ok");
     panic!("Unreachable in sys_exit!");
@@ -228,15 +228,19 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     -1
 }
 
-/// change data segment size
-// pub fn sys_sbrk(size: i32) -> isize {
-//     trace!("kernel:pid[{}] sys_sbrk", current_task().unwrap().process.upgrade().unwrap().getpid());
-//     if let Some(old_brk) = current_task().unwrap().change_program_brk(size) {
-//         old_brk as isize
-//     } else {
-//         -1
-//     }
-// }
+// change data segment size
+pub fn sys_brk(_path: i32) -> isize {
+    //trace!("kernel:pid[{}] sys_sbrk", current_task().unwrap().process.upgrade().unwrap().getpid());
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if let Some(result) = inner.res.as_mut().unwrap().change_program_brk(_path) {
+        debug!("to returning result : {}",result);
+        result as isize
+    } else {
+        -1
+    }
+    
+}
 // like sys_spawn a unnecessary syscall
 
 /// YOUR JOB: Implement spawn.

@@ -134,6 +134,10 @@ pub struct TaskUserRes {
     pub ustack_base: usize,
     /// process belongs to
     pub process: Weak<ProcessControlBlock>,
+    ///heap bottom
+    pub heap_bottom: usize,
+    ///program brk
+    pub program_brk: usize,
 }
 /// Return the bottom addr (low addr) of the trap context for a task
 fn trap_cx_bottom_from_tid(tid: usize) -> usize {
@@ -141,7 +145,7 @@ fn trap_cx_bottom_from_tid(tid: usize) -> usize {
 }
 /// Return the bottom addr (high addr) of the user stack for a task
 fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
-    ustack_base + tid * (PAGE_SIZE + USER_STACK_SIZE)
+    ustack_base + tid * (2*PAGE_SIZE + USER_STACK_SIZE)
 }
 
 impl TaskUserRes {
@@ -152,26 +156,40 @@ impl TaskUserRes {
         alloc_user_res: bool,
     ) -> Self {
         let tid = process.inner_exclusive_access().alloc_tid();
-        let task_user_res = Self {
+        //debug!("in taskuserres new, ustack_base:{},tid:{}",ustack_base,tid);
+        let user_sp = ustack_bottom_from_tid(ustack_base, tid) + USER_STACK_SIZE;
+        //debug!("in taskuserres new,user_sp(brk):{}",user_sp);
+        let mut task_user_res = Self {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
+            heap_bottom:user_sp,
+            program_brk: user_sp,
         };
         if alloc_user_res {
+            //debug!("in new task.ustack_base:{}",task_user_res.ustack_base);
             task_user_res.alloc_user_res();
         }
         task_user_res
     }
     /// Allocate user resource for a task
-    pub fn alloc_user_res(&self) {
+    pub fn alloc_user_res(&mut self) {
         let process = self.process.upgrade().unwrap();
         let mut process_inner = process.inner_exclusive_access();
         // alloc user stack
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
+        self.heap_bottom = ustack_top;
+        self.program_brk = ustack_top;
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
+            MapPermission::R | MapPermission::W | MapPermission::U,
+        );
+        // alloc user heap
+        process_inner.memory_set.insert_framed_area(
+            self.heap_bottom.into(),
+            self.program_brk.into(),
             MapPermission::R | MapPermission::W | MapPermission::U,
         );
         // alloc trap_cx
@@ -193,6 +211,11 @@ impl TaskUserRes {
         process_inner
             .memory_set
             .remove_area_with_start_vpn(ustack_bottom_va.into());
+        // dealloc user heap manually
+        let heap_bottom_va: VirtAddr = self.heap_bottom.into(); 
+        process_inner
+            .memory_set
+            .remove_area_with_start_vpn(heap_bottom_va.into());
         // dealloc trap_cx manually
         let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
         process_inner
@@ -238,6 +261,35 @@ impl TaskUserRes {
     /// the top addr (high addr) of the user stack for a task
     pub fn ustack_top(&self) -> usize {
         ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
+    }
+    /// change the location of the program break. return None if failed.
+    pub fn change_program_brk(&mut self,path: i32) -> Option<usize>{
+        debug!("in change brk,path = {}",path);
+        debug!("self.brk = {},self.bottom = {}",self.program_brk,self.heap_bottom);
+        if path == 0{
+            return Some(self.program_brk);
+        }
+        let process = self.process.upgrade().unwrap();
+        let mut inner = process.inner_exclusive_access();
+        let heap_bottom = self.heap_bottom;
+        let new_brk = path as isize;
+        let heap_alloc = new_brk - heap_bottom as isize;
+        if new_brk < heap_bottom as isize || heap_alloc as usize > PAGE_SIZE {
+            return None;
+        }
+        let result = if new_brk < self.program_brk as isize {
+            inner.memory_set.shrink_to(VirtAddr(heap_bottom),VirtAddr(new_brk as usize))
+        } else {
+            debug!("to append memory set...heap_bottom = {},new_brk = {}",heap_bottom,new_brk);
+            inner.memory_set.append_to(VirtAddr(heap_bottom),VirtAddr(new_brk as usize))
+        };
+        if result {
+            debug!("to modify self brk,new brk is :{}",new_brk);
+            self.program_brk = new_brk as usize;
+            Some(0)
+        } else {
+            None
+        }
     }
 }
 
