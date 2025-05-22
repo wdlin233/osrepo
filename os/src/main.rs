@@ -44,8 +44,6 @@ pub mod task;
 pub mod timer;
 pub mod loaders;
 
-use core::arch::global_asm;
-
 use polyhal::{common::PageAlloc, mem::get_mem_areas, PhysAddr};
 //use polyhal::{common::PageAlloc, mem::get_mem_areas, PhysAddr};
 use polyhal_boot::define_entry;
@@ -65,7 +63,7 @@ use crate::{
 /// kernel interrupt
 #[polyhal::arch_interrupt]
 fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
-    // trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
+    trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
     match trap_type {
         Breakpoint => return,
         SysCall => {
@@ -143,31 +141,11 @@ fn main(hartid: usize) {
     fs::list_apps();
     task::init_kernel_page();
     task::add_initproc();
-    debug!("init process");
     task::run_tasks();
     panic!("Unreachable in main function of kernel!");
 }
 
 define_entry!(main);
-
-// #[no_mangle]
-// /// the rust entry-point of os
-// pub fn rust_main() -> ! {
-//     clear_bss();
-//     println!("[kernel] Hello, world!");
-//     logging::init();
-//     mm::init();
-//     mm::remap_test();
-//     trap::init();
-//     trap::enable_timer_interrupt();
-//     timer::set_next_trigger();
-//     fs::list_apps();
-//     task::add_initproc();
-//     task::run_tasks();
-//     panic!("Unreachable in rust_main!");
-// }
-
-// define_entry!(rust_main);
 
 pub struct PageAllocImpl;
 

@@ -73,7 +73,7 @@ impl TaskControlBlock {
     ) -> Self {
         trace!("kernel:pid[{}] new task", process.getpid());
         let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
-        info!(
+        trace!(
             "kernel:pid[{}] new task, tid[{}], ustack_base[0x{:x}]",
             process.getpid(),
             res.tid,

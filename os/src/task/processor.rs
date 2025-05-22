@@ -61,7 +61,7 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
             task_inner.task_status = TaskStatus::Running;
-            let token = current_process()
+            let token = task.process.upgrade().unwrap()
                 .inner_exclusive_access()
                 .memory_set
                 .token();

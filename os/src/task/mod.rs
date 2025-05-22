@@ -169,7 +169,6 @@ lazy_static! {
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
         let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
-        debug!("kernel: initproc .. read_all");
         ProcessControlBlock::new(v.as_slice())
     };
 }

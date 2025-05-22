@@ -146,15 +146,12 @@ impl ProcessControlBlock {
                 })
             },
         });
-        debug!("task: new process");
         // create a main thread, we should allocate ustack and trap_cx here
         let task = Arc::new(TaskControlBlock::new(
             Arc::clone(&process),
             ustack_base,
             true,
         ));
-        // 这里之前存在一个问题
-        debug!("prepare task");
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
@@ -163,7 +160,7 @@ impl ProcessControlBlock {
         drop(task_inner);
         trap_cx[TrapFrameArgs::SEPC] = entry_point;
         trap_cx[TrapFrameArgs::SP] = ustack_top;
-        debug!("kernel: exec .. entry_point = {:#x}", entry_point);
+        trace!("kernel: exec .. entry_point = {:#x}", entry_point);
 
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();

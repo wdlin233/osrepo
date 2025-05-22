@@ -198,7 +198,7 @@ impl MapArea {
         for vaddr in self.vaddr_range {
             // self.map_one(page_table, vpn);
             let p_tracker = frame_alloc().expect("can't allocate frame");
-            debug!("map: {:?}, vaddr: {}", p_tracker, vaddr);
+            trace!("map: {:?}, vaddr: {}", p_tracker, vaddr);
             page_table.map_page(
                 vaddr,
                 p_tracker.paddr,
