@@ -18,8 +18,6 @@
 //! We then call [`task::run_tasks()`] and for the first time go to
 //! userspace.
 
-#![deny(missing_docs)]
-#![deny(warnings)]
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
@@ -32,9 +30,6 @@ extern crate alloc;
 #[macro_use]
 extern crate bitflags;
 
-#[path = "boards/qemu.rs"]
-mod board;
-
 #[macro_use]
 mod console;
 pub mod config;
@@ -43,16 +38,15 @@ pub mod fs;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
-pub mod sbi;
 pub mod sync;
 pub mod syscall;
 pub mod task;
 pub mod timer;
-pub mod trap;
 pub mod loaders;
 
 use core::arch::global_asm;
 
+use polyhal::{common::PageAlloc, mem::get_mem_areas, PhysAddr};
 //use polyhal::{common::PageAlloc, mem::get_mem_areas, PhysAddr};
 use polyhal_boot::define_entry;
 use polyhal_trap::{
@@ -117,33 +111,74 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
     }
 }
 
-global_asm!(include_str!("entry.asm"));
-fn clear_bss() {
-    extern "C" {
-        fn sbss();
-        fn ebss();
-    }
-    unsafe {
-        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
-            .fill(0);
-    }
-}
+// fn clear_bss() {
+//     extern "C" {
+//         fn sbss();
+//         fn ebss();
+//     }
+//     unsafe {
+//         core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
+//             .fill(0);
+//     }
+// }
 
-#[no_mangle]
-/// the rust entry-point of os
-pub fn rust_main() -> ! {
-    clear_bss();
+fn main(hartid: usize) {
+    trace!("hartid: {}", hartid);
+    if hartid != 0 {
+        return;
+    }
+    //clear_bss();
     println!("[kernel] Hello, world!");
+    mm::init_heap();
     logging::init();
-    mm::init();
-    mm::remap_test();
-    trap::init();
-    trap::enable_timer_interrupt();
-    timer::set_next_trigger();
+    println!("init logging");
+    // polyhal::init_interrupt(); done in polyhal::CPU::rust_main()
+
+    polyhal::common::init(&PageAllocImpl);
+    get_mem_areas().for_each(|(start, size)| {
+        println!("init memory region {:#x} - {:#x}", start, start + size);
+        mm::add_frames_range(*start, start + size);
+    });
+
     fs::list_apps();
+    task::init_kernel_page();
     task::add_initproc();
+    debug!("init process");
     task::run_tasks();
-    panic!("Unreachable in rust_main!");
+    panic!("Unreachable in main function of kernel!");
 }
 
-define_entry!(rust_main);
+define_entry!(main);
+
+// #[no_mangle]
+// /// the rust entry-point of os
+// pub fn rust_main() -> ! {
+//     clear_bss();
+//     println!("[kernel] Hello, world!");
+//     logging::init();
+//     mm::init();
+//     mm::remap_test();
+//     trap::init();
+//     trap::enable_timer_interrupt();
+//     timer::set_next_trigger();
+//     fs::list_apps();
+//     task::add_initproc();
+//     task::run_tasks();
+//     panic!("Unreachable in rust_main!");
+// }
+
+// define_entry!(rust_main);
+
+pub struct PageAllocImpl;
+
+impl PageAlloc for PageAllocImpl {
+    #[inline]
+    fn alloc(&self) -> PhysAddr {
+        mm::frame_alloc_persist().expect("can't find memory page")
+    }
+
+    #[inline]
+    fn dealloc(&self, paddr: PhysAddr) {
+        mm::frame_dealloc(paddr)
+    }
+}

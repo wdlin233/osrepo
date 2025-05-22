@@ -71,7 +71,14 @@ impl TaskControlBlock {
         ustack_base: usize,
         alloc_user_res: bool,
     ) -> Self {
+        trace!("kernel:pid[{}] new task", process.getpid());
         let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
+        info!(
+            "kernel:pid[{}] new task, tid[{}], ustack_base[0x{:x}]",
+            process.getpid(),
+            res.tid,
+            ustack_base
+        );
         let kstack = KernelStack::new();
         Self {
             process: Arc::downgrade(&process),

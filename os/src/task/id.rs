@@ -73,6 +73,7 @@ pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
 
+#[allow(unused)]
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
@@ -123,18 +124,27 @@ impl TaskUserRes {
         alloc_user_res: bool,
     ) -> Self {
         let tid = process.inner_exclusive_access().alloc_tid();
+        debug!(
+            "kernel:pid[{}] new task user res, tid[{}], ustack_base[0x{:x}]",
+            process.getpid(),
+            tid,
+            ustack_base
+        );
         let task_user_res = Self {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
         };
         if alloc_user_res {
+            // 此处
             task_user_res.alloc_user_res();
         }
+        info!("ok");
         task_user_res
     }
     /// Allocate user resource for a task
     pub fn alloc_user_res(&self) {
+        trace!("kernel:pid[{}] alloc user res", self.tid);
         let process = self.process.upgrade().unwrap();
         let mut process_inner = process.inner_exclusive_access();
         // alloc user stack
@@ -145,14 +155,18 @@ impl TaskUserRes {
             ustack_top.into(),
             MapPermission::R | MapPermission::W | MapPermission::U,
         );
+        // 问题在这段 trap_cx 的分配之中
         // alloc trap_cx
         let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid);
+        info!("trap_cx_bottom: {:#x}", trap_cx_bottom);
         let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+        info!("trap_cx_top: {:#x}", trap_cx_top);
         process_inner.memory_set.insert_framed_area(
             trap_cx_bottom.into(),
             trap_cx_top.into(),
             MapPermission::R | MapPermission::W,
         );
+        info!("finish alloc user res");
     }
     /// Deallocate user resource for a task
     fn dealloc_user_res(&self) {

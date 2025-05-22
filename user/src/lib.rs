@@ -15,7 +15,6 @@ extern crate bitflags;
 
 use alloc::vec::Vec;
 use buddy_system_allocator::LockedHeap;
-pub use console::{flush, STDIN, STDOUT};
 pub use syscall::*;
 
 const USER_HEAP_SIZE: usize = 16384;
@@ -30,24 +29,9 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
     panic!("Heap allocation error, layout = {:?}", layout);
 }
 
-fn clear_bss() {
-    extern "C" {
-        fn start_bss();
-        fn end_bss();
-    }
-    unsafe {
-        core::slice::from_raw_parts_mut(
-            start_bss as usize as *mut u8,
-            end_bss as usize - start_bss as usize,
-        )
-        .fill(0);
-    }
-}
-
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub extern "C" fn _start(argc: usize, argv: usize) -> ! {
-    clear_bss();
     unsafe {
         HEAP.lock()
             .init(HEAP_SPACE.as_ptr() as usize, USER_HEAP_SIZE);
@@ -163,9 +147,6 @@ pub fn open(path: &str, flags: OpenFlags) -> isize {
 }
 
 pub fn close(fd: usize) -> isize {
-    if fd == STDOUT {
-        console::flush();
-    }
     sys_close(fd)
 }
 
@@ -198,7 +179,6 @@ pub fn mail_write(pid: usize, buf: &[u8]) -> isize {
 }
 
 pub fn exit(exit_code: i32) -> ! {
-    console::flush();
     sys_exit(exit_code);
 }
 

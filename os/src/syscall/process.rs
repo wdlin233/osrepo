@@ -8,6 +8,7 @@ use crate::{
     config::PAGE_SIZE,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
+use polyhal_trap::trapframe::TrapFrameArgs;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -56,7 +57,7 @@ pub fn sys_fork() -> isize {
     let trap_cx = task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
-    trap_cx.x[10] = 0;
+    trap_cx[TrapFrameArgs::RET] = 0;
     new_pid as isize
 }
 /// exec syscall

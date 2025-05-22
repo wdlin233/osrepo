@@ -2,8 +2,6 @@
 
 use core::cmp::Ordering;
 
-use crate::config::CLOCK_FREQ;
-use crate::sbi::set_timer;
 use crate::sync::UPSafeCell;
 use crate::task::{current_task, wakeup_task, TaskControlBlock};
 use alloc::collections::BinaryHeap;
@@ -17,6 +15,7 @@ const MSEC_PER_SEC: usize = 1000;
 /// The number of microseconds per second
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;
+const CLOCK_FREQ: usize = 12500000;
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
@@ -31,11 +30,6 @@ pub fn get_time_ms() -> usize {
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
     time::read() * MICRO_PER_SEC / CLOCK_FREQ
-}
-
-/// Set the next timer interrupt
-pub fn set_next_trigger() {
-    set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
 /// condvar for timer

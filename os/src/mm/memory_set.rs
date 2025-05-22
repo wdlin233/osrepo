@@ -8,19 +8,6 @@ use alloc::vec::Vec;
 use polyhal::pagetable::{MappingFlags, MappingSize, PageTable, PageTableWrapper};
 use polyhal::{PhysAddr, VirtAddr};
 
-extern "C" {
-    fn stext();
-    fn etext();
-    fn srodata();
-    fn erodata();
-    fn sdata();
-    fn edata();
-    fn sbss_with_stack();
-    fn ebss();
-    fn ekernel();
-    fn strampoline();
-}
-
 /// address space
 pub struct MemorySet {
     /// page table
@@ -211,6 +198,7 @@ impl MapArea {
         for vaddr in self.vaddr_range {
             // self.map_one(page_table, vpn);
             let p_tracker = frame_alloc().expect("can't allocate frame");
+            debug!("map: {:?}, vaddr: {}", p_tracker, vaddr);
             page_table.map_page(
                 vaddr,
                 p_tracker.paddr,

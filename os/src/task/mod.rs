@@ -25,6 +25,7 @@ use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
+use polyhal::instruction::shutdown;
 use polyhal::kcontext::KContext;
 use process::ProcessControlBlock;
 use signal::MAX_SIG;
@@ -69,8 +70,6 @@ pub fn block_current_and_run_next() {
     schedule(task_cx_ptr);
 }
 
-use crate::board::QEMUExit;
-
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
     trace!(
@@ -104,13 +103,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 "[kernel] Idle process exit with exit_code {} ...",
                 exit_code
             );
-            if exit_code != 0 {
-                //crate::sbi::shutdown(255); //255 == -1 for err hint
-                crate::board::QEMU_EXIT_HANDLE.exit_failure();
-            } else {
-                //crate::sbi::shutdown(0); //0 for success hint
-                crate::board::QEMU_EXIT_HANDLE.exit_success();
-            }
+            shutdown();
         }
         remove_from_pid2process(pid);
         let mut process_inner = process.inner_exclusive_access();
@@ -176,6 +169,7 @@ lazy_static! {
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
         let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
+        debug!("kernel: initproc .. read_all");
         ProcessControlBlock::new(v.as_slice())
     };
 }
@@ -183,6 +177,7 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     let _initproc = INITPROC.clone();
+    //add_task(initproc.inner_exclusive_access().get_task(0));
 }
 
 /// Check if the current task has any signal to handle

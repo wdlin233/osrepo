@@ -1,33 +1,41 @@
+
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
-BASE_ADDRESS = 0x0;
+BASE_ADDRESS = 0x10000;
 
 SECTIONS
 {
     . = BASE_ADDRESS;
-    .text : {
+    . = ALIGN(4K);
+    .text ALIGN(4K): {
         *(.text.entry)
         *(.text .text.*)
     }
     . = ALIGN(4K);
-    .rodata : {
+    .rodata ALIGN(4K): {
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
     }
     . = ALIGN(4K);
-    .data : {
+    .data ALIGN(4K): {
         *(.data .data.*)
         *(.sdata .sdata.*)
     }
-    .bss : {
-        start_bss = .;
+    . = ALIGN(4K);
+    .got ALIGN(4K): {
+        *(.got .got.*)
+    }
+    . = ALIGN(4K);
+    .bss ALIGN(4K): {
         *(.bss .bss.*)
         *(.sbss .sbss.*)
-        end_bss = .;
     }
     /DISCARD/ : {
         *(.eh_frame)
+        *(.eh_frame_hdr)
         *(.debug*)
+        *(.rela*)
+        *(.dynamic*)
     }
 }
