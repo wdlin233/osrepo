@@ -19,8 +19,9 @@ use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_trap_cx, current_trap_cx_user_va,
     current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,
+    current_process,
 };
-use crate::timer::{check_timer, set_next_trigger};
+use crate::timer::{check_timer, set_next_trigger,get_time};
 use core::arch::{asm, global_asm};
 use riscv::register::{
     mtvec::TrapMode,
@@ -64,6 +65,8 @@ pub fn trap_handler() -> ! {
     let scause = scause::read();
     let stval = stval::read();
     // trace!("into {:?}", scause.cause());
+    let in_kernel_time = get_time();
+    current_process().inner_exclusive_access().set_utime(in_kernel_time);
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway
@@ -110,6 +113,8 @@ pub fn trap_handler() -> ! {
         trace!("[kernel] trap_handler: .. check signals {}", msg);
         exit_current_and_run_next(errno);
     }
+    let out_kernel_time = get_time();
+    current_process().inner_exclusive_access().set_stime(in_kernel_time,out_kernel_time);
     trap_return();
 }
 

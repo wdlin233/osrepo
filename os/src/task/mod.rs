@@ -42,6 +42,7 @@ pub use processor::{
 };
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
+pub use process::{Tms,TmsInner};
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -55,7 +56,7 @@ pub fn suspend_current_and_run_next() {
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
     // ---- release current TCB
-
+    
     // push back to ready queue.
     add_task(task);
     // jump to scheduling cycle
@@ -92,7 +93,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // here we do not remove the thread since we are still using the kstack
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
-
     // Move the task to stop-wait status, to avoid kernel stack from being freed
     if tid == 0 {
         add_stopping_task(task);

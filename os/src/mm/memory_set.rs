@@ -228,7 +228,7 @@ impl MemorySet {
             }
         }
         // map user stack with U flags
-        debug!("to map user stack,max end vpn : {}",max_end_vpn.0);
+        //debug!("to map user stack,max end vpn : {}",max_end_vpn.0);
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_stack_base: usize = max_end_va.into();
         user_stack_base += PAGE_SIZE;
@@ -300,7 +300,7 @@ impl MemorySet {
             .iter_mut()
             .find(|area| area.vpn_range.get_start() == start.floor())
         {
-            debug!("to append page table");
+            //debug!("to append page table");
             area.append_to(&mut self.page_table, new_end.ceil());
             true
         } else {
@@ -325,7 +325,7 @@ impl MapArea {
     ) -> Self {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
-        debug!("in maparea start floor = {}",start_va.floor().0);
+        //debug!("in maparea start floor = {}",start_va.floor().0);
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),

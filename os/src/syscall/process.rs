@@ -4,7 +4,7 @@ use crate::{
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
         suspend_current_and_run_next, SignalFlags, mmap, munmap,block_current_and_run_next,
-
+        TmsInner,
     }, 
     config::PAGE_SIZE,
 };
@@ -195,6 +195,17 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     copy_to_virt(&time_val, ts);
     0
 }
+
+/// get times
+pub fn sys_tms(tms: *mut TmsInner)->isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let process_tms = inner.tms.inner;
+    drop(inner);
+    copy_to_virt(&process_tms,tms);
+    0
+}
+
 
 /// YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {

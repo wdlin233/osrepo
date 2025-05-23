@@ -11,6 +11,7 @@ use crate::mm::{MemorySet, KERNEL_SPACE};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::trap::{trap_handler, TrapContext};
 use crate::loaders::ElfLoader;
+use crate::timer::get_time;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -55,9 +56,83 @@ pub struct ProcessControlBlockInner {
     pub priority: usize,
     /// stride
     pub stride: Stride,
+    /// process tms
+    pub tms: Tms,
 }
 
+///record process times
+#[derive(Debug,Copy,Clone)]
+pub struct Tms {
+    /// when a process run in user
+    pub begin_urun_time: usize,
+    /// syscall in one time
+    pub one_stime: usize,
+    /// inner
+    pub inner: TmsInner,
+}
+
+/// tms interface
+#[derive(Debug,Copy,Clone)]
+pub struct TmsInner {
+    /// this process user time
+    pub tms_utime: usize,
+    /// this process syscall time
+    pub tms_stime: usize,
+    /// this process child user time 
+    pub tms_cutime: usize,
+    /// this process child user time
+    pub tms_cstime: usize,
+}
+
+impl Tms {
+    /// new a Tms
+    pub fn new()->Self {
+        Tms {
+            begin_urun_time:0,
+            one_stime:0,
+            inner: TmsInner {
+                tms_utime:0,
+                tms_stime:0,
+                tms_cutime:0,
+                tms_cstime:0,
+            },
+        }
+    }
+    /// when a process was scheduled,record the time
+    pub fn set_begin(&mut self){
+        self.begin_urun_time = get_time();
+    }
+    /// cutime 
+    pub fn set_cutime(&mut self,cutime: usize){
+        self.inner.tms_cutime += cutime;
+    }
+    /// cstime
+    pub fn set_cstime(&mut self,cstime: usize){
+        self.inner.tms_cstime +=cstime;
+    }
+    
+}
+
+
 impl ProcessControlBlockInner {
+    /// set utime
+    pub fn set_utime(&mut self,in_kernel_time: usize){
+        self.tms.inner.tms_utime = in_kernel_time - self.tms.begin_urun_time;
+        if let Some(parent) = self.parent.as_mut() {
+            parent.upgrade().unwrap().inner_exclusive_access().tms.set_cutime(self.tms.inner.tms_utime);
+            parent.upgrade().unwrap().inner_exclusive_access().tms.set_cstime(self.tms.one_stime);
+        }
+        self.tms.one_stime = 0;
+    }
+    
+    /// stime is this out_kernel_time - this in_kernel_time
+    pub fn set_stime(&mut self,in_kernel_time: usize,out_kernel_time: usize){
+        self.tms.inner.tms_stime += out_kernel_time - in_kernel_time;
+        self.tms.begin_urun_time = out_kernel_time;
+        //debug!("in pcb,tms_stime is :{}",tms.inner.tms_stime);
+        self.tms.one_stime += out_kernel_time - in_kernel_time;
+    }
+
     #[allow(unused)]
     /// get the address of app's page table
     pub fn get_user_token(&self) -> usize {
@@ -126,6 +201,7 @@ impl ProcessControlBlock {
                     condvar_list: Vec::new(),
                     priority: 16,
                     stride: Stride::default(),
+                    tms: Tms::new(),
                 })
             },
         });
@@ -241,6 +317,7 @@ impl ProcessControlBlock {
                     condvar_list: Vec::new(),
                     priority: 16,
                     stride: Stride::default(),
+                    tms: Tms::new(),
                 })
             },
         });

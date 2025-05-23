@@ -42,6 +42,8 @@ pub const SYSCALL_SIGRETURN: usize = 139;
 */
 /// set priority syscall
 pub const SYSCALL_SET_PRIORITY: usize = 140;
+/// times
+pub const SYSCALL_TIMES: usize = 153;
 /// gettimeofday syscall
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
 /// getpid syscall
@@ -121,10 +123,12 @@ use thread::*;
 use tid::*;
 
 use crate::fs::Stat;
+use crate::task::TmsInner;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
     match syscall_id {
+        SYSCALL_TIMES=>sys_tms(args[0] as *mut TmsInner),
         SYSCALL_BRK=>sys_brk(args[0] as i32),
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID=>sys_getppid(),
