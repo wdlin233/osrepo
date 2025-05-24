@@ -106,8 +106,10 @@ pub fn translated_ref<T>(_token: PageTable, ptr: *const T) -> &'static T {
 }
 
 /// translate a pointer `ptr` in other address space to a mutable u8 slice in kernel address space. NOTICE: the content pointed to by the pointer `ptr` cannot cross physical pages, otherwise translated_byte_buffer should be used.
-pub fn translated_refmut<T>(_token: PageTable, ptr: *mut T) -> &'static mut T {
-    unsafe { ptr.as_mut().unwrap() }
+pub fn translated_refmut<T>(token: PageTable, ptr: *mut T) -> &'static mut T {
+    let paddr = token.translate(VirtAddr::from(ptr as usize)).unwrap().0;
+    let phys_ptr = paddr.get_mut_ptr() as *mut T;
+    unsafe { &mut *phys_ptr }
 }
 
 /// An abstraction over a buffer passed from user space to kernel space

@@ -51,8 +51,19 @@ impl File for Stdout {
         panic!("Cannot read from stdout!");
     }
     fn write(&self, user_buf: UserBuffer) -> usize {
+        // for buffer in user_buf.buffers.iter() {
+        //     //print!("{}", core::str::from_utf8(*buffer).unwrap());
+        //     // for &b in *buffer {
+        //     print!("{}", *buffer as char);
+        //     // }
+        // }
         for buffer in user_buf.buffers.iter() {
-            print!("{}", core::str::from_utf8(*buffer).unwrap());
+            match core::str::from_utf8(*buffer) {
+                Ok(s) => print!("{}", s),
+                Err(_) => {
+                    continue;
+                }
+            }
         }
         user_buf.len()
     }

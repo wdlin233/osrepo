@@ -1,7 +1,7 @@
 //! Allocator for pid, task user resource, kernel stack using a simple recycle strategy.
 
 use super::ProcessControlBlock;
-use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
+use crate::config::{KERNEL_STACK_SIZE, MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
 use crate::mm::{MapPermission};
 use crate::sync::UPSafeCell;
 use alloc::{
@@ -153,6 +153,42 @@ impl TaskUserRes {
             ustack_top.into(),
             MapPermission::R | MapPermission::W | MapPermission::U,
         );
+        // 问题在这段 trap_cx 的分配之中
+        // alloc trap_cx
+        // let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid);
+        // info!("trap_cx_bottom: {:#x}", trap_cx_bottom);
+        // let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+        // info!("trap_cx_top: {:#x}", trap_cx_top);
+        // process_inner.memory_set.insert_framed_area(
+        //     trap_cx_bottom.into(),
+        //     trap_cx_top.into(),
+        //     MapPermission::R | MapPermission::W,
+        // );
+        // info!("finish alloc user res");
+        let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid);
+        let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+
+        // 检查地址范围
+        debug!(
+            "trap_cx_bottom: {:#x}, trap_cx_top: {:#x}",
+            trap_cx_bottom, trap_cx_top
+        );
+        assert!(
+            trap_cx_bottom >= 0x80000000 && trap_cx_top <= MEMORY_END,
+            "trap_cx address out of user space"
+        );
+
+        // 建议加上 U 权限（如有需要）
+        process_inner.memory_set.insert_framed_area(
+            trap_cx_bottom.into(),
+            trap_cx_top.into(),
+            MapPermission::R | MapPermission::W | MapPermission::U,
+        );
+
+        // 可选：初始化 trap_cx 区域为 0
+        let (paddr, _) = process_inner.memory_set.translate(trap_cx_bottom.into()).unwrap();
+        let ptr = paddr.get_mut_ptr() as *mut u8;
+        unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE); }
     }
     /// Deallocate user resource for a task
     fn dealloc_user_res(&self) {

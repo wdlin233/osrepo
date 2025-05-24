@@ -86,6 +86,11 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
                 current_trap_cx().sepc,
             );
             */
+            // debug!(
+            //     "[kernel] {:?} in application, bad instruction = {:#x}, kernel killed it.",
+            //     trap_type,
+            //     ctx.sepc,
+            // );
             current_add_signal(SignalFlags::SIGSEGV);
         }
         IllegalInstruction(_) => {

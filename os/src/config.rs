@@ -15,6 +15,6 @@ pub const PAGE_SIZE: usize = 0x1000;
 /// page size bits: 12
 pub const PAGE_SIZE_BITS: usize = 0xc;
 /// the virtual addr of trapoline
-pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
+pub const TRAMPOLINE: usize = MEMORY_END - PAGE_SIZE + 1;
 /// the virtual addr of trap context
 pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;

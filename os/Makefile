@@ -109,7 +109,7 @@ QEMU_EXEC += -nographic \
 				-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
 				-smp 1 \
 				-D qemu.log
-
+				
 run-inner:
 	$(QEMU_EXEC)
 

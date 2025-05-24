@@ -209,6 +209,7 @@ pub fn check_signals_error_of_current() -> Option<(i32, &'static str)> {
     //     "[K] check_signals_error_of_current {:?}",
     //     inner.signals
     // );
+    //debug!("check_signals_error_of_current: {:?}", inner.signals);
     inner.signals.check_error()
 }
 
@@ -234,9 +235,12 @@ fn check_pending_signals() {
         let process = current_process();
         let inner = process.inner_exclusive_access();
         let signal = SignalFlags::from_bits(1 << sig).unwrap();
+        
+        
         if inner.signals.contains(signal) && (!inner.signal_mask.contains(signal)) {
             let mut masked = true;
             let handling_sig = inner.handling_sig;
+            info!("signal: {:?}, handling_sig: {:#x}", signal, handling_sig);
             if handling_sig == -1 {
                 masked = false;
             } else {
@@ -307,6 +311,7 @@ fn call_user_signal_handler(sig: usize, signal: SignalFlags) {
         // handle flag
         process_inner.handling_sig = sig as isize;
         process_inner.signals ^= signal;
+        debug!("signal: {:?}, handling_sig: {:#x}", signal, process_inner.handling_sig);
 
         // backup trapframe
         let trap_ctx = task_inner.get_trap_cx();
