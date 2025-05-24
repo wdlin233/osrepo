@@ -3,5 +3,14 @@ target = "riscv64gc-unknown-none-elf"
 
 [target.riscv64gc-unknown-none-elf]
 rustflags = [
-    "-Clink-arg=-Tsrc/linker.ld", "-Cforce-frame-pointers=yes"
+    "-Clink-arg=-Tsrc/linker_rv.ld", 
+    "-Cforce-frame-pointers=yes",
+    '--cfg=board="qemu"',
+]
+
+[target.loongarch64-unknown-none]
+rustflags = [
+    "-Clink-arg=-Tsrc/linker_la.ld",
+    "-Cforce-frame-pointers=yes",
+    '--cfg=board="qemu"',
 ]

@@ -18,12 +18,14 @@
 //! We then call [`task::run_tasks()`] and for the first time go to
 //! userspace.
 
-#![deny(missing_docs)]
+#![allow(missing_docs)]
 #![deny(warnings)]
 #![no_std]
 #![no_main]
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
+#![allow(unused_imports)]
+#![allow(dead_code)]
 
 #[macro_use]
 extern crate log;
@@ -54,7 +56,9 @@ pub mod loaders;
 
 use core::arch::global_asm;
 
+#[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
+
 fn clear_bss() {
     extern "C" {
         fn sbss();
@@ -66,6 +70,7 @@ fn clear_bss() {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 /// the rust entry-point of os
 pub fn rust_main() -> ! {
@@ -81,4 +86,10 @@ pub fn rust_main() -> ! {
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
+}
+
+#[cfg(target_arch = "loongarch64")]
+#[no_mangle]
+fn main() {
+    println!("[kernel] Hello, world!");
 }

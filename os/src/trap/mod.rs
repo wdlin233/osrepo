@@ -29,7 +29,10 @@ use riscv::register::{
     sie, stval, stvec,
 };
 
+#[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("trap.S"));
+#[cfg(target_arch = "loongarch64")]
+global_asm!(include_str!("trap.s"));
 
 /// Initialize trap handling
 pub fn init() {
@@ -119,6 +122,7 @@ pub fn trap_handler() -> ! {
 }
 
 /// return to user space
+#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
     //disable_supervisor_interrupt();
@@ -142,6 +146,22 @@ pub fn trap_return() -> ! {
         );
     }
 }
+
+#[cfg(target_arch = "loongarch64")]
+#[no_mangle]
+pub fn trap_return() -> ! {
+    // For LoongArch, the trap handling logic would be similar but adapted to the architecture specifics.
+    // This is a placeholder for the actual implementation.
+    panic!("Trap handler not implemented for LoongArch64");
+}
+// pub fn trap_return() {
+//     set_user_trap_entry();
+//     let trap_addr = current_trap_addr();
+//     unsafe {
+//         asm!("move $a0,{}",in(reg)trap_addr);
+//         __restore();
+//     }
+// }
 
 /// handle trap from kernel
 #[no_mangle]
