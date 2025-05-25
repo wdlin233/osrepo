@@ -13,8 +13,8 @@ APP_DIR := src/bin
 TARGET_DIR := target/$(TARGET)/$(MODE)
 BUILD_DIR := build
 OBJDUMP := rust-objdump --arch-name=riscv64
-#OBJCOPY := rust-objcopy --binary-architecture=riscv64
-OBJCOPY := loongarch64-unknown-linux-gnu-objcopy
+OBJCOPY := rust-objcopy --binary-architecture=riscv64
+#OBJCOPY := loongarch64-unknown-linux-gnu-objcopy
 PY := python3
 
 ifeq ($(MODE), release)

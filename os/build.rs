@@ -13,6 +13,7 @@ fn main() {
         let mut script = File::create(&link_script).unwrap();
         script.write_all(include_bytes!("src/linker_la.ld")).unwrap();
         println!("cargo:rustc-link-arg=-T{}", &link_script.display());
+        println!("cargo:rustc-link-arg=-nostdlib");
         println!("cargo:rerun-if-change=src/linker_la.ld");
     } else {
         panic!("Unsupported architecture: {}", target_arch);

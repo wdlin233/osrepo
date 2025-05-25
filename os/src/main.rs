@@ -52,7 +52,8 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod loaders;
-mod boot;
+pub mod boot;
+pub mod uart;
 
 use core::arch::global_asm;
 
@@ -109,4 +110,10 @@ pub fn rust_main() -> ! {
 fn main(_cpu: usize) {
     clear_bss();
     println!("[kernel] Hello, world!");
+    logging::init();
+    log::error!("Logging init success");
+    mm::init();
+    trap::init();
+    //task::run_tasks();
+    panic!("Unimplemented for loongarch64");
 }

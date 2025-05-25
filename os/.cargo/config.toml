@@ -14,3 +14,4 @@ rustflags = [
     "-Cforce-frame-pointers=yes",
     '--cfg=board="qemu"',
 ]
+linker = "loongarch64-unknown-linux-gnu-gcc"

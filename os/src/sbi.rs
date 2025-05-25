@@ -56,6 +56,16 @@ pub fn shutdown() -> ! {
 }
 
 #[cfg(target_arch = "loongarch64")]
+#[no_mangle]
+pub(crate) extern "C" fn shutdown() -> ! {
+    loop {
+        unsafe {
+            asm!("idle 0");
+        }
+    }
+}
+
+#[cfg(target_arch = "loongarch64")]
 pub fn console_putchar(_c: usize) {
     // You can implement UART output for loongarch64 here if needed
     unimplemented!()
@@ -65,11 +75,6 @@ pub fn console_putchar(_c: usize) {
 pub fn console_getchar() -> usize {
     // You can implement UART input for loongarch64 here if needed
     0
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn shutdown() -> ! {
-    panic!("shutdown not implemented for loongarch64");
 }
 
 #[cfg(target_arch = "loongarch64")]

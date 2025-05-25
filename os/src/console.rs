@@ -1,9 +1,10 @@
 //! SBI console driver, for text output
 use crate::sbi::console_putchar;
-use core::fmt::{self, Write};
+use core::fmt::{self, Write, Arguments};
 
 struct Stdout;
 
+#[cfg(target_arch = "riscv64")]
 impl Write for Stdout {
     /// write str to console
     fn write_str(&mut self, s: &str) -> fmt::Result {
@@ -13,23 +14,91 @@ impl Write for Stdout {
         Ok(())
     }
 }
+
+#[cfg(target_arch = "loongarch64")]
+impl Write for Console {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.write_str(s);
+        Ok(())
+    }
+}
+
+use crate::{config::UART, uart::Uart};
+use spin::{Lazy, Mutex};
+
+pub struct Console {
+    inner: Uart,
+}
+
+impl Console {
+    pub const fn new(address: usize) -> Self {
+        let uart = Uart::new(address);
+        Self { inner: uart }
+    }
+    pub fn write_str(&mut self, str: &str) {
+        for ch in str.bytes() {
+            self.inner.put(ch)
+        }
+    }
+    pub fn get_char(&mut self) -> Option<u8> {
+        self.inner.get()
+    }
+}
+
+pub static CONSOLE: Mutex<Console> = Mutex::new(Console::new(UART));
+
+pub fn get_char() -> u8 {
+    // todo!根据rcore内部实现推测这里应该是一个阻塞调用
+    loop {
+        let ch = CONSOLE.lock().get_char();
+        if let Some(ch) = ch {
+            return ch;
+        }
+    }
+}
+
 /// print to the host console using the format string and arguments.
+#[cfg(target_arch = "riscv64")]
 pub fn print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }
 
+#[cfg(target_arch = "loongarch64")]
+pub fn _print(arg: Arguments) {
+    CONSOLE.lock().write_fmt(arg).unwrap()
+}
+
 /// Print! macro to the host console using the format string and arguments.
 #[macro_export]
+#[cfg(target_arch = "riscv64")]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::console::print(format_args!($fmt $(, $($arg)+)?))
     }
 }
 
+#[macro_export]
+#[cfg(target_arch = "loongarch64")]
+macro_rules! print {
+    ($($arg:tt)*) => {
+        $crate::console::_print(format_args!("{}", format_args!($($arg)*)))
+    };
+}
+
 /// Println! macro to the host console using the format string and arguments.
 #[macro_export]
+#[cfg(target_arch = "riscv64")]
 macro_rules! println {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
     }
+}
+
+#[macro_export]
+#[cfg(target_arch = "loongarch64")]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($fmt:expr) => ($crate::print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => ($crate::print!(
+        concat!($fmt, "\n"), $($arg)*));
 }
