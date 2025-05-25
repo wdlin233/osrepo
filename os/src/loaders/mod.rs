@@ -30,7 +30,7 @@ pub struct ElfLoader<'a> {
 
 impl<'a> ElfLoader<'a> {
     /// 基于 ELF 文件构建新的 loader
-    pub fn new(elf_data: &'a [u8]) -> Result<Self, &str> {
+    pub fn new(elf_data: &'a [u8]) -> Result<Self, &'a str> {
         let elf = ElfFile::new(elf_data).unwrap();
         // 检查类型
         if elf.header.pt1.class() != header::Class::SixtyFour {

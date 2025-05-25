@@ -64,8 +64,14 @@ APPS := ../user/src/bin/*
 #                        -netdev user,id=net0,hostfwd=tcp::5555-:5555,hostfwd=udp::5555-:5555  \
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
-
+ifeq ($(ARCH),riscv64)
 build: env fs-img kernel $(KERNEL_BIN)
+else ifeq ($(ARCH),loongarch64)
+build:env fs-img kernel
+else
+	$(error "ARCH" must be one of "riscv64" or "loongarch64")
+endif
+
 
 env:
 	(rustup target list | grep "$(TARGET) (installed)") || rustup target add $(TARGET)
@@ -76,22 +82,30 @@ env:
 $(KERNEL_BIN) kernel:
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
-#@make -C ../user build
-#@make -C ../testcases build
+ifeq ($(ARCH),riscv64)
 fs-img: $(APPS)	
 	@make -C ../user build
-	@make -C ../testcases build
 	@rm -f $(FS_IMG)
 	@cp ../user/build/elf/* ../testcases/build/
 	@cp -r $(TESTCASES) ../testcases/build/
 	@mkdir -p target
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
+else ifeq ($(ARCH),loongarch64)
+fs-img: $(APPS)	
+	@make build -C ../user_la
+	@rm -f $(FS_IMG)
+	@mkdir -p target
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user_la/src/bin -t ../os/target/	
+else
+	$(error "ARCH" must be one of "riscv64" or "loongarch64")
+endif
 
 $(APPS):
 
+# cargo build $(MODE_ARG) --target $(TARGET)
 kernel:
 	@echo Platform: $(BOARD)
-	cargo build $(MODE_ARG) --target $(TARGET)
+	cargo build --$(MODE) -p os --target ${TARGET}
 
 clean:
 	@cargo clean

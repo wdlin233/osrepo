@@ -22,7 +22,6 @@
 #![deny(warnings)]
 #![no_std]
 #![no_main]
-#![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
 #![allow(unused_imports)]
 #![allow(dead_code)]
@@ -53,12 +52,14 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod loaders;
+mod boot;
 
 use core::arch::global_asm;
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
 
+#[cfg(target_arch = "riscv64")]
 fn clear_bss() {
     extern "C" {
         fn sbss();
@@ -67,6 +68,21 @@ fn clear_bss() {
     unsafe {
         core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
             .fill(0);
+    }
+}
+
+#[cfg(target_arch = "loongarch64")]
+pub fn clear_bss() {
+    extern "C" {
+        fn sbss();
+        fn ebss(); 
+    }
+    unsafe {
+        core::slice::from_raw_parts_mut(
+            sbss as usize as *mut u128,
+            (ebss as usize - sbss as usize) / size_of::<u128>(),
+        )
+        .fill(0);
     }
 }
 
@@ -90,6 +106,7 @@ pub fn rust_main() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-fn main() {
+fn main(_cpu: usize) {
+    clear_bss();
     println!("[kernel] Hello, world!");
 }

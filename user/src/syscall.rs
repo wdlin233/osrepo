@@ -2,6 +2,8 @@ use crate::SignalAction;
 
 use super::{Stat, TimeVal};
 
+use core::arch::global_asm;
+
 pub const SYSCALL_OPENAT: usize = 56;
 pub const SYSCALL_CLOSE: usize = 57;
 pub const SYSCALL_READ: usize = 63;
@@ -45,6 +47,7 @@ pub const SYSCALL_CONDVAR_CREATE: usize = 471;
 pub const SYSCALL_CONDVAR_SIGNAL: usize = 472;
 pub const SYSCALL_CONDVAR_WAIT: usize = 473;
 
+#[cfg(target_arch = "riscv64")]
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
     unsafe {
@@ -59,6 +62,17 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     ret
 }
 
+#[cfg(target_arch = "loongarch64")]
+global_asm!(include_str!("syscall.asm"));
+#[cfg(target_arch = "loongarch64")]
+pub fn syscall(id: usize, args: [usize; 3]) -> isize {
+    extern "C" {
+        fn do_syscall(id: usize, args0: usize, args1: usize, args2: usize) -> isize;
+    }
+    unsafe { do_syscall(id, args[0], args[1], args[2]) }
+}
+
+#[cfg(target_arch = "riscv64")]
 pub fn syscall6(id: usize, args: [usize; 6]) -> isize {
     let mut ret: isize;
     unsafe {
@@ -73,6 +87,22 @@ pub fn syscall6(id: usize, args: [usize; 6]) -> isize {
         );
     }
     ret
+}
+
+#[cfg(target_arch = "loongarch64")]
+pub fn syscall6(id: usize, args: [usize; 6]) -> isize {
+    extern "C" {
+        fn do_syscall(
+            id: usize,
+            arg0: usize,
+            arg1: usize,
+            arg2: usize,
+            arg3: usize,
+            arg4: usize,
+            arg5: usize,
+        ) -> isize;
+    }
+    unsafe { do_syscall(id, args[0], args[1], args[2], args[3], args[4], args[5]) }
 }
 
 pub fn sys_openat(dirfd: usize, path: &str, flags: u32, mode: u32) -> isize {
