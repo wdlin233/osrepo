@@ -55,9 +55,13 @@ pub mod loaders;
 #[cfg(target_arch = "loongarch64")]
 pub mod boot;
 mod uart;
+mod info;
 
 use core::arch::global_asm;
-use crate::console::CONSOLE;
+use crate::{
+    console::CONSOLE,
+    info::kernel_layout,
+};
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
@@ -111,9 +115,11 @@ fn main(cpu: usize) {
     println!("cpu: {}", cpu);
     logging::init();
     log::error!("Logging init success");
+    // rtc_init(); println!("CURRENT TIME {:?}", rtc_time_read());
+    kernel_layout();
     //mm::init();
     //trap::init();
     //task::run_tasks();
     loop {}
-    //panic!("Unimplemented for loongarch64");
+    //panic!("Unreachable section for loongarch64");
 }
