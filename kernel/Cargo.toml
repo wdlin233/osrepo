@@ -13,10 +13,10 @@ xmas-elf = "0.8.0"
 log = "0.4.14"
 buddy_system_allocator = "0.11.0"
 easy-fs = { path = "../easy-fs" }
-pci = { path = "../pci" }
-isomorphic_drivers = { path = "../isomorphic_drivers" }
-vbe = { path = "../vbe" }
-stack_trace = { path = "../stack_trace" }
+pci = { path = "pci" }
+isomorphic_drivers = { path = "isomorphic_drivers" }
+vbe = { path = "vbe" }
+stack_trace = { path = "stack_trace" }
 loongarch64 = { version = "*", package = "loongArch64" }
 [dependencies.lazy_static]
 version = "1.4.0"
