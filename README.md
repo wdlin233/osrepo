@@ -1,56 +1,22 @@
-# rCore-Camp-Code-2025S
-
-### Code
-
-- [Soure Code of labs for 2025S](https://github.com/LearningOS/rCore-Camp-Code-2025S)
-
-### Documents
-
-- Concise Manual: [rCore-Camp-Guide-2025S](https://LearningOS.github.io/rCore-Camp-Guide-2025S/)
-- Detail Book [rCore-Tutorial-Book-v3](https://rcore-os.github.io/rCore-Tutorial-Book-v3/)
-
-### OS API docs
-
-- [ch1](https://learningos.github.io/rCore-Camp-Code-2025S/ch1/os/index.html) [ch2](https://learningos.github.io/rCore-Camp-Code-2025S/ch2/os/index.html) [ch3](https://learningos.github.io/rCore-Camp-Code-2025S/ch3/os/index.html) [ch4](https://learningos.github.io/rCore-Camp-Code-2025S/ch4/os/index.html)
-- [ch5](https://learningos.github.io/rCore-Camp-Code-2025S/ch5/os/index.html) [ch6](https://learningos.github.io/rCore-Camp-Code-2025S/ch6/os/index.html) [ch7](https://learningos.github.io/rCore-Camp-Code-2025S/ch7/os/index.html) [ch8](https://learningos.github.io/rCore-Camp-Code-2025S/ch8/os/index.html)
-
-### Related Resources
-
-- [Learning Resource](https://github.com/LearningOS/rust-based-os-comp2022/blob/main/relatedinfo.md)
-
-### Build & Run
-
-Replace `<YourName>` with your github ID, and replace `<Number>` with the chapter ID.
-
-Notice: `<Number>` is chosen from `[1,2,3,4,5,6,7,8]`
-
-```bash
-# 
-$ git clone git@github.com:LearningOS/2025s-rcore-<YourName>
-$ cd 2025s-rcore-<YourName>
-$ git clone git@github.com:LearningOS/rCore-Tutorial-Test-2025S user
-$ git checkout ch<Number>
-$ cd os
-$ make run
-```
-
-### Grading
-
-Replace `<YourName>` with your github ID, and replace `<Number>` with the chapter ID.
-
-Notice: `<Number>` is chosen from `[3,4,5,6,8]`
-
-```bash
-# Replace <YourName> with your github ID 
-$ git clone git@github.com:LearningOS/2025s-rcore-<YourName>
-$ cd 2025s-rcore-<YourName>
-$ rm -rf ci-user
-$ git clone git@github.com:LearningOS/rCore-Tutorial-Checker-2025S ci-user
-$ git clone git@github.com:LearningOS/rCore-Tutorial-Test-2025S ci-user/user
-$ git checkout ch<Number>
-$ cd ci-user
-$ make test CHAPTER=<Number>
-```
-
-
 # SubsToKernel
+
+https://img.shields.io/badge/subs_to-kernel-blue
+
+# Problems
+
+现在的问题是当在用户链接脚本中选择删除.comment段就会出现程序找不到.text段的报错，而在内核的链接脚本中删除.comment段不能根本解决问题，其他段仍然会与其重叠，将其全部删除后.shstrtab始终会重叠，rust-lld不能被删除。也就是始终存在链接脚本地址段重叠的问题。
+
+前四句是不必要的：
+
+0x9000000000200940:  02ffc063   addi_d   	r3, r3, -16
+0x9000000000200944:  29c02061   st_d     	r1, r3, 8
+0x9000000000200948:  29c00076   st_d     	r22, r3, 0
+0x900000000020094c:  02c04076   addi_d   	r22, r3, 16
+0x9000000000200950:  0380040c   ori      	r12, r0, 1
+0x9000000000200954:  0320018c   lu52i_d  	r12, r12, -2048
+0x9000000000200958:  0406002c   csrwr    	r12, 384 # DMW(0)
+0x900000000020095c:  0380440c   ori      	r12, r0, 17
+0x9000000000200960:  0324018c   lu52i_d  	r12, r12, -1792
+0x9000000000200964:  0406042c   csrwr    	r12, 385 # DMW(1)
+0x9000000000200968:  0382c00c   ori      	r12, r0, 176
+0x900000000020096c:  0400002c   csrwr    	r12, 0 # CRMD

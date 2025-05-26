@@ -41,8 +41,6 @@ else ifeq ($(ARCH), loongarch64)
 	KERNEL_ELF := target/$(TARGET)/$(MODE)/os
   	QEMU_EXEC += qemu-system-$(ARCH) \
 				-m 1G \
-				-device ahci,id=ahci0 \
-				-device ide-hd,drive=x0,bus=ahci0.0 \
 				-kernel $(KERNEL_ELF)
 				
 else
@@ -118,7 +116,8 @@ disasm-vim: kernel
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)
 	@vim $(DISASM_TMP)
 	@rm $(DISASM_TMP)
-
+	
+# -d in_asm,cpu,exec,int,unimp,guest_errors
 run: build run-inner
 QEMU_EXEC += -nographic \
 			 -drive file=$(FS_IMG),if=none,format=raw,id=x0 \

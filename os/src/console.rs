@@ -15,14 +15,6 @@ impl Write for Stdout {
     }
 }
 
-#[cfg(target_arch = "loongarch64")]
-impl Write for Console {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.write_str(s);
-        Ok(())
-    }
-}
-
 use crate::{config::UART, uart::Uart};
 use spin::{Lazy, Mutex};
 
@@ -42,6 +34,14 @@ impl Console {
     }
     pub fn get_char(&mut self) -> Option<u8> {
         self.inner.get()
+    }
+}
+
+#[cfg(target_arch = "loongarch64")]
+impl Write for Console {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.write_str(s);
+        Ok(())
     }
 }
 

@@ -22,3 +22,5 @@ pushall.sh
 ci-user/
 os/vendor/
 testcases/build
+**/target/*
+**/*.map

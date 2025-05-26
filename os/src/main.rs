@@ -52,10 +52,12 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod loaders;
+#[cfg(target_arch = "loongarch64")]
 pub mod boot;
-pub mod uart;
+mod uart;
 
 use core::arch::global_asm;
+use crate::console::CONSOLE;
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
@@ -76,15 +78,11 @@ fn clear_bss() {
 pub fn clear_bss() {
     extern "C" {
         fn sbss();
-        fn ebss(); 
+        fn ebss();
     }
-    unsafe {
-        core::slice::from_raw_parts_mut(
-            sbss as usize as *mut u128,
-            (ebss as usize - sbss as usize) / size_of::<u128>(),
-        )
-        .fill(0);
-    }
+    (sbss as usize..ebss as usize).for_each(|addr| unsafe {
+        (addr as *mut u8).write_volatile(0);
+    });
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -107,13 +105,15 @@ pub fn rust_main() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-fn main(_cpu: usize) {
+fn main(cpu: usize) {
     clear_bss();
     println!("[kernel] Hello, world!");
+    println!("cpu: {}", cpu);
     logging::init();
     log::error!("Logging init success");
-    mm::init();
-    trap::init();
+    //mm::init();
+    //trap::init();
     //task::run_tasks();
-    panic!("Unimplemented for loongarch64");
+    loop {}
+    //panic!("Unimplemented for loongarch64");
 }
