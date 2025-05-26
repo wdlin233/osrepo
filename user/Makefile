@@ -1,4 +1,4 @@
-ARCH := loongarch64
+ARCH := riscv64
 
 ifeq ($(ARCH), riscv64)
   	TARGET := riscv64gc-unknown-none-elf
