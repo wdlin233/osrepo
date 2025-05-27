@@ -6,7 +6,7 @@ extern crate user_lib;
 
 /*
 
-    "execve\0",c'd
+    "execve\0",
     "getpid\0",
     "gettimeofday\0",
     "write\0",
@@ -27,7 +27,7 @@ extern crate user_lib;
 // Basic 测例中除去 mnt 以外的
 const TESTS: &[&str] = &[
 
-
+    "busybox\0",
     "mmap\0", // panic
     "munmap\0", // panic
  
