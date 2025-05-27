@@ -6,8 +6,10 @@ use crate::sync::UPSafeCell;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
+use crate::virt_to_phys;
 
 /// tracker for physical page frame allocation and deallocation
+#[derive(Clone)]
 pub struct FrameTracker {
     /// physical page number
     pub ppn: PhysPageNum,
@@ -97,10 +99,23 @@ pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();
     }
+    #[cfg(target_arch = "riscv64")]
     FRAME_ALLOCATOR.exclusive_access().init(
         PhysAddr::from(ekernel as usize).ceil(),
         PhysAddr::from(MEMORY_END).floor(),
     );
+    #[cfg(target_arch = "loongarch64")]
+    {
+        println!(
+            "frame range: {:#x}-{:#x}",
+            PhysAddr::from(virt_to_phys!(ekernel as usize)).ceil().0,
+            PhysAddr::from(virt_to_phys!(MEMORY_END)).floor().0
+        );
+        FRAME_ALLOCATOR.exclusive_access().init(
+            PhysAddr::from(virt_to_phys!(ekernel as usize)).ceil(),
+            PhysAddr::from(virt_to_phys!(MEMORY_END)).floor(),
+        );
+    }
 }
 
 /// Allocate a physical page frame in FrameTracker style

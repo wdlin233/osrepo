@@ -52,16 +52,17 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod loaders;
+mod uart;
+
 #[cfg(target_arch = "loongarch64")]
 pub mod boot;
-mod uart;
+#[cfg(target_arch = "loongarch64")]
 mod info;
+#[cfg(target_arch = "loongarch64")]
+use crate::info::kernel_layout;
 
 use core::arch::global_asm;
-use crate::{
-    console::CONSOLE,
-    info::kernel_layout,
-};
+use crate::console::CONSOLE;
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
@@ -117,7 +118,8 @@ fn main(cpu: usize) {
     log::error!("Logging init success");
     // rtc_init(); println!("CURRENT TIME {:?}", rtc_time_read());
     kernel_layout();
-    //mm::init();
+
+    mm::init();
     //trap::init();
     //task::run_tasks();
     loop {}

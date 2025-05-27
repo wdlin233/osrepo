@@ -10,6 +10,7 @@ mod frame_allocator;
 mod heap_allocator;
 mod memory_set;
 mod page_table;
+pub mod system_allocator;
 
 use address::VPNRange;
 pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
@@ -24,7 +25,27 @@ pub use page_table::{
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
+    #[cfg(target_arch = "riscv64")]
     heap_allocator::init_heap();
+    #[cfg(target_arch = "loongarch64")]
+    mm::system_allocator::init_heap();
+
     frame_allocator::init_frame_allocator();
+    
+    #[cfg(target_arch = "riscv64")]
     KERNEL_SPACE.exclusive_access().activate();
+}
+
+#[macro_export]
+macro_rules! virt_to_phys {
+    ($va:expr) => {
+        $va - crate::loongarch::VIRT_BIAS
+    };
+}
+/// Translate a physical address to a virtual address.
+#[macro_export]
+macro_rules! phys_to_virt {
+    ($pa:expr) => {
+        $pa + crate::loongarch::VIRT_BIAS
+    };
 }

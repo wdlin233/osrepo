@@ -8,6 +8,7 @@
 
 前四句是不必要的：
 
+```asm
 0x9000000000200940:  02ffc063   addi_d   	r3, r3, -16
 0x9000000000200944:  29c02061   st_d     	r1, r3, 8
 0x9000000000200948:  29c00076   st_d     	r22, r3, 0
@@ -20,3 +21,13 @@
 0x9000000000200964:  0406042c   csrwr    	r12, 385 # DMW(1)
 0x9000000000200968:  0382c00c   ori      	r12, r0, 176
 0x900000000020096c:  0400002c   csrwr    	r12, 0 # CRMD
+```
+
+要做的工作：
+
+从此开始
+```rust
+// mm/mod.rs
+#[cfg(target_arch = "riscv64")]
+KERNEL_SPACE.exclusive_access().activate();
+```
