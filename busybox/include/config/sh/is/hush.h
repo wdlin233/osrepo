@@ -1,1 +1,0 @@
-#define CONFIG_SH_IS_HUSH 1
