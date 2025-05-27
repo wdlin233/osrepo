@@ -20,13 +20,14 @@ extern crate user_lib;
     "sleep\0",
     "brk\0", 
     "times\0",
+    "uname\0", 
     
 */
 
 // Basic 测例中除去 mnt 以外的
 const TESTS: &[&str] = &[
 
-    "uname\0", // 160
+
     "mmap\0", // panic
     "munmap\0", // panic
  
