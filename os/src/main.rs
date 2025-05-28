@@ -64,6 +64,7 @@ use crate::info::kernel_layout;
 
 use core::arch::global_asm;
 use crate::console::CONSOLE;
+use config::FLAG;
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
@@ -96,6 +97,7 @@ pub fn clear_bss() {
 /// the rust entry-point of os
 pub fn rust_main() -> ! {
     clear_bss();
+    //println!("{}", FLAG);
     println!("[kernel] Hello, world!");
     logging::init();
     mm::init();
@@ -113,6 +115,7 @@ pub fn rust_main() -> ! {
 #[no_mangle]
 fn main(cpu: usize) {
     clear_bss();
+    println!("{}", FLAG);
     println!("[kernel] Hello, world!");
     println!("cpu: {}", cpu);
     logging::init();
