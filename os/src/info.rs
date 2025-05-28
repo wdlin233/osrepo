@@ -140,13 +140,13 @@ pub fn kernel_layout() {
     println!("kernel end      [{:#x}]", ekernel as usize);
 }
 extern "C" {
-    fn stext();
-    fn etext();
-    fn srodata();
-    fn erodata();
-    fn sdata();
-    fn edata();
-    fn sbss();
-    fn ebss();
-    fn ekernel();
+    pub fn stext();
+    pub fn etext();
+    pub fn srodata();
+    pub fn erodata();
+    pub fn sdata();
+    pub fn edata();
+    pub fn sbss();
+    pub fn ebss();
+    pub fn ekernel();
 }

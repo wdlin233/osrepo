@@ -32,4 +32,10 @@
 KERNEL_SPACE.exclusive_access().activate();
 ```
 
-- []修改 `init_heap()`.
+- [x]修改 `init_heap()`.
+
+就现在的需要做的工作来说，是 page_table, memory_set 和 address 适配 rv 和 la 的兼容
+
+# Optimization
+
+- 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
