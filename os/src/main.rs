@@ -53,6 +53,7 @@ pub mod timer;
 pub mod trap;
 pub mod loaders;
 mod uart;
+mod loongarch;
 
 #[cfg(target_arch = "loongarch64")]
 pub mod boot;

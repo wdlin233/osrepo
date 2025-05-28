@@ -4,7 +4,6 @@ use core::{
 };
 
 use crate::{
-    info,
     mm::system_allocator::common::{align_up, Locked},
 };
 /// bump分配器实现

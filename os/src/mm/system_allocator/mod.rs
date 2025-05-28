@@ -9,12 +9,11 @@ mod linked_list;
 use alloc::vec;
 
 use bit_field::BitField;
-use buddy_system_allocator::LockedHeap;
 use log::debug;
+use buddy_system_allocator::LockedHeap;
 
 use crate::{
     config::KERNEL_HEAP_SIZE,
-    info,
     mm::system_allocator::{
         buddy::Buddy, bump_allocator::BumpAllocator, common::Locked,
         linked_list::LinkedListAllocator,
@@ -32,9 +31,10 @@ static ALLOCATOR: Locked<Buddy> = Locked::new(Buddy::new());
 
 pub fn init_heap() {
     unsafe {
+        let heap_start = core::ptr::addr_of_mut!(HEAP_SPACE) as usize;
         ALLOCATOR
             .lock()
-            .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
+            .init(heap_start, KERNEL_HEAP_SIZE);
     }
 }
 

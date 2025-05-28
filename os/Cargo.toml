@@ -10,12 +10,16 @@ edition = "2021"
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = "0.4"
-buddy_system_allocator = "0.6"
 bitflags = "1.2.1"
 xmas-elf = "0.7.0"
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
 easy-fs = { path = "../easy-fs" }
 spin = "0.10"
+bit_field = "0.10.1"
+
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+buddy_system_allocator = "0.6"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongarch64 = { version = "*", package = "loongArch64" }
+buddy_system_allocator = "0.11.0"

@@ -1,6 +1,6 @@
 # SubsToKernel
 
-![badge](https://img.shields.io/badge/subs_to-kernel-blue)
+![badge](https://img.shields.io/badge/SubsTo-Kernel-blue)
 
 # Problems
 
@@ -25,9 +25,11 @@
 
 要做的工作：
 
-从此开始
+- [x]从此开始
 ```rust
 // mm/mod.rs
 #[cfg(target_arch = "riscv64")]
 KERNEL_SPACE.exclusive_access().activate();
 ```
+
+- []修改 `init_heap()`.
