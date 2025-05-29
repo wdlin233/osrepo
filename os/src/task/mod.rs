@@ -42,6 +42,8 @@ pub use processor::{
 };
 #[cfg(target_arch = "riscv64")]
 pub use processor::{current_kstack_top, current_trap_cx_user_va};
+#[cfg(target_arch = "loongarch64")]
+pub use processor::current_trap_addr;
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
 pub use process::{Tms,TmsInner};
@@ -108,6 +110,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if tid == 0 {
         let pid = process.getpid();
+        #[cfg(target_arch = "riscv64")]
         if pid == IDLE_PID {
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
@@ -120,6 +123,15 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 //crate::sbi::shutdown(0); //0 for success hint
                 crate::board::QEMU_EXIT_HANDLE.exit_success();
             }
+        }
+        #[cfg(target_arch = "loongarch64")]
+        if pid == IDLE_PID {
+            println!(
+                "[kernel] Idle process exit with exit_code {} ...",
+                exit_code
+            );
+            // 0号进程退出
+            panic!("Idle process exit with exit_code {}", exit_code);
         }
         remove_from_pid2process(pid);
         let mut process_inner = process.inner_exclusive_access();

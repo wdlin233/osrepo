@@ -6,14 +6,12 @@ use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
 use crate::sync::UPSafeCell;
 use crate::task::{ wakeup_task, TaskControlBlock};
+use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
 use riscv::register::time;
-/// The number of ticks per second
-const TICKS_PER_SEC: usize = 100;
-/// The number of milliseconds per second
-const MSEC_PER_SEC: usize = 1000;
+
 /// The number of microseconds per second
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;

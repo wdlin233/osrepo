@@ -124,6 +124,14 @@ pub fn current_kstack_top() -> usize {
     current_task().unwrap().kstack.get_top()
 }
 
+#[cfg(target_arch = "loongarch64")]
+pub fn current_trap_addr() -> usize {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .get_trap_addr()
+}
+
 /// Return to idle control flow for new scheduling
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.exclusive_access();

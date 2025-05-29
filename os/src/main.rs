@@ -25,6 +25,7 @@
 #![feature(alloc_error_handler)]
 #![allow(unused_imports)]
 #![allow(dead_code)]
+#![feature(naked_functions)]
 
 #[macro_use]
 extern crate log;
@@ -124,7 +125,7 @@ fn main(cpu: usize) {
     kernel_layout();
 
     mm::init();
-    //trap::init();
+    trap::init();
     //task::run_tasks();
     loop {}
     //panic!("Unreachable section for loongarch64");

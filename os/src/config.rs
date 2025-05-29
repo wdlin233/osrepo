@@ -12,6 +12,10 @@ pub const FLAG: &str = "
 
 "; // ANSI Shadow
 
+/// The number of ticks per second
+pub const TICKS_PER_SEC: usize = 100;
+/// The number of milliseconds per second
+pub const MSEC_PER_SEC: usize = 1000;
 /// user app's stack size
 pub const USER_STACK_SIZE: usize = 4096 * 2;
 /// kernel stack size
