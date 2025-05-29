@@ -31,18 +31,23 @@ use process::ProcessControlBlock;
 use switch::__switch;
 
 pub use context::TaskContext;
-pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle, IDLE_PID};
+pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,add_block_task,
     wakeup_task_by_pid,
 };
 pub use processor::{
-    current_kstack_top, current_process, current_task, current_trap_cx, current_trap_cx_user_va,
+    current_process, current_task, current_trap_cx, 
     current_user_token, run_tasks, schedule, take_current_task, mmap, munmap,
 };
+#[cfg(target_arch = "riscv64")]
+pub use processor::{current_kstack_top, current_trap_cx_user_va};
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
 pub use process::{Tms,TmsInner};
+
+#[cfg(target_arch = "riscv64")]
+pub use id::kstack_alloc;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {

@@ -106,6 +106,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
+#[cfg(target_arch = "riscv64")]
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
     current_task()
@@ -117,6 +118,7 @@ pub fn current_trap_cx_user_va() -> usize {
         .trap_cx_user_va()
 }
 
+#[cfg(target_arch = "riscv64")]
 /// get the top addr of kernel stack
 pub fn current_kstack_top() -> usize {
     current_task().unwrap().kstack.get_top()
@@ -132,6 +134,7 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     }
 }
 
+#[cfg(target_arch = "riscv64")] 
 /// Create a MapArea for the current task
 pub fn mmap(addr: usize, len: usize, port: usize) -> isize {
     current_task().unwrap().process.upgrade().unwrap()
@@ -140,10 +143,22 @@ pub fn mmap(addr: usize, len: usize, port: usize) -> isize {
         .mmap(addr, len, port)
 }
 
+#[cfg(target_arch = "loongarch64")]
+pub fn mmap(_addr: usize, _len: usize, _port: usize) -> isize {
+    unimplemented!()
+}
+
+#[cfg(target_arch = "riscv64")] 
 /// Unmap the MapArea for the current task
 pub fn munmap(addr: usize, len: usize) -> isize {
     current_task().unwrap().process.upgrade().unwrap()
         .inner_exclusive_access()
         .memory_set
         .munmap(addr, len)
+}
+
+
+#[cfg(target_arch = "loongarch64")]
+pub fn munmap(_addr: usize, _len: usize) -> isize {
+    unimplemented!()
 }

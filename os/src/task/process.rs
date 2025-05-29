@@ -17,6 +17,11 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use core::arch::asm;
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::register::pgdl;
+#[cfg(target_arch = "loongarch64")]
+use crate::config::PAGE_SIZE_BITS;
 
 /// Process Control Block
 pub struct ProcessControlBlock {
@@ -215,15 +220,25 @@ impl ProcessControlBlock {
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
         let ustack_top = task_inner.res.as_ref().unwrap().ustack_top();
+        #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
-        *trap_cx = TrapContext::app_init_context(
-            entry_point,
-            ustack_top,
-            KERNEL_SPACE.exclusive_access().token(),
-            kstack_top,
-            trap_handler as usize,
-        );
+
+        #[cfg(target_arch = "riscv64")]
+        {
+            *trap_cx = TrapContext::app_init_context(
+                entry_point,
+                ustack_top,
+                KERNEL_SPACE.exclusive_access().token(),
+                kstack_top,
+                trap_handler as usize,
+            );
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // waring:在内核栈上压入trap上下文，与rcore实现不同
+            *trap_cx = TrapContext::app_init_context(entry_point, ustack_top);
+        }
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
         process_inner.tasks.push(Some(Arc::clone(&task)));
@@ -253,7 +268,11 @@ impl ProcessControlBlock {
         let mut task_inner = task.inner_exclusive_access();
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
-        task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+        #[cfg(target_arch = "riscv64")]
+        {
+            task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+        }
+
         // push arguments on user stack
         //trace!("kernel: exec .. push arguments on user stack");
         let user_sp = task_inner.res.as_mut().unwrap().ustack_top();
@@ -267,16 +286,41 @@ impl ProcessControlBlock {
 
         // initialize trap_cx
         //trace!("kernel: exec .. initialize trap_cx");
+        #[cfg(target_arch = "riscv64")]
         let mut trap_cx = TrapContext::app_init_context(
-            entry_point,
-            user_sp,
-            KERNEL_SPACE.exclusive_access().token(),
-            task.kstack.get_top(),
-            trap_handler as usize,
-        );
-        trap_cx.x[10] = args_len; // a0, the same with previous stack frame
-        trap_cx.x[11] = user_sp + 8; // a1
+                entry_point,
+                user_sp,
+                KERNEL_SPACE.exclusive_access().token(),
+                task.kstack.get_top(),
+                trap_handler as usize,
+            );
+        #[cfg(target_arch = "riscv64")]
+        {
+            trap_cx.x[10] = args_len; // a0, the same with previous stack frame
+            trap_cx.x[11] = user_sp + 8; // a1
+        }
+        #[cfg(target_arch = "loongarch64")]
+        let mut trap_cx = TrapContext::app_init_context(entry_point, user_sp);
+        #[cfg(target_arch = "loongarch64")]
+        {
+            trap_cx.x[4] = args_len;
+            trap_cx.x[5] = user_sp + 8; // maybe
+        }
         *task_inner.get_trap_cx() = trap_cx;
+        
+        #[cfg(target_arch = "loongarch64")]
+        {
+            //由于切换了地址空间，因此之前的ASID对应的地址空间将不会再有用，
+            // 因此这里需要将TLB中的内容无效掉
+            let pid = self.getpid();
+            unsafe {
+                asm!("invtlb 0x4,{},$r0",in(reg) pid);
+            }
+            // 设置新的pgdl
+            let pgd = new_token << PAGE_SIZE_BITS;
+            // Pgdl::read().set_val(pgd).write(); //设置新的页基址
+            pgdl::set_base(pgd); //设置新的页基址    
+        }
     }
 
     /// Only support processes with a single thread.
@@ -342,9 +386,23 @@ impl ProcessControlBlock {
         child_inner.tasks.push(Some(Arc::clone(&task)));
         drop(child_inner);
         // modify kstack_top in trap_cx of this thread
+        #[cfg(target_arch = "riscv64")]
         let task_inner = task.inner_exclusive_access();
-        let trap_cx = task_inner.get_trap_cx();
-        trap_cx.kernel_sp = task.kstack.get_top();
+        #[cfg(target_arch = "loongarch64")]
+        let mut task_inner = task.inner_exclusive_access();
+        #[cfg(target_arch = "riscv64")]
+        {
+            let trap_cx = task_inner.get_trap_cx();
+            trap_cx.kernel_sp = task.kstack.get_top();
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // 修改trap_cx的内容，使其保持与父进程相同
+            // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
+            task_inner
+                .kstack
+                .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+        }
         drop(task_inner);
         insert_into_pid2process(child.getpid(), Arc::clone(&child));
         // add this thread to scheduler

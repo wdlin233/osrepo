@@ -4,9 +4,10 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use core::fmt::{self};
 #[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
-use core::fmt::{self};
+#[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
 
 #[cfg(target_arch = "riscv64")]

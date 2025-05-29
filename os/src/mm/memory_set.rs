@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
 use riscv::register::satp;
-
+#[cfg(target_arch = "loongarch64")]
 use crate::info::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
 
 #[cfg(target_arch = "riscv64")]
