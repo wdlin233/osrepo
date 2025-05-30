@@ -61,7 +61,11 @@ pub mod boot;
 #[cfg(target_arch = "loongarch64")]
 mod info;
 #[cfg(target_arch = "loongarch64")]
-use crate::info::kernel_layout;
+use crate::{
+    info::{kernel_layout, print_machine_info},
+    trap::enable_timer_interrupt,
+    task::add_initproc,
+};
 
 use core::arch::global_asm;
 use crate::console::CONSOLE;
@@ -115,6 +119,8 @@ pub fn rust_main() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 fn main(cpu: usize) {
+    use task::add_initproc;
+
     clear_bss();
     println!("{}", FLAG);
     println!("[kernel] Hello, world!");
@@ -126,6 +132,12 @@ fn main(cpu: usize) {
 
     mm::init();
     trap::init();
+    print_machine_info();
+    println!("machine info success");
+    // sata 硬盘 ahci_init()
+
+    enable_timer_interrupt();
+    add_initproc();   
     //task::run_tasks();
     loop {}
     //panic!("Unreachable section for loongarch64");

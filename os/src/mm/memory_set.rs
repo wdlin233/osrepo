@@ -76,7 +76,6 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
-    #[cfg(target_arch = "riscv64")]
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
@@ -84,10 +83,17 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
+        #[cfg(target_arch = "riscv64")]
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+        #[cfg(target_arch = "loongarch64")]
+        self.push(
+            MapArea::new(start_va, end_va, permission), 
+            None
+        );
+    
     }
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -103,11 +109,6 @@ impl MemorySet {
                 asm!("sfence.vma");
             }
         }
-    }
-    #[cfg(target_arch = "loongarch64")]
-    /// Assume that no conflicts.
-    pub fn insert_area(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
-        self.push(MapArea::new(start_va, end_va, permission), None);
     }
 
     /// Add a new MapArea into this MemorySet.
@@ -563,23 +564,39 @@ pub fn remap_test() {
     println!("remap_test passed!");
 }
 
-#[cfg(target_arch = "riscv64")]
-// RV version, LA is needed
+// RV passed, compatible with LA
 impl MapPermission {
     /// Convert from port to MapPermission
     pub fn from_port(port: usize) -> Self {
+        #[cfg(target_arch = "riscv64")]
         let bits = (port as u8) << 1;
+        #[cfg(target_arch = "loongarch64")]
+        let bits = port << 1;
         MapPermission::from_bits(bits).unwrap() 
     }
 
+    
     /// Add user permission for MapPermission
+    #[cfg(target_arch = "riscv64")]
     pub fn with_user(self) -> Self {
         self | MapPermission::U
     }
+
+    #[cfg(target_arch = "loongarch64")]
+    pub fn with_user(self) -> Self {
+        // 保留现有权限，添加用户模式所需的 PLV3 组合位
+        self | MapPermission::PLVL | MapPermission::PLVH
+    }
+    
+    #[allow(unused)]
+    #[cfg(target_arch = "loongarch64")]
+    pub fn without_user(self) -> Self {
+        // 清除用户模式位，设置为内核模式 (PLV0)
+        self & !(MapPermission::PLVL | MapPermission::PLVH)
+    }
 }
 
-#[cfg(target_arch = "riscv64")]
-// RV version, LA is needed
+// RV passed, compatible with LA
 impl MemorySet {
     /// Check if all pages in the range are mapped.
     fn all_valid(&self, start: VirtAddr, end: VirtAddr) -> bool {

@@ -12,9 +12,15 @@ use crate::trap::TrapContext;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
 use lazy_static::*;
+use core::arch::asm;
+#[cfg(target_arch = "loongarch64")]
+use crate::config::PAGE_SIZE_BITS;
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::register::{asid, pgdl};
 
 /// Processor management structure
 pub struct Processor {
+    /// The task currently executing on the current processor
     current: Option<Arc<TaskControlBlock>>,
 
     ///The basic control flow of each core, helping to select and switch process
@@ -57,10 +63,28 @@ pub fn run_tasks() {
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
+            #[cfg(target_arch = "riscv64")]
             task.process.upgrade().unwrap().inner_exclusive_access().tms.set_begin();
+            #[cfg(target_arch = "loongarch64")]
+            let pid = task.process.upgrade().unwrap().getpid();
+            #[cfg(target_arch = "loongarch64")]
+            { //应用进程号
+                let pgd = task.get_user_token() << PAGE_SIZE_BITS;
+                pgdl::set_base(pgd); //设置根页表基地址
+                asid::set_asid(pid); //设置ASID
+            }
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            #[cfg(target_arch = "loongarch64")]
+            // 在进行线程切换的时候
+            // 地址空间是相同的，并且pgd也是相同的
+            // 每个线程都有自己的内核栈和用户栈，用户栈互相隔离
+            // 在进入用户态后应该每个线程的地址转换是相同的
+            unsafe {
+                asm!("invtlb 0x4,{},$r0",in(reg) pid);
+            }
+            
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -142,7 +166,7 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     }
 }
 
-#[cfg(target_arch = "riscv64")] 
+ 
 /// Create a MapArea for the current task
 pub fn mmap(addr: usize, len: usize, port: usize) -> isize {
     current_task().unwrap().process.upgrade().unwrap()
@@ -151,22 +175,10 @@ pub fn mmap(addr: usize, len: usize, port: usize) -> isize {
         .mmap(addr, len, port)
 }
 
-#[cfg(target_arch = "loongarch64")]
-pub fn mmap(_addr: usize, _len: usize, _port: usize) -> isize {
-    unimplemented!()
-}
-
-#[cfg(target_arch = "riscv64")] 
 /// Unmap the MapArea for the current task
 pub fn munmap(addr: usize, len: usize) -> isize {
     current_task().unwrap().process.upgrade().unwrap()
         .inner_exclusive_access()
         .memory_set
         .munmap(addr, len)
-}
-
-
-#[cfg(target_arch = "loongarch64")]
-pub fn munmap(_addr: usize, _len: usize) -> isize {
-    unimplemented!()
 }

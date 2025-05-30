@@ -78,6 +78,7 @@ pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
 
+#[cfg(target_arch = "riscv64")]
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
@@ -286,12 +287,12 @@ impl TaskUserRes {
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
         self.heap_bottom = ustack_top;
         self.program_brk = ustack_top;
-        process_inner.memory_set.insert_area(
+        process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
             MapPermission::default() | MapPermission::W,
         );
-        process_inner.memory_set.insert_area(
+        process_inner.memory_set.insert_framed_area(
             self.heap_bottom.into(),
             self.program_brk.into(),
             MapPermission::default() | MapPermission::W,

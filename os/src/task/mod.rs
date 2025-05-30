@@ -51,6 +51,8 @@ pub use process::{Tms,TmsInner};
 #[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;
 
+use core::arch::asm;
+
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -77,6 +79,7 @@ pub fn block_current_and_run_next() {
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     task_inner.task_status = TaskStatus::Blocked;
     drop(task_inner);
+    #[cfg(target_arch = "riscv64")]
     add_block_task(task);
     schedule(task_cx_ptr);
 }
@@ -101,11 +104,14 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
     // Move the task to stop-wait status, to avoid kernel stack from being freed
+    #[cfg(target_arch = "riscv64")]
     if tid == 0 {
         add_stopping_task(task);
     } else {
         drop(task);
     }
+    #[cfg(target_arch = "loongarch64")]
+    drop(task);
     // however, if this is the main thread of current process
     // the process should terminate at once
     if tid == 0 {
@@ -142,17 +148,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // wakeup his parent
         let parent = process_inner.parent.clone().unwrap();
         wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
-        // {
-        //     // move all child processes under init process
-        //     //debug!("to get init...");
-        //     let mut initproc_inner = INITPROC.inner_exclusive_access();
-        //     //debug!("get init ok");
-        //     for child in process_inner.children.iter() {
-        //         child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
-        //         initproc_inner.children.push(child.clone());
-        //     }
-        // }
-        //debug!("move child ok");
+        
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
         // otherwise they will be deallocated twice
@@ -184,9 +180,16 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.memory_set.recycle_data_pages();
         // drop file descriptors
         process_inner.fd_table.clear();
-        // remove all tasks
+        // remove all tasks, release all threads
         process_inner.tasks.clear();
         //debug!("all clear ok");
+
+        #[cfg(target_arch = "loongarch64")]
+        // 使得原来的TLB表项无效掉，否则下一个进程与当前退出的进程号相同会导致
+        // 无法正确进行地址转换
+        unsafe {
+            asm!("invtlb 0x4,{},$r0",in(reg) pid);
+        }
     }
     drop(process);
     // we do not have to save task context
@@ -231,4 +234,5 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     //trace!("kernel: remove_inactive_task .. remove_timer");
     remove_timer(Arc::clone(&task));
     //add_task(INITPROC.clone());
+    //将主线程退出的那些处于等待的子线程也删除掉
 }
