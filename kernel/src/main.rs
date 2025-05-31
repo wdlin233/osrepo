@@ -93,7 +93,7 @@ pub fn main(cpu: usize) {
 
     enable_timer_interrupt();
 
-    // list_apps(); //列出所有程序
+    list_apps(); //列出所有程序
     add_initproc(); //添加初始化程序
     println!("add initproc success");
 

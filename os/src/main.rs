@@ -119,6 +119,7 @@ pub fn rust_main() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 fn main(cpu: usize) {
+    use fs::list_apps;
     use task::add_initproc;
 
     clear_bss();
@@ -137,6 +138,7 @@ fn main(cpu: usize) {
     // sata 硬盘 ahci_init()
 
     enable_timer_interrupt();
+    list_apps();
     add_initproc();   
     //task::run_tasks();
     loop {}

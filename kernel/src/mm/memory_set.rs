@@ -57,12 +57,13 @@ impl MemorySet {
         }
         memory_set
     }
-
+    
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp and entry point.
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
         // map program headers of elf, with U flag
+        debug!("elf: {:x?}", &elf_data[..8]);
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
         let magic = elf_header.pt1.magic;

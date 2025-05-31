@@ -1,7 +1,8 @@
 TARGET := loongarch64-unknown-none
 MODE := release
 #文件模拟块设备
-FS_IMG := ./target/fs.img
+# -t 目录存放生成的文件系统镜像
+FS_IMG := ../user_la/target/$(TARGET)/release/fs.img
 KERNEL_ELF := target/$(TARGET)/$(MODE)/kernel
 KERNEL_BIN := $(KERNEL_ELF).bin
 INFO := DEBUG
@@ -27,8 +28,8 @@ env:
 user_app:
 	@make build -C ../user_la
 	@-rm -f $(FS_IMG)
-	@mkdir -p target/$(TARGET)/release
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../user_la/src/bin/ -t ../kernel/target/
+	mkdir -p target/$(TARGET)/release
+	@cd ../easy-fs-fuse-la && cargo run --release -- -s ../user_la/src/bin/ -t ../user_la/target/$(TARGET)/release/
 
 kernel:
 	@echo Platform: $(BOARD)
