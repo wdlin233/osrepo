@@ -51,6 +51,7 @@ fs-img: $(APPS)
 	@rm -f $(FS_IMG)
 	@cp ../user/build/elf/* ../testcases/build/
 	@cp ../test-riscv/musl/busybox ../testcases/build/
+	@cp ../test-riscv/musl/busybox_cmd.txt ../testcases/build/
 	@cp -r $(TESTCASES) ../testcases/build/
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
 

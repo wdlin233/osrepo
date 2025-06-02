@@ -52,6 +52,7 @@ pub mod timer;
 pub mod trap;
 pub mod loaders;
 pub mod system;
+pub mod users;
 
 use core::arch::global_asm;
 
