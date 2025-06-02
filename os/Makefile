@@ -80,6 +80,7 @@ env:
 $(KERNEL_BIN) kernel:
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
+# -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录
 ifeq ($(ARCH),riscv64)
 fs-img: $(APPS)	
 	@make -C ../user build
@@ -93,7 +94,7 @@ fs-img: $(APPS)
 	@make build -C ../user_la
 	@rm -f $(FS_IMG)
 	@mkdir -p target
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../user_la/src/bin -t ../os/target/	
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user_la/elf/ -t ../os/target/	
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
