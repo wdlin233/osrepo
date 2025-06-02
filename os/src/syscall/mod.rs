@@ -52,6 +52,10 @@ pub const SYSCALL_UNAME: usize = 160;
 pub const SYSCALL_GETPID: usize = 172;
 /// getppid syscall
 pub const SYSCALL_GETPPID: usize = 173;
+/// getuid syscall
+pub const SYSCALL_GETUID: usize = 174;
+/// getgid syscall
+pub const SYSCALL_GETGID: usize = 176;
 /// gettid syscall
 pub const SYSCALL_GETTID: usize = 178;
 /// fork syscall
@@ -133,6 +137,8 @@ use crate::system::UTSname;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
     match syscall_id {
+        SYSCALL_GETGID=>sys_getgid(),
+        SYSCALL_GETUID=>sys_getuid(),
         SYSCALL_UNAME=>sys_uname(args[0] as *mut UTSname),
         SYSCALL_TIMES=>sys_tms(args[0] as *mut TmsInner),
         SYSCALL_BRK=>sys_brk(args[0] as i32),
