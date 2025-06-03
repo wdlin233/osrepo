@@ -5,7 +5,6 @@
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
 use super::{File, Stat, StatMode};
-use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
@@ -40,8 +39,11 @@ impl OSInode {
     /// read all data from the inode
     pub fn read_all(&self) -> Vec<u8> {
         let mut inner = self.inner.exclusive_access();
-        let mut buffer: Vec<u8> = Vec::with_capacity(512);
-        buffer.resize(512, 0);
+        debug!("Reading all data from inode with id: {}", inner.inode.inode_id());
+        // let mut buffer: Vec<u8> = Vec::with_capacity(512);
+        // buffer.resize(512, 0);
+        // can be written more efficiently
+        let mut buffer = [0u8; 512];
         let mut v: Vec<u8> = Vec::new();
         loop {
             let len = inner.inode.read_at(inner.offset, &mut buffer);
@@ -57,7 +59,11 @@ impl OSInode {
 
 lazy_static! {
     pub static ref ROOT_INODE: Arc<Inode> = {
-        let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
+        //#[cfg(target_arch = "riscv64")]
+        let efs = EasyFileSystem::open(crate::drivers::BLOCK_DEVICE.clone());
+        //#[cfg(target_arch = "loongarch64")]
+        //let efs = EasyFileSystem::open(crate::loongarch::BLOCK_DEVICE.clone());
+        debug!("EasyFileSystem opened successfully");
         Arc::new(EasyFileSystem::root_inode(&efs))
     };
 }
@@ -65,6 +71,7 @@ lazy_static! {
 /// List all apps in the root directory
 pub fn list_apps() {
     println!("/**** APPS ****");
+    debug!("Listing apps in root directory:");
     for app in ROOT_INODE.ls() {
         println!("{}", app);
     }
@@ -134,6 +141,7 @@ impl File for OSInode {
     }
     fn read(&self, mut buf: UserBuffer) -> usize {
         let mut inner = self.inner.exclusive_access();
+        debug!("Reading from inode with id: {}", inner.inode.inode_id());
         let mut total_read_size = 0usize;
         for slice in buf.buffers.iter_mut() {
             let read_size = inner.inode.read_at(inner.offset, *slice);
@@ -147,6 +155,7 @@ impl File for OSInode {
     }
     fn write(&self, buf: UserBuffer) -> usize {
         let mut inner = self.inner.exclusive_access();
+        debug!("Writing to inode with id: {}", inner.inode.inode_id());
         let mut total_write_size = 0usize;
         for slice in buf.buffers.iter() {
             let write_size = inner.inode.write_at(inner.offset, *slice);

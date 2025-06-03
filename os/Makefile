@@ -33,15 +33,15 @@ ifeq ($(ARCH), riscv64)
 	QEMU_EXEC += qemu-system-$(ARCH) \
 				-M 128m \
 				-machine virt \
-				-bios $(BOOTLOADER) \
 				-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
-				-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+				-kernel $(KERNEL_ELF)
 else ifeq ($(ARCH), loongarch64)
   	TARGET := loongarch64-unknown-none
 	KERNEL_ELF := target/$(TARGET)/$(MODE)/os
   	QEMU_EXEC += qemu-system-$(ARCH) \
 				-m 1G \
-				-kernel $(KERNEL_ELF)
+				-kernel $(KERNEL_ELF) \
+				-device virtio-blk-pci,drive=x0
 				
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")

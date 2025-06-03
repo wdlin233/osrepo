@@ -1,3 +1,4 @@
+// rcore-hal-component/887b4c
 use core::ptr::NonNull;
 
 use super::BlockDevice;
@@ -50,7 +51,7 @@ impl VirtIOBlock {
             Self(UPSafeCell::new(
                 VirtIOBlk::<VirtioHal, MmioTransport>::new(
                     MmioTransport::new(NonNull::new_unchecked(
-                    VIRTIO0 as *mut VirtIOHeader,
+                    (VIRTIO0 | 0x80200000) as *mut VirtIOHeader,
                 ))
                 .expect("this is not a valid virtio device"),
             )
@@ -61,44 +62,6 @@ impl VirtIOBlock {
 }
 
 pub struct VirtioHal;
-
-// impl Hal for VirtioHal {
-//     /// allocate memory for virtio_blk device's io data queue
-//     fn dma_alloc(pages: usize) -> usize {
-//         let mut ppn_base = PhysPageNum(0);
-//         for i in 0..pages {
-//             let frame = frame_alloc().unwrap();
-//             if i == 0 {
-//                 ppn_base = frame.ppn;
-//             }
-//             assert_eq!(frame.ppn.0, ppn_base.0 + i);
-//             QUEUE_FRAMES.exclusive_access().push(frame);
-//         }
-//         let pa: PhysAddr = ppn_base.into();
-//         pa.0
-//     }
-//     /// free memory for virtio_blk device's io data queue
-//     fn dma_dealloc(pa: usize, pages: usize) -> i32 {
-//         let pa = PhysAddr::from(pa);
-//         let mut ppn_base: PhysPageNum = pa.into();
-//         for _ in 0..pages {
-//             frame_dealloc(ppn_base);
-//             ppn_base.step();
-//         }
-//         0
-//     }
-//     /// translate physical address to virtual address for virtio_blk device
-//     fn phys_to_virt(addr: usize) -> usize {
-//         addr
-//     }
-//     /// translate virtual address to physical address for virtio_blk device
-//     fn virt_to_phys(vaddr: usize) -> usize {
-//         PageTable::from_token(kernel_token())
-//             .translate_va(VirtAddr::from(vaddr))
-//             .unwrap()
-//             .0
-//     }
-// }
 
 unsafe impl Hal for VirtioHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (usize, NonNull<u8>) {
@@ -114,7 +77,7 @@ unsafe impl Hal for VirtioHal {
         }
         let pa: PhysAddr = ppn_base.into();
         unsafe {
-            (pa.0, NonNull::new_unchecked((pa.0 | 0x80000000) as *mut u8))
+            (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
         }
     }
 
@@ -129,11 +92,11 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
-        NonNull::new((paddr | 0x80000000) as *mut u8).unwrap()
+        NonNull::new((paddr | 0x80200000) as *mut u8).unwrap()
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: virtio_drivers::BufferDirection) -> usize {
-        buffer.as_ptr() as *mut u8 as usize - 0x80000000
+        buffer.as_ptr() as *mut u8 as usize - 0x80200000
     }
 
     unsafe fn unshare(_paddr: usize, _buffer: NonNull<[u8]>, _direction: virtio_drivers::BufferDirection) {

@@ -54,6 +54,7 @@ pub mod timer;
 pub mod trap;
 pub mod loaders;
 mod uart;
+#[cfg(target_arch = "loongarch64")]
 mod loongarch;
 
 #[cfg(target_arch = "loongarch64")]

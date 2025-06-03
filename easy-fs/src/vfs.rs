@@ -164,9 +164,11 @@ impl Inode {
     pub fn ls(&self) -> Vec<String> {
         let _fs = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
+            debug!("ls inode: {}", self.inode_id);
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;
             let mut v: Vec<String> = Vec::new();
             for i in 0..file_count {
+                debug!("dirent index: {}", i);
                 let mut dirent = DirEntry::empty();
                 assert_eq!(
                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),

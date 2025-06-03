@@ -27,6 +27,7 @@ pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
     PageTableEntry, UserBuffer, UserBufferIterator,
 };
+#[cfg(target_arch = "loongarch64")]
 use crate::{
     loongarch::VIRT_BIAS,
 };
@@ -40,9 +41,11 @@ pub fn init() {
     heap_allocator::init_heap();
     #[cfg(target_arch = "loongarch64")]
     system_allocator::init_heap();
+    info!("Heap allocator initialized");
 
     frame_allocator::init_frame_allocator();
-    
+    info!("Frame allocator initialized");
+
     #[cfg(target_arch = "riscv64")]
     KERNEL_SPACE.exclusive_access().activate();
 }

@@ -6,6 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use lazy_static::*;
+use log::debug;
 use spin::Mutex;
 /// Cached block inside memory
 pub struct BlockCache {
@@ -23,7 +24,9 @@ impl BlockCache {
     /// Load a new BlockCache from disk.
     pub fn new(block_id: usize, block_device: Arc<dyn BlockDevice>) -> Self {
         let mut cache = [0u8; BLOCK_SZ];
+        debug!("Loading block_id: {} into cache", block_id); // ok
         block_device.read_block(block_id, &mut cache);
+        debug!("ok");
         Self {
             cache,
             block_id,
@@ -118,11 +121,19 @@ impl BlockCacheManager {
                     panic!("Run out of BlockCache!");
                 }
             }
+            debug!(
+                "BlockCacheManager: loading block_id: {} into cache",
+                block_id
+            );
             // load block into mem and push back
             let block_cache = Arc::new(Mutex::new(BlockCache::new(
                 block_id,
                 Arc::clone(&block_device),
             )));
+            debug!(
+                "BlockCacheManager: block_id: {} loaded into cache",
+                block_id
+            );
             self.queue.push_back((block_id, Arc::clone(&block_cache)));
             block_cache
         }
@@ -139,6 +150,7 @@ pub fn get_block_cache(
     block_id: usize,
     block_device: Arc<dyn BlockDevice>,
 ) -> Arc<Mutex<BlockCache>> {
+    debug!("Get block cache for block_id: {}", block_id);
     BLOCK_CACHE_MANAGER
         .lock()
         .get_block_cache(block_id, block_device)

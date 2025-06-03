@@ -19,6 +19,15 @@ Aborting: line 68, file src/mm/memory_set.rs: called `Result::unwrap()` on an `E
 [DEBUG] elf: [7f, 45, 4c, 46, 2, 1, 1, 0]
 ```
 
+- [x] `block_cache.rs` 的 `BlockCach::new()` 中的 -> `block_device.read_block(block_id, &mut cache);` 一句无法执行，报错如下. 经过排查应该是对 `FRAME_ALLOCATOR` 的再次引用. 这对吗？不是，怎么可能是这个啊
+
+```
+[kernel] Panicked at src/sync/up.rs:34 already borrowed: BorrowMutError
+```
+
+- [x] 尝试对 `virtio_blk.rs` 进行修改. 实际上就是实现 `virtio-pci`. `virtio-blk` 参考了 `rcore-hal-component/887b4c`，`virtio-pci` 参考了 `Byte-OS/polyhal/examples/src/pci.rs`.
+- [ ] 使用 `-kernel $(ELF_KERNEL)` 就会遇到 `PageLoadFault` 的问题，rv 和 la 的问题可能是一致的. `readelf` 显示其 `Entry point` 并不存在问题.
+
 # Optimization
 
 - [ ] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.

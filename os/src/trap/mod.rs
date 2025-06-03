@@ -359,7 +359,7 @@ pub fn trap_handler_kernel() {
     match estat.cause() {
         Trap::Interrupt(Interrupt::Timer) => {
             // 清除时钟专断
-            info!("timer interrupt from kernel");
+            trace!("timer interrupt from kernel");
             ticlr::clear_timer_interrupt();
         }
         Trap::Interrupt(Interrupt::HWI0) => {
