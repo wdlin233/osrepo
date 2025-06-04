@@ -7,10 +7,9 @@ use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{MemorySet, KERNEL_SPACE};
+use crate::mm::{MemorySet, KERNEL_SPACE, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::trap::{trap_handler, TrapContext};
-use crate::loaders::ElfLoader;
 use crate::timer::get_time;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
@@ -275,14 +274,59 @@ impl ProcessControlBlock {
 
         // push arguments on user stack
         //trace!("kernel: exec .. push arguments on user stack");
-        let user_sp = task_inner.res.as_mut().unwrap().ustack_top();
+        let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
         //trace!("initial user_sp = {}", user_sp);
-        let elf_loader = ElfLoader::new(elf_data).unwrap();
-        let user_sp = elf_loader.init_stack(
+        //      00000000000100b0 <main>:
+//          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
+//          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
+//          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
+//          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
+//          100b8: aa 87        	mv	a5, a0          ; a5 = argc
+//          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
+//          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
+
+        // Reserve memory space for the stack
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+        }
+        let argv_st = user_sp;
+        // make the user_sp aligned to 8B for k210 platform
+        user_sp -= user_sp % core::mem::size_of::<usize>();
+        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        let argv_base = user_sp;
+
+        let mut argv: Vec<_> = (0..=args.len())
+            .map(|arg| {
+                translated_refmut(
+                    new_token,
+                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
+                )
+            })
+            .collect();
+
+        // Set stack parameters
+        // from low addr to high addr
+        // argv content
+        user_sp = argv_st;
+        for i in 0..args.len() {
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            for c in args[i].as_bytes() {
+                *translated_refmut(new_token, p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(new_token, p as *mut u8) = 0;
+            user_sp += args[i].len() + 1;
+        }        
+        *argv[args.len()] = 0;
+
+        // argc
+        user_sp = argv_base;
+        *translated_refmut(
             new_token,
-            user_sp,
-            args.clone(),
-        ); 
+            (user_sp - core::mem::size_of::<usize>()) as *mut usize,
+        ) = args.len().into();
+        user_sp -= core::mem::size_of::<usize>(); 
 
         // initialize trap_cx
         //trace!("kernel: exec .. initialize trap_cx");
@@ -297,7 +341,7 @@ impl ProcessControlBlock {
         #[cfg(target_arch = "riscv64")]
         {
             trap_cx.x[10] = args_len; // a0, the same with previous stack frame
-            trap_cx.x[11] = user_sp + 8; // a1
+            trap_cx.x[11] = argv_base; // a1
         }
         #[cfg(target_arch = "loongarch64")]
         let mut trap_cx = TrapContext::app_init_context(entry_point, user_sp);

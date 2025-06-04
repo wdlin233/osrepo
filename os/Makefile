@@ -4,8 +4,6 @@ MODE := release
 
 # BOARD
 BOARD := qemu
-SBI ?= rustsbi
-BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
 
 # Building mode argument
 ifeq ($(MODE), release)
@@ -33,9 +31,8 @@ ifeq ($(ARCH), riscv64)
 	QEMU_EXEC += qemu-system-$(ARCH) \
 				-M 128m \
 				-machine virt \
-				-bios $(BOOTLOADER) \
-				-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
-				-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+				-kernel $(KERNEL_ELF) \
+				-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 else ifeq ($(ARCH), loongarch64)
   	TARGET := loongarch64-unknown-none
 	KERNEL_ELF := target/$(TARGET)/$(MODE)/os
@@ -63,7 +60,7 @@ APPS := ../user/src/bin/*
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
 ifeq ($(ARCH),riscv64)
-build: env fs-img kernel $(KERNEL_BIN)
+build: env fs-img kernel
 else ifeq ($(ARCH),loongarch64)
 build:env fs-img kernel
 else
@@ -77,7 +74,7 @@ env:
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
 
-$(KERNEL_BIN) kernel:
+$(KERNEL_BIN):
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 # -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录
