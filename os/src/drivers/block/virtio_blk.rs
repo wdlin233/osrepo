@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 use super::BlockDevice;
 use crate::mm::{
     frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
-    StepByOne, VirtAddr,
+    StepByOne, VirtAddr, frame_alloc_contiguous, KERNEL_SPACE,
 };
 use crate::sync::UPSafeCell;
 use alloc::vec::Vec;
@@ -48,14 +48,12 @@ impl VirtIOBlock {
     /// Create a new VirtIOBlock driver with VIRTIO0 base_addr for virtio_blk device
     pub fn new() -> Self {
         unsafe {
+            let header = &mut *(VIRTIO0 as *mut VirtIOHeader);
             Self(UPSafeCell::new(
                 VirtIOBlk::<VirtioHal, MmioTransport>::new(
-                    MmioTransport::new(NonNull::new_unchecked(
-                    (VIRTIO0 | 0x80200000) as *mut VirtIOHeader,
-                ))
+                    MmioTransport::new(header.into()).unwrap(),
+                )
                 .expect("this is not a valid virtio device"),
-            )
-            .unwrap(),
             ))
         }
     }
@@ -64,42 +62,57 @@ impl VirtIOBlock {
 pub struct VirtioHal;
 
 unsafe impl Hal for VirtioHal {
-    fn dma_alloc(pages: usize, _direction: BufferDirection) -> (usize, NonNull<u8>) {
-        let mut ppn_base = PhysPageNum(0);
-        for i in 0..pages {
-            let frame = frame_alloc().unwrap();
-            debug!("alloc paddr: {:?}", frame);
-            if i == 0 {
-                ppn_base = frame.ppn;
-            }
-            assert_eq!(frame.ppn.0, ppn_base.0 + i);
-            QUEUE_FRAMES.exclusive_access().push(frame);
-        }
-        let pa: PhysAddr = ppn_base.into();
+    fn dma_alloc(pages: usize, _direction: BufferDirection) -> (virtio_drivers::PhysAddr, NonNull<u8>) {
+        //debug!("allocating {} pages for virtio_blk", pages);
+        // let mut ppn_base = PhysPageNum(0);
+        // for i in 0..pages {
+        //     let frame = frame_alloc().unwrap();
+        //     debug!("alloc paddr: {:?}", frame);
+        //     if i == 0 {
+        //         ppn_base = frame.ppn;
+        //     }
+        //     assert_eq!(frame.ppn.0, ppn_base.0 + i);
+        //     QUEUE_FRAMES.exclusive_access().push(frame);
+        // }
+        // let pa: PhysAddr = ppn_base.into();
+        // debug!("allocated paddr: {:?}", pa);
+        // unsafe {
+        //     (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
+        // }
+        let (_frmaes, root_ppn) = frame_alloc_contiguous(pages);
+        let pa: PhysAddr = root_ppn.into();
         unsafe {
             (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
         }
     }
 
-    unsafe fn dma_dealloc(paddr: usize, _vaddr: NonNull<u8>, pages: usize) -> i32 {
+    unsafe fn dma_dealloc(paddr: virtio_drivers::PhysAddr, _vaddr: NonNull<u8>, pages: usize) -> i32 {
+        info!("deallocating {} pages for virtio_blk", pages);
         let pa = PhysAddr::from(paddr);
         let mut ppn_base: PhysPageNum = pa.into();
         for _ in 0..pages {
             frame_dealloc(ppn_base);
-            ppn_base.step();
+            ppn_base.0 += 1;
         }
         0
     }
 
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
-        NonNull::new((paddr | 0x80200000) as *mut u8).unwrap()
+        info!("translating paddr {:#x} to virt", paddr);  
+        NonNull::new_unchecked((PhysAddr::from(paddr).0 | 0x80200000) as *mut u8)
     }
 
-    unsafe fn share(buffer: NonNull<[u8]>, _direction: virtio_drivers::BufferDirection) -> usize {
-        buffer.as_ptr() as *mut u8 as usize - 0x80200000
+    unsafe fn share(buffer: NonNull<[u8]>, _direction: virtio_drivers::BufferDirection) -> virtio_drivers::PhysAddr {
+        //info!("Executing share for virtio_blk");
+        KERNEL_SPACE
+            .exclusive_access()
+            .page_table
+            .translate_va(VirtAddr::from(buffer.as_ptr() as *const usize as usize))
+            .unwrap()
+            .0
     }
 
-    unsafe fn unshare(_paddr: usize, _buffer: NonNull<[u8]>, _direction: virtio_drivers::BufferDirection) {
+    unsafe fn unshare(_paddr: virtio_drivers::PhysAddr, _buffer: NonNull<[u8]>, _direction: virtio_drivers::BufferDirection) {
         // Nothing to do, as the host already has access to all memory and we didn't copy the buffer
         // anywhere else.
     }

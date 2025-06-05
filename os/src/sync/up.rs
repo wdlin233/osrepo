@@ -24,14 +24,12 @@ impl<T> UPSafeCell<T> {
     /// User is responsible to guarantee that inner struct is only used in
     /// uniprocessor.
     pub unsafe fn new(value: T) -> Self {
-        info!("UPSafeCell::new");
         Self {
             inner: RefCell::new(value),
         }
     }
     /// Panic if the data has been borrowed.
     pub fn exclusive_access(&self) -> RefMut<'_, T> {
-        info!("UPSafeCell::exclusive_access");
         self.inner.borrow_mut()
     }
     pub fn borrow(&self) -> RefMut<'_, T> {
