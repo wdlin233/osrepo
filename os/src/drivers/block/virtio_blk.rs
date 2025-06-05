@@ -29,10 +29,13 @@ unsafe impl Send for VirtIOBlock {}
 impl BlockDevice for VirtIOBlock {
     /// Read a block from the virtio_blk device
     fn read_block(&self, block_id: usize, buf: &mut [u8]) {
-        self.0
-            .exclusive_access()
-            .read_blocks(block_id, buf)
-            .expect("Error when reading VirtIOBlk");
+        //assert!(buf.len() == 512, "read_block: buf size must be 512, got {}", buf.len());
+        //info!("Reading block {} from VirtIOBlk", block_id);
+        let result = self.0.exclusive_access().read_blocks(block_id, buf);
+        if let Err(e) = &result {
+            error!("VirtIOBlk read_blocks failed: {:?}, block_id={}, capacity={}", e, block_id, self.0.exclusive_access().capacity());
+        }
+        result.expect("Error when reading VirtIOBlk");
     }
     ///
     fn write_block(&self, block_id: usize, buf: &[u8]) {
@@ -64,26 +67,27 @@ pub struct VirtioHal;
 unsafe impl Hal for VirtioHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (virtio_drivers::PhysAddr, NonNull<u8>) {
         //debug!("allocating {} pages for virtio_blk", pages);
-        // let mut ppn_base = PhysPageNum(0);
-        // for i in 0..pages {
-        //     let frame = frame_alloc().unwrap();
-        //     debug!("alloc paddr: {:?}", frame);
-        //     if i == 0 {
-        //         ppn_base = frame.ppn;
-        //     }
-        //     assert_eq!(frame.ppn.0, ppn_base.0 + i);
-        //     QUEUE_FRAMES.exclusive_access().push(frame);
-        // }
-        // let pa: PhysAddr = ppn_base.into();
-        // debug!("allocated paddr: {:?}", pa);
-        // unsafe {
-        //     (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
-        // }
-        let (_frmaes, root_ppn) = frame_alloc_contiguous(pages);
-        let pa: PhysAddr = root_ppn.into();
+        let mut ppn_base = PhysPageNum(0);
+        for i in 0..pages {
+            let frame = frame_alloc().unwrap();
+            //debug!("alloc paddr: {:?}", frame);
+            if i == 0 {
+                ppn_base = frame.ppn;
+            }
+            assert_eq!(frame.ppn.0, ppn_base.0 + i);
+            QUEUE_FRAMES.exclusive_access().push(frame);
+        }
+        let pa: PhysAddr = ppn_base.into();
+        debug!("allocated paddr: {:?}", pa);
         unsafe {
             (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
         }
+
+        // let (_frmaes, root_ppn) = frame_alloc_contiguous(pages);
+        // let pa: PhysAddr = root_ppn.into();
+        // unsafe {
+        //     (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
+        // }
     }
 
     unsafe fn dma_dealloc(paddr: virtio_drivers::PhysAddr, _vaddr: NonNull<u8>, pages: usize) -> i32 {
@@ -92,6 +96,7 @@ unsafe impl Hal for VirtioHal {
         let mut ppn_base: PhysPageNum = pa.into();
         for _ in 0..pages {
             frame_dealloc(ppn_base);
+            // ?or use step()
             ppn_base.0 += 1;
         }
         0

@@ -87,12 +87,12 @@ impl MemorySet {
                 if !ph_flags.is_execute() {
                     map_perm |= MapPermission::NX;
                 }
-                debug!(
-                    "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-                    start_va, end_va, map_perm
-                );
+                // debug!(
+                //     "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
+                //     start_va, end_va, map_perm
+                // );
                 let map_area = MapArea::new(start_va, end_va, map_perm);
-                debug!("map_area: {:?}", map_area);
+                //debug!("map_area: {:?}", map_area);
                 max_end_vpn = map_area.vpn_range.get_end();
                 memory_set.push(
                     map_area,
