@@ -92,6 +92,10 @@ fs-img: $(APPS)
 	@make build -C ../user_la
 	@rm -f $(FS_IMG)
 	@mkdir -p target
+	@cp ../user_la/target/loongarch64-unknown-none/release/cat ../user_la/elf/
+	@cp ../user_la/target/loongarch64-unknown-none/release/initproc ../user_la/elf/
+	@cp ../user_la/target/loongarch64-unknown-none/release/user_shell ../user_la/elf/
+	@cp ../user_la/target/loongarch64-unknown-none/release/usertests ../user_la/elf/
 	@cd ../easy-fs-fuse && cargo run --release -- -s ../user_la/elf/ -t ../os/target/	
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
