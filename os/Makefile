@@ -1,4 +1,4 @@
-# Building
+# Building, riscv64 or loongarch64
 ARCH := riscv64
 MODE := release
 
@@ -21,7 +21,7 @@ OBJCOPY := rust-objcopy --binary-architecture=riscv64
 DISASM ?= -x
 
 # Tesecases
-TESTSUITS := $(wildcard ../testsuits/*)
+TESTSUITS := $(wildcard ../testsuits/$(ARCH)/*)
 TESTCASES := $(filter-out %.sh %.txt %/mnt, $(TESTSUITS))
 
 ifeq ($(ARCH), riscv64)
@@ -40,7 +40,6 @@ else ifeq ($(ARCH), loongarch64)
 				-m 1G \
 				-kernel $(KERNEL_ELF) \
 				-device virtio-blk-pci,drive=x0
-				
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
@@ -48,7 +47,6 @@ endif
 
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 FS_IMG := target/fs.img
-APPS := ../user/src/bin/*
 
 # temporarily set, need to reset to the situation of competition later
 #qemu-system-riscv64 -machine virt -kernel {os_file} -m {mem} -nographic -smp {smp} -bios default -drive file={fs},if=none,format=raw,id=x0 \
@@ -83,25 +81,23 @@ ifeq ($(ARCH),riscv64)
 fs-img: $(APPS)	
 	@make -C ../user build
 	@rm -f $(FS_IMG)
-	@cp ../user/build/elf/* ../testcases/build/
-	@cp -r $(TESTCASES) ../testcases/build/
+	@cp ../user/build/elf/* ../testcases/riscv64/
+	@cp -r $(TESTCASES) ../testcases/riscv64/
 	@mkdir -p target
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/build/ -t ../os/target/
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/riscv64/ -t ../os/target/
 else ifeq ($(ARCH),loongarch64)
 fs-img: $(APPS)	
 	@make build -C ../user_la
 	@rm -f $(FS_IMG)
+	@cp ../user_la/target/loongarch64-unknown-none/release/initproc ../testcases/loongarch64/
+	@cp ../user_la/target/loongarch64-unknown-none/release/user_shell ../testcases/loongarch64/
+	@cp ../user_la/target/loongarch64-unknown-none/release/usertests_simple ../testcases/loongarch64/
+	@cp -r $(TESTCASES) ../testcases/loongarch64/
 	@mkdir -p target
-	@cp ../user_la/target/loongarch64-unknown-none/release/cat ../user_la/elf/
-	@cp ../user_la/target/loongarch64-unknown-none/release/initproc ../user_la/elf/
-	@cp ../user_la/target/loongarch64-unknown-none/release/user_shell ../user_la/elf/
-	@cp ../user_la/target/loongarch64-unknown-none/release/usertests ../user_la/elf/
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../user_la/elf/ -t ../os/target/	
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/loongarch64/ -t ../os/target/	
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
-
-$(APPS):
 
 # cargo build $(MODE_ARG) --target $(TARGET)
 kernel:

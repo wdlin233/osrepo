@@ -4,18 +4,40 @@
 #[macro_use]
 extern crate user_lib;
 
+// 除去 mnt 的 basic syscall 测试
 static TESTS: &[&str] = &[
+    "dup2\0",
+    "clone\0",
+    "execve\0",
     "exit\0",
-    "fantastic_text\0",
-    "forktest\0",
-    "forktest2\0",
-    "forktest_simple\0",
-    "hello_world\0",
-    "matrix\0",
-    "sleep\0",
-    "sleep_simple\0",
-    "stack_overflow\0",
+    "fork\0",
+    "getpid\0",
+    "gettimeofday\0",
+    "wait\0",
+    "waitpid\0",
+    "write\0",
     "yield\0",
+
+    "brk\0", // 214
+    "chdir\0", // 34
+    "close\0", // panic
+    "dup\0", // 23
+    "fstat\0", // fatal
+    "getcwd\0", // 17
+    "getdents\0", // 61
+    "getppid\0", // error
+    "mkdir_\0", // 34
+    "mmap\0", // panic
+    "mount\0", // 40
+    "munmap\0", // panic
+    "openat\0", // panic
+    "open\0", // fatal
+    "pipe\0", // waiting forever
+    "read\0", // fatal
+    "times\0", // 153
+    "umount\0", // panic
+    "uname\0", // 160
+    "unlink\0", // panic
 ];
 
 use user_lib::{exec, fork, waitpid};

@@ -24,3 +24,5 @@ os/vendor/
 testcases/build
 **/target/*
 **/*.map
+testcases/riscv64/*
+testcases/loongarch64/*
