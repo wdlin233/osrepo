@@ -7,6 +7,7 @@ use user_lib::{exec, fork, wait, yield_};
 
 #[no_mangle]
 fn main() -> i32 {
+    println!("[initproc] Init process started");
     if fork() == 0 {
         exec("user_shell\0", &[core::ptr::null::<u8>()]);
     } else {

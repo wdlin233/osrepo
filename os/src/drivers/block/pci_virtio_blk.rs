@@ -17,8 +17,7 @@ use virtio_drivers::{BufferDirection, Hal};
 
 //#[allow(unused)]
 //#[cfg(target_arch = "loongarch64")]
-//const VIRTIO0: usize = 0x2000_0000 | 0x9000000000000000;
-const VIRTIO0: usize = 0x2000_0000;
+const VIRTIO0: usize = 0x2000_0000 | 0x9000000000000000;
 const VIRT_PCI_BASE: usize = 0x4000_0000;
 const VIRT_PCI_SIZE: usize = 0x0002_0000;
 
@@ -90,15 +89,17 @@ fn enumerate_pci(mmconfig_base: *mut u8) -> Option<PciTransport> {
     let mut pci_root = unsafe { PciRoot::new(mmconfig_base, Cam::Ecam) };
     let mut transport = None;
 
+    debug!("Enumerating PCI devices...");
     for (device_function, info) in pci_root.enumerate_bus(0) {
-        // let (status, command) = pci_root.get_status_command(device_function);
-        // info!(
-        //     "Found {} at {}, status {:?} command {:?}",
-        //     info, device_function, status, command
-        // );
         if let Some(virtio_type) = virtio_device_type(&info) {
             if virtio_type != DeviceType::Block {continue;}
+            // debug!(
+            //     "Found virtio device {:?} at {}",
+            //     virtio_type,
+            //     device_function
+            // );
             let mut pci_range_allocator = PciRangeAllocator::new(VIRT_PCI_BASE, VIRT_PCI_SIZE);
+            //debug!("Allocating BARs for device {}", device_function);
             let mut bar_index = 0;
             while bar_index < 6 {
                 let bar_info = pci_root.bar_info(device_function, bar_index).unwrap();
@@ -158,12 +159,13 @@ fn dump_bar_contents(
 impl VirtIOBlock {
     #[allow(unused)]
     pub fn new() -> Self {
+        // debug!("Creating VirtIOBlock driver with VIRTIO0 base_addr for virtio_blk device");
         unsafe {
+            let header = VIRTIO0 as *mut u8;
             Self(UPSafeCell::new(
                 VirtIOBlk::<VirtioHal, PciTransport>::new(
-                    enumerate_pci(VIRTIO0 as *mut u8).unwrap()
-                    )
-                    .expect("this is not a valid virtio device"),
+                    enumerate_pci(header).unwrap()
+                ).expect("this is not a valid virtio device"),
                 )
             )
         }
@@ -174,6 +176,7 @@ pub struct VirtioHal;
 
 unsafe impl Hal for VirtioHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (usize, NonNull<u8>) {
+        //debug!("Allocating {} pages for pci_virtio_blk", pages);
         let mut ppn_base = PhysPageNum(0);
         for i in 0..pages {
             let frame = frame_alloc().unwrap();
@@ -191,6 +194,7 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn dma_dealloc(paddr: usize, _vaddr: NonNull<u8>, pages: usize) -> i32 {
+        //debug!("Deallocating {} pages for pci_virtio_blk", pages);
         let pa = PhysAddr::from(paddr);
         let mut ppn_base: PhysPageNum = pa.into();
         for _ in 0..pages {
@@ -201,10 +205,12 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
+        //debug!("Converting physical address {:#x} to virtual address", paddr);
         NonNull::new((paddr | 0x9000000000000000) as *mut u8).unwrap()
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> usize {
+        //debug!("Executing share for pci_virtio_blk");
         buffer.as_ptr() as *mut u8 as usize - 0x9000000000000000
     }
 

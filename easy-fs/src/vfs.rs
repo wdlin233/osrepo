@@ -168,7 +168,7 @@ impl Inode {
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;
             let mut v: Vec<String> = Vec::new();
             for i in 0..file_count {
-                debug!("dirent index: {}", i);
+                // debug!("dirent index: {}", i);
                 let mut dirent = DirEntry::empty();
                 assert_eq!(
                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
