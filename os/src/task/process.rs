@@ -10,13 +10,13 @@ use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, KERNEL_SPACE, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::trap::{trap_handler, TrapContext};
-use crate::timer::get_time;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 use core::arch::asm;
+use crate::timer::get_time;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::pgdl;
 #[cfg(target_arch = "loongarch64")]
@@ -209,14 +209,14 @@ impl ProcessControlBlock {
                 })
             },
         });
-        debug!("kernel: create process, pid = {}", process.getpid());
+        // debug!("kernel: create process, pid = {}", process.getpid());
         // create a main thread, we should allocate ustack and trap_cx here
         let task = Arc::new(TaskControlBlock::new(
             Arc::clone(&process),
             ustack_base,
             true,
         ));
-        debug!("kernel: finish create main thread.");
+        // debug!("kernel: finish create main thread.");
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
@@ -225,7 +225,7 @@ impl ProcessControlBlock {
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
 
-        debug!("kernel: create main thread, pid = {}", process.getpid());
+        // debug!("kernel: create main thread, pid = {}", process.getpid());
         #[cfg(target_arch = "riscv64")]
         {
             *trap_cx = TrapContext::app_init_context(

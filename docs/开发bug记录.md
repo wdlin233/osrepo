@@ -76,6 +76,7 @@ process_inner.memory_set.insert_framed_area(
 
 这两个部分被分到同一页了，增加一个页面对齐就可以保证分配在不同的虚地址了.
 
+- [ ] 实现 la 的分时功能.
 
 # Optimization
 

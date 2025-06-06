@@ -1,4 +1,4 @@
-//! RISC-V timer-related functionality
+//! RISC-V & LoongArch timer-related functionality
 
 use core::cmp::Ordering;
 
@@ -10,27 +10,51 @@ use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
+#[cfg(target_arch = "riscv64")]
 use riscv::register::time;
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::time::{get_timer_freq, Time};
 
 /// The number of microseconds per second
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;
 
+#[cfg(target_arch = "riscv64")]
 /// Get the current time in ticks
 pub fn get_time() -> usize {
     time::read()
 }
 
+#[cfg(target_arch = "loongarch64")]
+/// Get the current time in ticks
+pub fn get_time() -> usize {
+    Time::read()
+}
+
+#[cfg(target_arch = "riscv64")]
 /// Get the current time in milliseconds
 pub fn get_time_ms() -> usize {
     time::read() * MSEC_PER_SEC / CLOCK_FREQ
 }
 
+#[cfg(target_arch = "loongarch64")]
+/// Get the current time in milliseconds
+pub fn get_time_ms() -> usize {
+    Time::read() / (get_timer_freq() / MSEC_PER_SEC)
+}
+
+#[cfg(target_arch = "riscv64")]
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
     time::read() * MICRO_PER_SEC / CLOCK_FREQ
 }
 
+#[cfg(target_arch = "loongarch64")]
+pub fn get_time_us() -> usize {
+    Time::read() * MICRO_PER_SEC / get_timer_freq()
+}
+
+#[cfg(target_arch = "riscv64")]
 /// Set the next timer interrupt
 pub fn set_next_trigger() {
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);

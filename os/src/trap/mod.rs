@@ -30,7 +30,7 @@ use crate::mm::{PageTable, VirtAddr, VirtPageNum};
 #[cfg(target_arch = "loongarch64")]
 use crate::task::current_trap_addr;
 use crate::config::{TICKS_PER_SEC, MSEC_PER_SEC};
-use crate::timer::{check_timer, set_next_trigger,get_time};
+use crate::timer::{check_timer};
 use core::arch::{asm, global_asm};
 #[cfg(target_arch = "riscv64")]
 use riscv::register::{
@@ -38,6 +38,8 @@ use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     sie, stval, stvec,
 };
+#[cfg(target_arch = "riscv64")]
+use crate::timer::{get_time, set_next_trigger};
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::{
     register::{

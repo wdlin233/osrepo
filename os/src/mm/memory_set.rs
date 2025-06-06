@@ -10,6 +10,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
+#[cfg(target_arch = "riscv64")]
 use riscv::register::satp;
 #[cfg(target_arch = "loongarch64")]
 use crate::info::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
@@ -261,15 +262,15 @@ impl MemorySet {
                         map_perm |= MapPermission::NX;
                     }
                 }
-                debug!(
-                    "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-                    start_va, end_va, map_perm
-                );
+                // debug!(
+                //     "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
+                //     start_va, end_va, map_perm
+                // );
                 #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm);
-                debug!("map_area: {:?}", map_area);
+                // debug!("map_area: {:?}", map_area);
                 
                 max_end_vpn = map_area.vpn_range.get_end();
                 // A optimization for mapping data, keep aligned

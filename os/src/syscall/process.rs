@@ -176,10 +176,6 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 }
 
 /// get_time syscall
-///
-/// YOUR JOB: get time with second and microsecond
-/// HINT: You might reimplement it with virtual memory management.
-/// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_get_time(ts: {:?}, tz: {})",

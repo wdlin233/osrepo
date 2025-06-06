@@ -39,7 +39,7 @@ impl OSInode {
     /// read all data from the inode
     pub fn read_all(&self) -> Vec<u8> {
         let mut inner = self.inner.exclusive_access();
-        debug!("Reading all data from inode with id: {}", inner.inode.inode_id());
+        // debug!("Reading all data from inode with id: {}", inner.inode.inode_id());
         // let mut buffer: Vec<u8> = Vec::with_capacity(512);
         // buffer.resize(512, 0);
         // can be written more efficiently
