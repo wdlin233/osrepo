@@ -289,10 +289,10 @@ impl PageTable {
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
-        // debug!(
-        //     "map vpn {:?} to ppn {:?} with flags {:?}",
-        //     vpn, ppn, flags
-        // );
+        info!(
+            "map vpn {:?} to ppn {:?} with flags {:?}",
+            vpn, ppn, flags
+        );
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         #[cfg(target_arch = "riscv64")]
         {

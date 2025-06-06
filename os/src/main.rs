@@ -140,7 +140,6 @@ fn main(cpu: usize) {
     enable_timer_interrupt();
     list_apps();
     add_initproc();   
-    //task::run_tasks();
-    loop {}
-    //panic!("Unreachable section for loongarch64");
+    task::run_tasks();
+    panic!("Unreachable section for loongarch64");
 }

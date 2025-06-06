@@ -218,9 +218,14 @@ pub struct TaskUserRes {
 fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     TRAP_CONTEXT_BASE - tid * PAGE_SIZE
 }
+#[cfg(target_arch = "riscv64")]
 /// Return the bottom addr (high addr) of the user stack for a task
 fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
-    ustack_base + tid * (2*PAGE_SIZE + USER_STACK_SIZE)
+    ustack_base + tid * (2 * PAGE_SIZE + USER_STACK_SIZE)
+}
+#[cfg(target_arch = "loongarch64")]
+fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
+    ustack_base + tid * (PAGE_SIZE + USER_STACK_SIZE)
 }
 
 impl TaskUserRes {
@@ -238,12 +243,13 @@ impl TaskUserRes {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
-            heap_bottom:user_sp,
+            heap_bottom: user_sp,
             program_brk: user_sp,
         };
         if alloc_user_res {
-            //debug!("in new task.ustack_base:{}",task_user_res.ustack_base);
+            debug!("in new task.ustack_base:{}",task_user_res.ustack_base);
             task_user_res.alloc_user_res();
+            debug!("alloc user res for task {} success", tid);
         }
         task_user_res
     }
@@ -255,8 +261,8 @@ impl TaskUserRes {
         // alloc user stack
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
-        self.heap_bottom = ustack_top;
-        self.program_brk = ustack_top;
+        self.heap_bottom = ustack_top + PAGE_SIZE;
+        self.program_brk = ustack_top + PAGE_SIZE;
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
@@ -285,13 +291,15 @@ impl TaskUserRes {
         // alloc user stack
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
-        self.heap_bottom = ustack_top;
-        self.program_brk = ustack_top;
+        self.heap_bottom = ustack_top + PAGE_SIZE;
+        self.program_brk = ustack_top + PAGE_SIZE;
+        debug!("ustack_bottom = {},ustack_top = {}",ustack_bottom,ustack_top);
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
             MapPermission::default() | MapPermission::W,
         );
+        debug!("heap_bottom = {},program_brk = {}",self.heap_bottom,self.program_brk);
         process_inner.memory_set.insert_framed_area(
             self.heap_bottom.into(),
             self.program_brk.into(),

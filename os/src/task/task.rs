@@ -114,9 +114,12 @@ impl TaskControlBlock {
         ustack_base: usize,
         alloc_user_res: bool,
     ) -> Self {
+        debug!("Entering TaskControlBlock::new");
         let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
+        info!("Finish TaskUserRes::new!");
         let kstack = KernelStack::new();
         let kstack_top = kstack.get_trap_addr(); //存放了trap上下文后的地址
+        debug!("create task: kstack_top={:#x}", kstack_top);
         Self {
             process: Arc::downgrade(&process),
             inner: unsafe {

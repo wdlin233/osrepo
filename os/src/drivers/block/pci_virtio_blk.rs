@@ -115,7 +115,7 @@ fn enumerate_pci(mmconfig_base: *mut u8) -> Option<PciTransport> {
                 }
                 bar_index += 1;
                 if bar_info.takes_two_entries(){
-                    bar_index+=1;
+                    bar_index += 1;
                 }
             }
 
@@ -132,28 +132,6 @@ fn enumerate_pci(mmconfig_base: *mut u8) -> Option<PciTransport> {
         }
     }
     return transport;
-}
-#[allow(unused)]
-fn dump_bar_contents(
-    root: &mut PciRoot,
-    device_function: DeviceFunction,
-    bar_index: u8,
-) {
-    let bar_info = root.bar_info(device_function, bar_index).unwrap();
-    if let BarInfo::Memory { address, size, .. } = bar_info {
-        let start = address as *const u8;
-        println!("start:{:?}", start);
-        unsafe {
-            let mut buf = [0u8; 32];
-            for i in 0..size / 32 {
-                let ptr = start.add(i as usize * 32);
-                println!("ptr:{:?}",ptr);
-                core::ptr::copy(ptr, buf.as_mut_ptr(), 32);
-                if buf.iter().any(|b| *b != 0xff) {
-                }
-            }
-        }
-    }
 }
 
 impl VirtIOBlock {
