@@ -41,6 +41,7 @@ pub struct VirtPageNum(pub usize);
 
 impl Debug for VirtAddr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        //f.write_fmt(format_args!("VA:{:#b}", self.0))
         f.write_fmt(format_args!("VA:{:#x}", self.0))
     }
 }
@@ -111,6 +112,7 @@ impl From<usize> for PhysPageNum {
 #[cfg(target_arch = "loongarch64")]
 impl From<usize> for VirtAddr {
     fn from(v: usize) -> Self {
+        //debug!("Converting usize to VirtAddr: {:x}", v);
         Self(v)
     }
 }
@@ -176,6 +178,7 @@ impl VirtAddr {
 }
 impl From<VirtAddr> for VirtPageNum {
     fn from(v: VirtAddr) -> Self {
+        //info!("Converting VirtAddr to VirtPageNum: {:?} with offset: {:?}", v, v.page_offset());
         assert_eq!(v.page_offset(), 0);
         v.floor()
     }

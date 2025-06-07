@@ -77,6 +77,31 @@ process_inner.memory_set.insert_framed_area(
 这两个部分被分到同一页了，增加一个页面对齐就可以保证分配在不同的虚地址了.
 
 - [x] 实现 la 的分时功能.
+- [ ] 解决地址对齐问题
+
+```shell
+[DEBUG] Converting usize to VirtAddr: 10004086
+[initproc] Forked child process, executing user_shell
+[DEBUG] Converting usize to VirtAddr: 100040a0
+[DEBUG] Converting usize to VirtAddr: 100040a1
+[DEBUG] Converting usize to VirtAddr: 100040a2
+[DEBUG] Converting usize to VirtAddr: 100040a3
+[DEBUG] Converting usize to VirtAddr: 100040a4
+[DEBUG] Converting usize to VirtAddr: 100040a5
+[DEBUG] Converting usize to VirtAddr: 100040a6
+[DEBUG] Converting usize to VirtAddr: 100040a7
+[DEBUG] Converting usize to VirtAddr: 100040a8
+[DEBUG] Converting usize to VirtAddr: 10004098
+[DEBUG] Converting usize to VirtAddr: 10014000
+[INFO] Converting VirtAddr to VirtPageNum: VA:0x10014000 with offset: 0
+[DEBUG] Converting usize to VirtAddr: 10016000
+[INFO] Converting VirtAddr to VirtPageNum: VA:0x10016000 with offset: 8192
+[kernel] Panicked at src/mm/address.rs:182 assertion `left == right` failed
+  left: 8192
+ right: 0
+```
+
+修改用户栈大小后转变为zombie process. 疑似 `usertests_simple` 中的 `waitpid` 有问题. 并不是. 是因为之前在完成 basic 测例时修改了 `block_current_and_run_next` 的逻辑，将 `add_block_task(task);` 保留就可以正常运行了.
 
 # Optimization
 

@@ -88,6 +88,7 @@ impl PageTableEntry {
     }
     #[cfg(target_arch = "loongarch64")]
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
+        //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
         let mut bits = 0usize;
         bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
         bits = bits | flags.bits;

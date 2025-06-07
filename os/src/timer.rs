@@ -5,6 +5,8 @@ use core::cmp::Ordering;
 use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
 use crate::sync::UPSafeCell;
+#[cfg(target_arch = "loongarch64")]
+use crate::task::add_task;
 use crate::task::{ wakeup_task, TaskControlBlock};
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use alloc::collections::BinaryHeap;
@@ -130,7 +132,10 @@ pub fn check_timer() {
     let mut timers = TIMERS.exclusive_access();
     while let Some(timer) = timers.peek() {
         if timer.expire_ms <= current_ms {
+            #[cfg(target_arch = "riscv64")]
             wakeup_task(Arc::clone(&timer.task));
+            #[cfg(target_arch = "loongarch64")]
+            add_task(Arc::clone(&timer.task));
             timers.pop();
         } else {
             break;

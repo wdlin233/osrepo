@@ -18,7 +18,7 @@ OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
 # Disassembly
-DISASM ?= -x
+DISASM ?= -d
 
 # Tesecases
 TESTSUITS := $(wildcard ../testsuits/$(ARCH)/*)
@@ -109,7 +109,7 @@ clean:
 	@tmux kill-server
 
 disasm: kernel
-	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
+	loongarch64-unknown-linux-gnu-objdump $(DISASM) $(KERNEL_ELF) > disasm_la.s
 
 disasm-vim: kernel
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)

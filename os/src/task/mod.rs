@@ -79,7 +79,6 @@ pub fn block_current_and_run_next() {
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     task_inner.task_status = TaskStatus::Blocked;
     drop(task_inner);
-    #[cfg(target_arch = "riscv64")]
     add_block_task(task);
     schedule(task_cx_ptr);
 }

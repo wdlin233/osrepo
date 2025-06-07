@@ -9,6 +9,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
+use core::error;
 use lazy_static::*;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::satp;
@@ -280,6 +281,7 @@ impl MemorySet {
                         Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
                     );
                 } else {
+                    //error!("start_va page offset is not zero, start_va: {:?}", start_va);
                     let data_len = start_va.page_offset() + ph.file_size() as usize;
                     let mut data: Vec<u8> = Vec::with_capacity(data_len);
                     data.resize(data_len, 0);
