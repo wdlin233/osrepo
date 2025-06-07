@@ -3,17 +3,16 @@
 use core::cmp::Ordering;
 
 use crate::config::CLOCK_FREQ;
-use crate::sbi::set_timer;
 use crate::sync::UPSafeCell;
-#[cfg(target_arch = "loongarch64")]
-use crate::task::add_task;
-use crate::task::{ wakeup_task, TaskControlBlock};
+use crate::task::TaskControlBlock;
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::time;
+#[cfg(target_arch = "riscv64")]
+use crate::sbi::set_timer;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::time::{get_timer_freq, Time};
 
@@ -21,39 +20,23 @@ use loongarch64::time::{get_timer_freq, Time};
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;
 
-#[cfg(target_arch = "riscv64")]
+
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-    time::read()
+    #[cfg(target_arch = "riscv64")] return time::read();
+    #[cfg(target_arch = "loongarch64")] return Time::read();
 }
 
-#[cfg(target_arch = "loongarch64")]
-/// Get the current time in ticks
-pub fn get_time() -> usize {
-    Time::read()
-}
-
-#[cfg(target_arch = "riscv64")]
 /// Get the current time in milliseconds
 pub fn get_time_ms() -> usize {
-    time::read() * MSEC_PER_SEC / CLOCK_FREQ
+    #[cfg(target_arch = "riscv64")] return time::read() * MSEC_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")] return Time::read() / (get_timer_freq() / MSEC_PER_SEC);
 }
 
-#[cfg(target_arch = "loongarch64")]
-/// Get the current time in milliseconds
-pub fn get_time_ms() -> usize {
-    Time::read() / (get_timer_freq() / MSEC_PER_SEC)
-}
-
-#[cfg(target_arch = "riscv64")]
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
-    time::read() * MICRO_PER_SEC / CLOCK_FREQ
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn get_time_us() -> usize {
-    Time::read() * MICRO_PER_SEC / get_timer_freq()
+    #[cfg(target_arch = "riscv64")] return time::read() * MICRO_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")] return Time::read() * MICRO_PER_SEC / get_timer_freq();
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -133,9 +116,15 @@ pub fn check_timer() {
     while let Some(timer) = timers.peek() {
         if timer.expire_ms <= current_ms {
             #[cfg(target_arch = "riscv64")]
-            wakeup_task(Arc::clone(&timer.task));
+            {
+                use crate::task::wakeup_task;
+                wakeup_task(Arc::clone(&timer.task));
+            }
             #[cfg(target_arch = "loongarch64")]
-            add_task(Arc::clone(&timer.task));
+            {
+                use crate::task::add_task;
+                add_task(Arc::clone(&timer.task));
+            }
             timers.pop();
         } else {
             break;
