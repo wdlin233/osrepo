@@ -14,21 +14,9 @@ use lazy_static::*;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::satp;
 #[cfg(target_arch = "loongarch64")]
-use crate::info::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
-
+use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
 #[cfg(target_arch = "riscv64")]
-extern "C" {
-    fn stext();
-    fn etext();
-    fn srodata();
-    fn erodata();
-    fn sdata();
-    fn edata();
-    fn sbss_with_stack();
-    fn ebss();
-    fn ekernel();
-    fn strampoline();
-}
+use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss_with_stack, ebss, ekernel, strampoline};
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
