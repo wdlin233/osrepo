@@ -3,6 +3,7 @@ use crate::config::KERNEL_HEAP_SIZE;
 use buddy_system_allocator::LockedHeap;
 
 #[global_allocator]
+#[cfg(target_arch = "riscv64")]
 /// heap allocator instance
 static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
 
@@ -16,9 +17,10 @@ static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 /// initiate heap allocator
 pub fn init_heap() {
     unsafe {
+        let heap_start = core::ptr::addr_of_mut!(HEAP_SPACE) as usize;
         HEAP_ALLOCATOR
             .lock()
-            .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
+            .init(heap_start, KERNEL_HEAP_SIZE);
     }
 }
 

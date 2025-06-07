@@ -9,6 +9,7 @@ use super::{
 };
 use crate::BLOCK_SZ;
 use alloc::sync::Arc;
+use log::debug;
 use spin::Mutex;
 
 /// EasyFileSystem struct
@@ -93,9 +94,11 @@ impl EasyFileSystem {
     /// Open a block device as a filesystem
     pub fn open(block_device: Arc<dyn BlockDevice>) -> Arc<Mutex<Self>> {
         // read SuperBlock
+        debug!("Opening EasyFileSystem on block device");
         get_block_cache(0, Arc::clone(&block_device))
             .lock()
             .read(0, |super_block: &SuperBlock| {
+                debug!("SuperBlock: {:?}", super_block);
                 assert!(super_block.is_valid(), "Error loading EFS!");
                 let inode_total_blocks =
                     super_block.inode_bitmap_blocks + super_block.inode_area_blocks;

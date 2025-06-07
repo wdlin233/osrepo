@@ -4,7 +4,13 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use core::fmt::{self};
+#[cfg(target_arch = "loongarch64")]
+use bit_field::BitField;
+#[cfg(target_arch = "loongarch64")]
+use crate::config::{PAGE_SIZE_BITS, PALEN};
 
+#[cfg(target_arch = "riscv64")]
 bitflags! {
     /// page table entry flags
     pub struct PTEFlags: u8 {
@@ -18,6 +24,30 @@ bitflags! {
         const D = 1 << 7;
     }
 }
+#[cfg(target_arch = "loongarch64")]
+bitflags! {
+    pub struct PTEFlags: usize {
+        const V = 1 << 0;
+        const D = 1 << 1;
+        const PLVL = 1 << 2;
+        const PLVH = 1 << 3;
+        const MATL = 1 << 4;
+        const MATH = 1 << 5;
+        const G = 1 << 6;
+        const P = 1 << 7;
+        const W = 1 << 8;
+        const NR = 1 << 61;
+        const NX = 1 << 62;
+        const RPLV = 1 << 63;
+    }
+}
+#[cfg(target_arch = "loongarch64")]
+impl PTEFlags {
+    #[allow(unused)]
+    fn default() -> Self {
+        PTEFlags::V | PTEFlags::MATL | PTEFlags::P | PTEFlags::W
+    }
+}
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -27,40 +57,116 @@ pub struct PageTableEntry {
     pub bits: usize,
 }
 
+#[cfg(target_arch = "loongarch64")]
+impl fmt::Debug for PageTableEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PageTableEntry RPLV:{},NX:{},NR:{},PPN:{:#x},W:{},P:{},G:{},MAT:{},PLV:{},D:{},V:{}",
+            self.bits.get_bit(63),
+            self.bits.get_bit(62),
+            self.bits.get_bit(61),
+            self.bits.get_bits(14..PALEN),
+            self.bits.get_bit(8),
+            self.bits.get_bit(7),
+            self.bits.get_bit(6),
+            self.bits.get_bits(4..=5),
+            self.bits.get_bits(2..=3),
+            self.bits.get_bit(1),
+            self.bits.get_bit(0)
+        )
+    }
+}
+
 impl PageTableEntry {
     /// Create a new page table entry
+    #[cfg(target_arch = "riscv64")]
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
         PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
         }
     }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
+        //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
+        let mut bits = 0usize;
+        bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
+        bits = bits | flags.bits;
+        PageTableEntry { bits }
+    }
     /// Create an empty page table entry
     pub fn empty() -> Self {
         PageTableEntry { bits: 0 }
     }
+
     /// Get the physical page number from the page table entry
+    #[cfg(target_arch = "riscv64")]
     pub fn ppn(&self) -> PhysPageNum {
         (self.bits >> 10 & ((1usize << 44) - 1)).into()
     }
     /// Get the flags from the page table entry
+    #[cfg(target_arch = "riscv64")]
     pub fn flags(&self) -> PTEFlags {
         PTEFlags::from_bits(self.bits as u8).unwrap()
     }
+    // 返回物理页号---页表项
+    #[cfg(target_arch = "loongarch64")]
+    pub fn ppn(&self) -> PhysPageNum {
+        self.bits.get_bits(14..PALEN).into()
+    }
+    // 返回物理页号---页目录项
+    // 在一级和二级页目录表中目录项存放的是只有下一级的基地址
+    #[cfg(target_arch = "loongarch64")]
+    pub fn directory_ppn(&self) -> PhysPageNum {
+        (self.bits >> PAGE_SIZE_BITS).into()
+    }
+    // 返回标志位
+    #[cfg(target_arch = "loongarch64")]
+    pub fn flags(&self) -> PTEFlags {
+        //这里只需要标志位，需要把非标志位的位置清零
+        let mut bits = self.bits;
+        bits.set_bits(14..PALEN, 0);
+        PTEFlags::from_bits(bits).unwrap()
+    }
+
     /// The page pointered by page table entry is valid?
     pub fn is_valid(&self) -> bool {
         (self.flags() & PTEFlags::V) != PTEFlags::empty()
-    }
-    /// The page pointered by page table entry is readable?
-    pub fn readable(&self) -> bool {
-        (self.flags() & PTEFlags::R) != PTEFlags::empty()
     }
     /// The page pointered by page table entry is writable?
     pub fn writable(&self) -> bool {
         (self.flags() & PTEFlags::W) != PTEFlags::empty()
     }
+    /// The page pointered by page table entry is readable?
+    #[cfg(target_arch = "riscv64")]
+    pub fn readable(&self) -> bool {
+        (self.flags() & PTEFlags::R) != PTEFlags::empty()
+    }
     /// The page pointered by page table entry is executable?
+    #[cfg(target_arch = "riscv64")]
     pub fn executable(&self) -> bool {
         (self.flags() & PTEFlags::X) != PTEFlags::empty()
+    }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn readable(&self) -> bool {
+        !((self.flags() & PTEFlags::NR) != PTEFlags::empty())
+    }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn executable(&self) -> bool {
+        !((self.flags() & PTEFlags::NX) != PTEFlags::empty())
+    }
+    //设置脏位
+    #[cfg(target_arch = "loongarch64")]
+    pub fn set_dirty(&mut self) {
+        self.bits.set_bit(1, true);
+    }
+    // 用于判断存放的页目录项是否为0
+    // 由于页目录项只保存下一级目录的基地址
+    // 因此判断是否是有效的就只需判断是否为0即可
+    // 但我不认为这是一个好的设计，将在后续被修改
+    #[cfg(target_arch = "loongarch64")]
+    pub fn is_zero(&self) -> bool {
+        self.bits == 0
     }
 }
 
@@ -81,13 +187,25 @@ impl PageTable {
         }
     }
     /// Temporarily used to get arguments from user space.
+    #[cfg(target_arch = "riscv64")]
     pub fn from_token(satp: usize) -> Self {
         Self {
             root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
             frames: Vec::new(),
         }
     }
+    /// Temporarily used to get arguments from user space.
+    /// pgd是全局目录基地址，类似于riscv的satp,其是物理地址
+    /// 毕竟寄存器和页的偏移等各自不同
+    #[cfg(target_arch = "loongarch64")]
+    pub fn from_token(pgd: usize) -> Self {
+        Self {
+            root_ppn: PhysPageNum::from(pgd & ((1usize << 34) - 1)),
+            frames: Vec::new(),
+        }
+    }
     /// Find PageTableEntry by VirtPageNum, create a frame for a 4KB page table if not exist
+    #[cfg(target_arch = "riscv64")]
     fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
@@ -107,7 +225,32 @@ impl PageTable {
         }
         result
     }
+    #[cfg(target_arch = "loongarch64")]
+    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+        let idxs = vpn.indexes();
+        let mut ppn = self.root_ppn;
+        let mut result: Option<&mut PageTableEntry> = None;
+        for i in 0..3 {
+            let pte = &mut ppn.get_pte_array()[idxs[i]];
+            if i == 2 {
+                //找到叶子节点，叶子节点的页表项是否合法由调用者来处理
+                result = Some(pte);
+                break;
+            }
+            if pte.is_zero() {
+                let frame = frame_alloc().unwrap();
+                // 页目录项只保存地址
+                *pte = PageTableEntry {
+                    bits: frame.ppn.0 << PAGE_SIZE_BITS,
+                };
+                self.frames.push(frame);
+            }
+            ppn = pte.directory_ppn();
+        }
+        result
+    }
     /// Find PageTableEntry by VirtPageNum
+    #[cfg(target_arch = "riscv64")]
     fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
@@ -125,16 +268,41 @@ impl PageTable {
         }
         result
     }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+        let idxs = vpn.indexes();
+        let mut ppn = self.root_ppn;
+        let mut result: Option<&mut PageTableEntry> = None;
+        for i in 0..3 {
+            let pte = &mut ppn.get_pte_array()[idxs[i]];
+            if pte.is_zero() {
+                return None;
+            }
+            if i == 2 {
+                result = Some(pte);
+                break;
+            }
+            ppn = pte.directory_ppn();
+        }
+        result
+    }
     /// set the map between virtual page number and physical page number
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
-        // debug!(
-        //     "map vpn {:?} to ppn {:?} with flags {:?}",
-        //     vpn, ppn, flags
-        // );
+        info!(
+            "map vpn {:?} to ppn {:?} with flags {:?}",
+            vpn, ppn, flags
+        );
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
-        *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        #[cfg(target_arch = "riscv64")]
+        {
+            *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            *pte = PageTableEntry::new(ppn, flags | PTEFlags::V | PTEFlags::MATL | PTEFlags::P);
+        }
     }
     /// remove the map between virtual page number and physical page number
     #[allow(unused)]
@@ -144,6 +312,7 @@ impl PageTable {
         *pte = PageTableEntry::empty();
     }
     /// get the page table entry from the virtual page number
+    /// *pte is equirvalent to pte.clone()
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).map(|pte| *pte)
     }
@@ -157,8 +326,13 @@ impl PageTable {
         })
     }
     /// get the token from the page table
+    #[cfg(target_arch = "riscv64")]
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
+    }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn token(&self) -> usize {
+        self.root_ppn.0
     }
 }
 

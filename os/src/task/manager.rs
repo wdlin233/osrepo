@@ -128,12 +128,6 @@ pub fn remove_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.exclusive_access().remove(task);
 }
 
-// /// Fetch a task out of the ready queue
-// pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
-//     //trace!("kernel: TaskManager::fetch_task");
-//     TASK_MANAGER.exclusive_access().fetch()
-// }
-
 /// Set a task to stop-wait status, waiting for its kernel stack out of use.
 pub fn add_stopping_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.exclusive_access().add_stop(task);

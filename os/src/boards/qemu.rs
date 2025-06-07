@@ -54,6 +54,7 @@ impl RISCV64 {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 impl QEMUExit for RISCV64 {
     /// Exit qemu with specified exit code.
     fn exit(&self, code: u32) -> ! {

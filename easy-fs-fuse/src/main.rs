@@ -4,6 +4,7 @@ use std::fs::{read_dir, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
 use std::sync::Mutex;
+use log::info;
 
 const BLOCK_SZ: usize = 512;
 
@@ -11,6 +12,7 @@ struct BlockFile(Mutex<File>);
 
 impl BlockDevice for BlockFile {
     fn read_block(&self, block_id: usize, buf: &mut [u8]) {
+        info!("read_block: block_id = {}", block_id);
         let mut file = self.0.lock().unwrap();
         file.seek(SeekFrom::Start((block_id * BLOCK_SZ) as u64))
             .expect("Error when seeking!");

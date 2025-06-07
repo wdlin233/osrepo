@@ -2,7 +2,10 @@
 use super::TaskContext;
 use core::arch::global_asm;
 
+#[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("switch.S"));
+#[cfg(target_arch = "loongarch64")]
+global_asm!(include_str!("switch.asm"));
 
 extern "C" {
     /// Switch to the context of `next_task_cx_ptr`, saving the current context

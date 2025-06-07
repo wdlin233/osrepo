@@ -8,8 +8,9 @@ use user_lib::{exec, fork, wait, sched_yield};
 
 #[no_mangle]
 fn main() -> i32 {
+    println!("[initproc] Init process started");
     if fork() == 0 {
-        exec("user_shell\0", &[core::ptr::null::<u8>()]);
+        exec("usertest\0", &[core::ptr::null::<u8>()]);
     } else {
         loop {
             let mut exit_code: i32 = 0;

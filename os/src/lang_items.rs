@@ -1,6 +1,7 @@
 //! The panic handler and backtrace
 
 use crate::sbi::shutdown;
+#[cfg(target_arch = "riscv64")]
 use crate::task::current_kstack_top;
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -13,10 +14,10 @@ fn panic(info: &PanicInfo) -> ! {
             "[kernel] Panicked at {}:{} {}",
             location.file(),
             location.line(),
-            info.message().unwrap()
+            info.message()
         );
     } else {
-        println!("[kernel] Panicked: {}", info.message().unwrap());
+        println!("[kernel] Panicked: {}", info.message());
     }
     // unsafe {
     //     backtrace();
@@ -25,6 +26,7 @@ fn panic(info: &PanicInfo) -> ! {
 }
 /// backtrace function
 #[allow(unused)]
+#[cfg(target_arch = "riscv64")]
 unsafe fn backtrace() {
     let mut fp: usize;
     let stop = current_kstack_top();

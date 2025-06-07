@@ -1,17 +1,21 @@
 //! virtio_blk device driver
+#[cfg(target_arch = "loongarch64")]
+mod pci_virtio_blk;
+#[cfg(target_arch = "loongarch64")]
+pub use pci_virtio_blk::VirtIOBlock;
 
+#[cfg(target_arch = "riscv64")]
 mod virtio_blk;
-
+#[cfg(target_arch = "riscv64")]
 pub use virtio_blk::VirtIOBlock;
 
-use crate::board::BlockDeviceImpl;
 use alloc::sync::Arc;
 use easy_fs::BlockDevice;
 use lazy_static::*;
 
 lazy_static! {
     /// The global block device driver instance: BLOCK_DEVICE with BlockDevice trait
-    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());
+    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(VirtIOBlock::new());
 }
 
 #[allow(unused)]

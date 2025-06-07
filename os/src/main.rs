@@ -18,12 +18,14 @@
 //! We then call [`task::run_tasks()`] and for the first time go to
 //! userspace.
 
-#![deny(missing_docs)]
+#![allow(missing_docs)]
 #![deny(warnings)]
 #![no_std]
 #![no_main]
-#![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
+#![allow(unused_imports)]
+#![allow(dead_code)]
+#![feature(naked_functions)]
 
 #[macro_use]
 extern crate log;
@@ -50,13 +52,31 @@ pub mod syscall;
 pub mod task;
 pub mod timer;
 pub mod trap;
-pub mod loaders;
+mod uart;
+#[cfg(target_arch = "loongarch64")]
+mod loongarch;
+
+#[cfg(target_arch = "loongarch64")]
+pub mod boot;
+#[cfg(target_arch = "loongarch64")]
+mod info;
+#[cfg(target_arch = "loongarch64")]
+use crate::{
+    info::{kernel_layout, print_machine_info},
+    trap::enable_timer_interrupt,
+    task::add_initproc,
+};
 pub mod system;
 pub mod users;
 
 use core::arch::global_asm;
+use crate::console::CONSOLE;
+use config::FLAG;
 
+#[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("entry.asm"));
+
+#[cfg(target_arch = "riscv64")]
 fn clear_bss() {
     extern "C" {
         fn sbss();
@@ -68,10 +88,23 @@ fn clear_bss() {
     }
 }
 
+#[cfg(target_arch = "loongarch64")]
+pub fn clear_bss() {
+    extern "C" {
+        fn sbss();
+        fn ebss();
+    }
+    (sbss as usize..ebss as usize).for_each(|addr| unsafe {
+        (addr as *mut u8).write_volatile(0);
+    });
+}
+
+#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 /// the rust entry-point of os
 pub fn rust_main() -> ! {
     clear_bss();
+    //println!("{}", FLAG);
     println!("[kernel] Hello, world!");
     logging::init();
     mm::init();
@@ -83,4 +116,32 @@ pub fn rust_main() -> ! {
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
+}
+
+#[cfg(target_arch = "loongarch64")]
+#[no_mangle]
+fn main(cpu: usize) {
+    use fs::list_apps;
+    use task::add_initproc;
+
+    clear_bss();
+    println!("{}", FLAG);
+    println!("[kernel] Hello, world!");
+    println!("cpu: {}", cpu);
+    logging::init();
+    log::error!("Logging init success");
+    // rtc_init(); println!("CURRENT TIME {:?}", rtc_time_read());
+    kernel_layout();
+
+    mm::init();
+    trap::init();
+    print_machine_info();
+    println!("machine info success");
+    // sata 硬盘 ahci_init()
+
+    enable_timer_interrupt();
+    list_apps();
+    add_initproc();   
+    task::run_tasks();
+    panic!("Unreachable section for loongarch64");
 }

@@ -3,5 +3,14 @@ target = "riscv64gc-unknown-none-elf"
 
 [target.riscv64gc-unknown-none-elf]
 rustflags = [
-    "-Clink-args=-Tsrc/linker.ld",
+    "-Clink-args=-Tsrc/linker_rv.ld",
 ]
+
+# [target.loongarch64-unknown-none]
+# linker = "rust-lld"
+# rustflags = [
+#     "-C", "link-arg=-Tsrc/linker_la.ld",
+#     "-C", "link-arg=-Tlink.lds",
+#     "-C", "relocation-model=static",
+#     "-C", "target-feature=+f,+d"  # 确保浮点扩展正确
+# ]
