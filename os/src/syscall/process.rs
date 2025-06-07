@@ -49,6 +49,7 @@ pub fn sys_fork() -> isize {
     let current_process = current_process();
     //current_process.inner_exclusive_access().is_blocked+=1;
     let new_process = current_process.fork();
+    //debug!("sys_fork: current process pid is : {}",current_process.getpid());
     let new_pid = new_process.getpid();
     // modify trap context of new_task, because it returns immediately after switching
     let new_process_inner = new_process.inner_exclusive_access();
@@ -56,8 +57,15 @@ pub fn sys_fork() -> isize {
     let trap_cx = task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
-    trap_cx.x[10] = 0;
-    debug!("the new pid is : {}",new_pid);
+    #[cfg(target_arch = "riscv64")]
+    {
+        trap_cx.x[10] = 0;
+    }
+    #[cfg(target_arch = "loongarch64")]
+    {
+        trap_cx.x[4] = 0;
+    }
+    //debug!("sys_fork: the new pid is : {}",new_pid);
     new_pid as isize
 }
 /// exec syscall
@@ -101,7 +109,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
 /// Else if there is a child process but it is still running, return -2.
 /// block to wait
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize {
-    //debug!("kernel: sys_waitpid");
+    debug!("kernel: sys_waitpid");
     {
         let process = current_process();
         //debug!("{} is waiting child",process.getpid());
@@ -134,11 +142,17 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize 
                 let found_pid = child.getpid();
                 // ++++ temporarily access child PCB exclusively
                 let exit_code = child.inner_exclusive_access().exit_code;
+                debug!(
+                    "sys_waitpid: found child pid {}, exit_code {}",
+                    found_pid,
+                    exit_code
+                );
                 // ++++ release child PCB
                 *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
                 return found_pid as isize;
             }else {
                 drop(inner);
+                debug!("sys_waitpid: no child found, block current process");
                 block_current_and_run_next();
             }
         }
@@ -187,10 +201,6 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 }
 
 /// get_time syscall
-///
-/// YOUR JOB: get time with second and microsecond
-/// HINT: You might reimplement it with virtual memory management.
-/// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_get_time(ts: {:?}, tz: {})",

@@ -1,12 +1,15 @@
 //! Types related to task management & Functions for completely changing TCB
 
 use super::id::TaskUserRes;
-use super::{kstack_alloc, KernelStack, ProcessControlBlock, TaskContext};
+use super::{KernelStack, ProcessControlBlock, TaskContext};
 use crate::trap::TrapContext;
 use crate::{mm::PhysPageNum, sync::UPSafeCell};
 use alloc::sync::{Arc, Weak};
 use core::cell::RefMut;
+#[cfg(target_arch = "riscv64")]
+use super::{kstack_alloc};
 
+#[cfg(target_arch = "riscv64")]
 /// Task control block structure
 pub struct TaskControlBlock {
     /// immutable
@@ -14,6 +17,13 @@ pub struct TaskControlBlock {
     /// Kernel stack corresponding to PID
     pub kstack: KernelStack,
     /// mutable
+    inner: UPSafeCell<TaskControlBlockInner>,
+}
+#[cfg(target_arch = "loongarch64")]
+pub struct TaskControlBlock {
+    // immutable
+    pub process: Weak<ProcessControlBlock>, //所属进程
+    // mutable
     inner: UPSafeCell<TaskControlBlockInner>,
 }
 
@@ -30,6 +40,7 @@ impl TaskControlBlock {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
     /// The physical page number of the frame where the trap context is placed
@@ -42,19 +53,37 @@ pub struct TaskControlBlockInner {
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
 }
+#[cfg(target_arch = "loongarch64")]
+pub struct TaskControlBlockInner {
+    pub kstack: KernelStack,      //每个线程都存在内核栈，其trap上下文位于内核栈上
+    pub res: Option<TaskUserRes>, //线程资源
+    pub task_cx: TaskContext,     //线程上下文
+    pub task_status: TaskStatus,  //线程状态
+    pub exit_code: Option<i32>,   //线程退出码
+}
 
 impl TaskControlBlockInner {
+    #[cfg(target_arch = "riscv64")]
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
+    }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn get_trap_cx(&self) -> &'static mut TrapContext {
+        self.kstack.get_trap_cx()
     }
 
     #[allow(unused)]
     fn get_status(&self) -> TaskStatus {
         self.task_status
     }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn get_trap_addr(&self) -> usize {
+        self.kstack.get_trap_addr()
+    }
 }
 
 impl TaskControlBlock {
+    #[cfg(target_arch = "riscv64")]
     /// Create a new task
     pub fn new(
         process: Arc<ProcessControlBlock>,
@@ -73,6 +102,31 @@ impl TaskControlBlock {
                     res: Some(res),
                     trap_cx_ppn,
                     task_cx: TaskContext::goto_trap_return(kstack_top),
+                    task_status: TaskStatus::Ready,
+                    exit_code: None,
+                })
+            },
+        }
+    }
+    #[cfg(target_arch = "loongarch64")]
+    pub fn new(
+        process: Arc<ProcessControlBlock>,
+        ustack_base: usize,
+        alloc_user_res: bool,
+    ) -> Self {
+        debug!("Entering TaskControlBlock::new");
+        let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
+        // info!("Finish TaskUserRes::new!");
+        let kstack = KernelStack::new();
+        let kstack_top = kstack.get_trap_addr(); //存放了trap上下文后的地址
+        // debug!("create task: kstack_top={:#x}", kstack_top);
+        Self {
+            process: Arc::downgrade(&process),
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    kstack,
+                    res: Some(res),
+                    task_cx: TaskContext::goto_restore(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
                 })

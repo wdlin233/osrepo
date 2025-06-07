@@ -30,18 +30,31 @@ pub struct ElfLoader<'a> {
 
 impl<'a> ElfLoader<'a> {
     /// 基于 ELF 文件构建新的 loader
-    pub fn new(elf_data: &'a [u8]) -> Result<Self, &str> {
+    pub fn new(elf_data: &'a [u8]) -> Result<Self, &'a str> {
         let elf = ElfFile::new(elf_data).unwrap();
         // 检查类型
         if elf.header.pt1.class() != header::Class::SixtyFour {
             return Err("32-bit ELF is not supported on the riscv64".into());
         }
+        #[cfg(target_arch = "riscv64")]
+        {
+            match elf.header.pt2.machine().as_machine() {        
+                header::Machine::Other(0xF3) => {}
+                _ => return Err("invalid ELF arch".into()),
+            };
+            Ok(Self { elf })
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+        // loongarch64 的 ELF 检查和初始化
+        // 你需要根据 loongarch64 的 ELF machine type 填写
         match elf.header.pt2.machine().as_machine() {
-            #[cfg(target_arch = "riscv64")]
-            header::Machine::Other(0xF3) => {}
+            // 假设 loongarch64 的 machine type 是 0x102,
+            header::Machine::Other(0x102) => {},
             _ => return Err("invalid ELF arch".into()),
-        };
+        }
         Ok(Self { elf })
+        }
     }
     /// 初始化用户栈，并返回用户栈栈顶
     ///

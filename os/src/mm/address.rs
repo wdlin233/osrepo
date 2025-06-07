@@ -1,8 +1,16 @@
 //! PhysAddr, VirtAddr, PhysPageNum, VirtPageNum, raw address
 
+/// 在loongArch平台上，虚拟地址为48位，物理地址为48位
+/// 采用16kb页大小，则使用三级页表
+/// 低14位表示业内偏移，每个页可以存放2k个页表项
+/// 因此11-11-11-14,最高位是次高位的扩展
+///
+
 use super::{translated_byte_buffer, PageTableEntry};
 use crate::{config::{PAGE_SIZE, PAGE_SIZE_BITS}, task::current_user_token};
 use core::fmt::{self, Debug, Formatter};
+use crate::phys_to_virt;
+use core::ops::Add;
 
 const PA_WIDTH_SV39: usize = 56;
 const VA_WIDTH_SV39: usize = 39;
@@ -33,6 +41,7 @@ pub struct VirtPageNum(pub usize);
 
 impl Debug for VirtAddr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        //f.write_fmt(format_args!("VA:{:#b}", self.0))
         f.write_fmt(format_args!("VA:{:#x}", self.0))
     }
 }
@@ -56,26 +65,64 @@ impl Debug for PhysPageNum {
 /// T -> usize: T.0
 /// usize -> T: usize.into()
 
+#[cfg(target_arch = "loongarch64")]
+impl Add<usize> for VirtPageNum {
+    type Output = VirtPageNum;
+    fn add(self, rhs: usize) -> Self::Output {
+        VirtPageNum(self.0 + rhs)
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
 impl From<usize> for PhysAddr {
     fn from(v: usize) -> Self {
         Self(v & ((1 << PA_WIDTH_SV39) - 1))
     }
 }
+#[cfg(target_arch = "riscv64")]
 impl From<usize> for PhysPageNum {
     fn from(v: usize) -> Self {
         Self(v & ((1 << PPN_WIDTH_SV39) - 1))
     }
 }
+#[cfg(target_arch = "riscv64")]
 impl From<usize> for VirtAddr {
     fn from(v: usize) -> Self {
         Self(v & ((1 << VA_WIDTH_SV39) - 1))
     }
 }
+#[cfg(target_arch = "riscv64")]
 impl From<usize> for VirtPageNum {
     fn from(v: usize) -> Self {
         Self(v & ((1 << VPN_WIDTH_SV39) - 1))
     }
 }
+#[cfg(target_arch = "loongarch64")]
+impl From<usize> for PhysAddr {
+    fn from(v: usize) -> Self {
+        Self(v)
+    }
+}
+#[cfg(target_arch = "loongarch64")]
+impl From<usize> for PhysPageNum {
+    fn from(v: usize) -> Self {
+        Self(v)
+    }
+}
+#[cfg(target_arch = "loongarch64")]
+impl From<usize> for VirtAddr {
+    fn from(v: usize) -> Self {
+        //debug!("Converting usize to VirtAddr: {:x}", v);
+        Self(v)
+    }
+}
+#[cfg(target_arch = "loongarch64")]
+impl From<usize> for VirtPageNum {
+    fn from(v: usize) -> Self {
+        Self(v)
+    }
+}
+
 impl From<PhysAddr> for usize {
     fn from(v: PhysAddr) -> Self {
         v.0
@@ -86,6 +133,7 @@ impl From<PhysPageNum> for usize {
         v.0
     }
 }
+#[cfg(target_arch = "riscv64")]
 impl From<VirtAddr> for usize {
     fn from(v: VirtAddr) -> Self {
         if v.0 >= (1 << (VA_WIDTH_SV39 - 1)) {
@@ -93,6 +141,12 @@ impl From<VirtAddr> for usize {
         } else {
             v.0
         }
+    }
+}
+#[cfg(target_arch = "loongarch64")]
+impl From<VirtAddr> for usize {
+    fn from(v: VirtAddr) -> Self {
+        v.0
     }
 }
 impl From<VirtPageNum> for usize {
@@ -124,6 +178,7 @@ impl VirtAddr {
 }
 impl From<VirtAddr> for VirtPageNum {
     fn from(v: VirtAddr) -> Self {
+        //info!("Converting VirtAddr to VirtPageNum: {:?} with offset: {:?}", v, v.page_offset());
         assert_eq!(v.page_offset(), 0);
         v.floor()
     }
@@ -168,14 +223,21 @@ impl VirtPageNum {
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
+        #[cfg(target_arch = "riscv64")]
         for i in (0..3).rev() {
-            idx[i] = vpn & 511;
+            idx[i] = vpn & 511; // 2^9-1
             vpn >>= 9;
+        }
+        #[cfg(target_arch = "loongarch64")]
+        for i in (0..3).rev() {
+            idx[i] = vpn & 2047; //2^11-1, 每页包含2048个页表项
+            vpn >>= 11;
         }
         idx
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
@@ -186,6 +248,18 @@ impl PhysAddr {
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
     }
 }
+
+#[cfg(target_arch = "loongarch64")]
+impl PhysAddr {
+    pub fn get_mut<T>(&self) -> &'static mut T {
+        unsafe { ((phys_to_virt!(self.0)) as *mut T).as_mut().unwrap() }
+    }
+    pub fn get_ref<T>(&self) -> &'static T {
+        unsafe { ((phys_to_virt!(self.0)) as *const T).as_ref().unwrap() }
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
 impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
@@ -200,6 +274,25 @@ impl PhysPageNum {
     /// Get the mutable reference of physical address
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
+        pa.get_mut()
+    }
+}
+
+#[cfg(target_arch = "loongarch64")]
+impl PhysPageNum {
+    pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
+        let pa: PhysAddr = self.clone().into();
+        let va = phys_to_virt!(pa.0);
+        // 每一个页有2048个项目 : 16kb/8 = 2048
+        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 2048) }
+    }
+    pub fn get_bytes_array(&self) -> &'static mut [u8] {
+        let pa: PhysAddr = self.clone().into();
+        let va = phys_to_virt!(pa.0);
+        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 16 * 1024) }
+    }
+    pub fn get_mut<T>(&self) -> &'static mut T {
+        let pa: PhysAddr = self.clone().into();
         pa.get_mut()
     }
 }
@@ -220,7 +313,7 @@ impl StepByOne for PhysPageNum {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 /// a simple range structure for type T
 pub struct SimpleRange<T>
 where
@@ -289,6 +382,7 @@ where
 pub type VPNRange = SimpleRange<VirtPageNum>;
 
 /// write a value(`$T`) to the virtual address(dst)
+/// utilized in RV64 only
 pub fn copy_to_virt<T>(src: &T, dst: *mut T) {
     let src_buf_ptr: *const u8 = unsafe { core::mem::transmute(src) };
     let dst_buf_ptr: *mut u8 = unsafe { core::mem::transmute(dst) };

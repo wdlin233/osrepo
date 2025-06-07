@@ -18,8 +18,7 @@ use buddy_system_allocator::LockedHeap;
 pub use console::{flush, STDIN, STDOUT};
 pub use syscall::*;
 
-const USER_HEAP_SIZE: usize = 16384;
-
+const USER_HEAP_SIZE: usize = 0x4000;
 static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
 
 #[global_allocator]
@@ -30,6 +29,7 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
     panic!("Heap allocation error, layout = {:?}", layout);
 }
 
+#[cfg(target_arch = "riscv64")]
 fn clear_bss() {
     extern "C" {
         fn start_bss();
@@ -42,6 +42,17 @@ fn clear_bss() {
         )
         .fill(0);
     }
+}
+
+#[cfg(target_arch = "loongarch64")]
+fn clear_bss() {
+    extern "C" {
+        fn ebss();
+        fn sbss();
+    }
+    (sbss as usize..ebss as usize).for_each(|addr| unsafe {
+        (addr as *mut u8).write_volatile(0);
+    });
 }
 
 #[no_mangle]
