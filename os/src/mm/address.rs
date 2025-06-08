@@ -73,53 +73,32 @@ impl Add<usize> for VirtPageNum {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
+
 impl From<usize> for PhysAddr {
     fn from(v: usize) -> Self {
-        Self(v & ((1 << PA_WIDTH_SV39) - 1))
+        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << PA_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")] return Self(v);
     }
 }
-#[cfg(target_arch = "riscv64")]
+
 impl From<usize> for PhysPageNum {
     fn from(v: usize) -> Self {
-        Self(v & ((1 << PPN_WIDTH_SV39) - 1))
+        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << PPN_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")] return Self(v);
     }
 }
-#[cfg(target_arch = "riscv64")]
-impl From<usize> for VirtAddr {
-    fn from(v: usize) -> Self {
-        Self(v & ((1 << VA_WIDTH_SV39) - 1))
-    }
-}
-#[cfg(target_arch = "riscv64")]
-impl From<usize> for VirtPageNum {
-    fn from(v: usize) -> Self {
-        Self(v & ((1 << VPN_WIDTH_SV39) - 1))
-    }
-}
-#[cfg(target_arch = "loongarch64")]
-impl From<usize> for PhysAddr {
-    fn from(v: usize) -> Self {
-        Self(v)
-    }
-}
-#[cfg(target_arch = "loongarch64")]
-impl From<usize> for PhysPageNum {
-    fn from(v: usize) -> Self {
-        Self(v)
-    }
-}
-#[cfg(target_arch = "loongarch64")]
+
 impl From<usize> for VirtAddr {
     fn from(v: usize) -> Self {
         //debug!("Converting usize to VirtAddr: {:x}", v);
-        Self(v)
+        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << VA_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")] return Self(v);
     }
 }
-#[cfg(target_arch = "loongarch64")]
 impl From<usize> for VirtPageNum {
     fn from(v: usize) -> Self {
-        Self(v)
+        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << VPN_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")] return Self(v);
     }
 }
 
@@ -133,20 +112,19 @@ impl From<PhysPageNum> for usize {
         v.0
     }
 }
-#[cfg(target_arch = "riscv64")]
+
 impl From<VirtAddr> for usize {
     fn from(v: VirtAddr) -> Self {
+        #[cfg(target_arch = "riscv64")]
         if v.0 >= (1 << (VA_WIDTH_SV39 - 1)) {
             v.0 | (!((1 << VA_WIDTH_SV39) - 1))
         } else {
             v.0
         }
-    }
-}
-#[cfg(target_arch = "loongarch64")]
-impl From<VirtAddr> for usize {
-    fn from(v: VirtAddr) -> Self {
-        v.0
+        #[cfg(target_arch = "loongarch64")]
+        {
+            v.0
+        }
     }
 }
 impl From<VirtPageNum> for usize {

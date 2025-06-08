@@ -116,12 +116,12 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if tid == 0 {
         let pid = process.getpid();
-        #[cfg(target_arch = "riscv64")]
         if pid == IDLE_PID {
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
                 exit_code
             );
+            #[cfg(target_arch = "riscv64")]
             if exit_code != 0 {
                 //crate::sbi::shutdown(255); //255 == -1 for err hint
                 crate::board::QEMU_EXIT_HANDLE.exit_failure();
@@ -129,15 +129,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 //crate::sbi::shutdown(0); //0 for success hint
                 crate::board::QEMU_EXIT_HANDLE.exit_success();
             }
-        }
-        #[cfg(target_arch = "loongarch64")]
-        if pid == IDLE_PID {
-            println!(
-                "[kernel] Idle process exit with exit_code {} ...",
-                exit_code
-            );
-            // 0号进程退出
-            panic!("Idle process exit with exit_code {}", exit_code);
+            #[cfg(target_arch = "loongarch64")]
+            panic!("Idle process exit with exit_code {}", exit_code); // 0号进程退出
         }
         remove_from_pid2process(pid);
         let mut process_inner = process.inner_exclusive_access();

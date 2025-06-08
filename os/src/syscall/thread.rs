@@ -1,5 +1,4 @@
 use crate::{
-    mm::kernel_token,
     task::{add_task, current_task, TaskControlBlock},
     hal::trap::{trap_handler, TrapContext},
 };
@@ -44,6 +43,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let new_task_trap_cx = new_task_inner.get_trap_cx();
     #[cfg(target_arch = "riscv64")]
     {
+        use crate::mm::kernel_token;
         *new_task_trap_cx = TrapContext::app_init_context(
             entry,
             new_task_res.ustack_top(),

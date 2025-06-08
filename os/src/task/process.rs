@@ -7,7 +7,7 @@ use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{MemorySet, KERNEL_SPACE, translated_refmut};
+use crate::mm::{MemorySet, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};
 use alloc::string::String;
@@ -17,6 +17,8 @@ use alloc::vec::Vec;
 use core::cell::RefMut;
 use core::arch::asm;
 use crate::timer::get_time;
+#[cfg(target_arch = "riscv64")]
+use crate::mm::KERNEL_SPACE;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::pgdl;
 #[cfg(target_arch = "loongarch64")]
@@ -226,21 +228,14 @@ impl ProcessControlBlock {
         drop(task_inner);
 
         // debug!("kernel: create main thread, pid = {}", process.getpid());
-        #[cfg(target_arch = "riscv64")]
-        {
-            *trap_cx = TrapContext::app_init_context(
-                entry_point,
-                ustack_top,
-                KERNEL_SPACE.exclusive_access().token(),
-                kstack_top,
-                trap_handler as usize,
-            );
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            // waring:在内核栈上压入trap上下文，与rcore实现不同
-            *trap_cx = TrapContext::app_init_context(entry_point, ustack_top);
-        }
+        // la 在内核栈上压入trap上下文，与rcore实现不同
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            ustack_top,
+            #[cfg(target_arch = "riscv64")] KERNEL_SPACE.exclusive_access().token(),
+            #[cfg(target_arch = "riscv64")] kstack_top,
+            #[cfg(target_arch = "riscv64")] (trap_handler as usize),
+        );
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
         process_inner.tasks.push(Some(Arc::clone(&task)));
@@ -334,13 +329,12 @@ impl ProcessControlBlock {
 
         // initialize trap_cx
         //trace!("kernel: exec .. initialize trap_cx");
-        #[cfg(target_arch = "riscv64")]
         let mut trap_cx = TrapContext::app_init_context(
                 entry_point,
                 user_sp,
-                KERNEL_SPACE.exclusive_access().token(),
-                task.kstack.get_top(),
-                trap_handler as usize,
+                #[cfg(target_arch = "riscv64")] KERNEL_SPACE.exclusive_access().token(),
+                #[cfg(target_arch = "riscv64")] task.kstack.get_top(),
+                #[cfg(target_arch = "riscv64")] (trap_handler as usize),
             );
         #[cfg(target_arch = "riscv64")]
         {
@@ -348,11 +342,9 @@ impl ProcessControlBlock {
             trap_cx.x[11] = argv_base; // a1
         }
         #[cfg(target_arch = "loongarch64")]
-        let mut trap_cx = TrapContext::app_init_context(entry_point, user_sp);
-        #[cfg(target_arch = "loongarch64")]
         {
             trap_cx.x[4] = args_len;
-            trap_cx.x[5] = user_sp + 8; // maybe
+            trap_cx.x[5] = argv_base; // maybe, or user_sp + 8
         }
         *task_inner.get_trap_cx() = trap_cx;
         

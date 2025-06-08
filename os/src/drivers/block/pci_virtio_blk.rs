@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 
 use super::BlockDevice;
 use crate::mm::{
-    frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
+    frame_alloc, frame_dealloc, FrameTracker, PageTable, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr,
 };
 use crate::sync::UPSafeCell;

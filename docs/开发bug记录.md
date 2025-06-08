@@ -106,6 +106,8 @@ process_inner.memory_set.insert_framed_area(
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
-- [ ] 将差异部分单独用一个模块进行处理，而往上层提供统一的抽象.
+- [x] 将差异部分单独用一个模块进行处理，而往上层提供统一的抽象.
 
 注意在 LoongArch 中有 `pwcl::set_ptwidth(0xb); //16KiB的页大小` 对寄存器设置页大小等操作，配置页大小并不是 `config` 修改一个常量这么简单，为了保险起见这里就不对两个架构的基本参数进行改动了.
+
+la 和 rv 的主要区别除了一些参数外，就在于 la 因为有窗口映射就没有设置内核地址空间，以及需要手动处理 TLB 的一些操作.
