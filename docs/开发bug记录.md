@@ -77,7 +77,7 @@ process_inner.memory_set.insert_framed_area(
 这两个部分被分到同一页了，增加一个页面对齐就可以保证分配在不同的虚地址了.
 
 - [x] 实现 la 的分时功能.
-- [ ] 解决地址对齐问题
+- [x] 解决地址对齐问题
 
 ```shell
 [DEBUG] Converting usize to VirtAddr: 10004086
@@ -105,5 +105,7 @@ process_inner.memory_set.insert_framed_area(
 
 # Optimization
 
-- [ ] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
+- [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
 - [ ] 将差异部分单独用一个模块进行处理，而往上层提供统一的抽象.
+
+注意在 LoongArch 中有 `pwcl::set_ptwidth(0xb); //16KiB的页大小` 对寄存器设置页大小等操作，配置页大小并不是 `config` 修改一个常量这么简单，为了保险起见这里就不对两个架构的基本参数进行改动了.

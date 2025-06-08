@@ -9,7 +9,7 @@ use super::stride::Stride;
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, KERNEL_SPACE, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
-use crate::trap::{trap_handler, TrapContext};
+use crate::hal::trap::{trap_handler, TrapContext};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;

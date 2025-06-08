@@ -4,7 +4,7 @@ use super::ProcessControlBlock;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
 use crate::mm::{MapPermission, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
-use crate::trap::TrapContext;
+use crate::hal::trap::TrapContext;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,

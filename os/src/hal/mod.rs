@@ -1,5 +1,6 @@
 pub mod utils;
 pub mod arch; 
+pub mod trap;
 
 pub fn clear_bss() {
     extern "C" {

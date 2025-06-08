@@ -1,5 +1,5 @@
 //! Implementation of [`TaskContext`]
-use crate::trap::trap_return;
+use crate::hal::trap::trap_return;
 
 #[cfg(target_arch = "riscv64")]
 #[repr(C)]

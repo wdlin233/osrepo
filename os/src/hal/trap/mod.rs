@@ -13,10 +13,8 @@
 //! to [`syscall()`].
 
 mod context;
-#[cfg(target_arch = "loongarch64")]
-mod trap;
+#[cfg(target_arch = "loongarch64")] mod trap;
 
-use crate::config::TRAMPOLINE;
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_trap_cx,
@@ -24,23 +22,30 @@ use crate::task::{
     current_process,
 };
 use crate::println;
-#[cfg(target_arch = "riscv64")]
-use crate::task::current_trap_cx_user_va;
-#[cfg(target_arch = "loongarch64")]
-use crate::mm::{PageTable, VirtAddr, VirtPageNum};
-#[cfg(target_arch = "loongarch64")]
-use crate::task::current_trap_addr;
 use crate::config::{TICKS_PER_SEC, MSEC_PER_SEC};
 use crate::timer::{check_timer};
+
+#[cfg(target_arch = "riscv64")] 
+use crate::{
+    config::TRAMPOLINE,
+    task::current_trap_cx_user_va,
+    timer::{get_time, set_next_trigger},
+};
+#[cfg(target_arch = "loongarch64")]
+use crate::{
+    mm::{PageTable, VirtAddr, VirtPageNum},
+    task::current_trap_addr,
+    timer::get_time,
+};
+
 use core::arch::{asm, global_asm};
+
 #[cfg(target_arch = "riscv64")]
 use riscv::register::{
     mtvec::TrapMode,
     scause::{self, Exception, Interrupt, Trap},
     sie, stval, stvec,
 };
-#[cfg(target_arch = "riscv64")]
-use crate::timer::{get_time, set_next_trigger};
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::{
     register::{
@@ -52,103 +57,105 @@ use loongarch64::{
 };
 
 #[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("trap.S"));
+global_asm!(include_str!("trap_rv.s"));
 #[cfg(target_arch = "loongarch64")]
-global_asm!(include_str!("trap.s"));
+global_asm!(include_str!("trap_la.s"));
 
-#[cfg(target_arch = "riscv64")]
 /// Initialize trap handling
 pub fn init() {
+    #[cfg(target_arch = "riscv64")] 
     set_kernel_trap_entry();
+    #[cfg(target_arch = "loongarch64")]
+    {
+        // 清除时钟专断
+        ticlr::clear_timer_interrupt();
+        tcfg::set_en(false);
+        // disable all interrupts
+        ecfg::set_lie(LineBasedInterrupt::empty());
+        // Ecfg::read().set_lie_with_index(11, false).write();
+        // 关闭全局中断
+        crmd::set_ie(false);
+
+        // 设置普通异常和中断入口
+        // 设置TLB重填异常地址
+        println!("kernel_trap_entry: {:#x}", trap::kernel_trap_entry as usize);
+        eentry::set_eentry(trap::kernel_trap_entry as usize);
+        // 设置重填tlb地址
+        tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize);
+        // 设置TLB的页面大小为16KiB
+        stlbps::set_ps(0xe);
+        // 设置TLB的页面大小为16KiB
+        tlbrehi::set_ps(0xe);
+        pwcl::set_ptbase(0xe);
+        pwcl::set_ptwidth(0xb); //16KiB的页大小
+        pwcl::set_dir1_base(25); //页目录表起始位置
+        pwcl::set_dir1_width(0xb); //页目录表宽度为11位
+
+        pwch::set_dir3_base(36); //第三级页目录表
+        pwch::set_dir3_width(0xb); //页目录表宽度为11位
+
+        // make sure that the interrupt is enabled when first task returns user mode
+        prmd::set_pie(true);
+
+        println!("trap init success");
+    }
 }
 
-#[cfg(target_arch = "loongarch64")]
-pub fn init() {
-    // 清除时钟专断
-    ticlr::clear_timer_interrupt();
-    tcfg::set_en(false);
-    // disable all interrupts
-    ecfg::set_lie(LineBasedInterrupt::empty());
-    // Ecfg::read().set_lie_with_index(11, false).write();
-    // 关闭全局中断
-    crmd::set_ie(false);
-
-    // 设置普通异常和中断入口
-    // 设置TLB重填异常地址
-    println!("kernel_trap_entry: {:#x}", trap::kernel_trap_entry as usize);
-    eentry::set_eentry(trap::kernel_trap_entry as usize);
-    // 设置重填tlb地址
-    tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize);
-    // 设置TLB的页面大小为16KiB
-    stlbps::set_ps(0xe);
-    // 设置TLB的页面大小为16KiB
-    tlbrehi::set_ps(0xe);
-    pwcl::set_ptbase(0xe);
-    pwcl::set_ptwidth(0xb); //16KiB的页大小
-    pwcl::set_dir1_base(25); //页目录表起始位置
-    pwcl::set_dir1_width(0xb); //页目录表宽度为11位
-
-    pwch::set_dir3_base(36); //第三级页目录表
-    pwch::set_dir3_width(0xb); //页目录表宽度为11位
-
-    // make sure that the interrupt is enabled when first task returns user mode
-    prmd::set_pie(true);
-
-    println!("trap init success");
-}
-
-#[cfg(target_arch = "riscv64")]
 /// set trap entry for traps happen in kernel(supervisor) mode
+#[inline]
 fn set_kernel_trap_entry() {
+    #[cfg(target_arch = "riscv64")]
     extern "C" {
         fn __trap_from_kernel();
     }
+    #[cfg(target_arch = "riscv64")]
     unsafe {
-        stvec::write(__trap_from_kernel as usize, TrapMode::Direct);
+        stvec::write(
+            __trap_from_kernel as usize, 
+            TrapMode::Direct
+        );
     }
-}
-#[cfg(target_arch = "riscv64")]
-/// set trap entry for traps happen in user mode
-fn set_user_trap_entry() {
-    unsafe {
-        stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
-    }
-}
 
-#[cfg(target_arch = "loongarch64")]
-#[inline]
-pub fn set_user_trap_entry() {
-    // 设置普通异常和中断入口
-    eentry::set_eentry(__alltraps as usize);
-}
-#[cfg(target_arch = "loongarch64")]
-#[inline]
-pub fn set_kernel_trap_entry() {
+    #[cfg(target_arch = "loongarch64")]
     eentry::set_eentry(trap::kernel_trap_entry as usize);
 }
+/// set trap entry for traps happen in user mode
+#[inline]
+fn set_user_trap_entry() {
+    #[cfg(target_arch = "riscv64")]
+    unsafe {
+        stvec::write(
+            TRAMPOLINE as usize, 
+            TrapMode::Direct
+        );
+    }
 
-#[cfg(target_arch = "riscv64")]
+    #[cfg(target_arch = "loongarch64")]
+    eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
+}
+
 /// enable timer interrupt in supervisor mode
 pub fn enable_timer_interrupt() {
+    #[cfg(target_arch = "riscv64")]
     unsafe {
         sie::set_stimer();
     }
-}
-#[cfg(target_arch = "loongarch64")]
-pub fn enable_timer_interrupt() {
-    let timer_freq = get_timer_freq();
-    ticlr::clear_timer_interrupt();
-    // 设置计时器的配置
-    // println!("timer freq: {}", timer_freq);
-    tcfg::set_init_val(timer_freq / TICKS_PER_SEC);
-    tcfg::set_en(true);
-    tcfg::set_periodic(true);
+    #[cfg(target_arch = "loongarch64")] 
+    {
+        let timer_freq = get_timer_freq();
+        ticlr::clear_timer_interrupt();
+        // 设置计时器的配置
+        // println!("timer freq: {}", timer_freq);
+        tcfg::set_init_val(timer_freq / TICKS_PER_SEC);
+        tcfg::set_en(true);
+        tcfg::set_periodic(true);
 
-    // 开启全局中断
-    ecfg::set_lie(LineBasedInterrupt::TIMER | LineBasedInterrupt::HWI0);
-    crmd::set_ie(true);
+        // 开启全局中断
+        ecfg::set_lie(LineBasedInterrupt::TIMER | LineBasedInterrupt::HWI0);
+        crmd::set_ie(true);
 
-    println!("Interrupt enable: {:?}", ecfg::read().lie());
+        println!("Interrupt enable: {:?}", ecfg::read().lie());
+    }
 }
 
 /// trap handler
@@ -159,6 +166,7 @@ pub fn trap_handler() -> ! {
     let scause = scause::read();
     let stval = stval::read();
     // trace!("into {:?}", scause.cause());
+    // to get kernel time
     let in_kernel_time = get_time();
     current_process().inner_exclusive_access().set_utime(in_kernel_time);
     match scause.cause() {
@@ -222,6 +230,9 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
         // 全局中断会在中断处理程序被关掉
         panic!("kerneltrap: global interrupt enable");
     }
+    // to get kernel time
+    let in_kernel_time = get_time();
+    current_process().inner_exclusive_access().set_utime(in_kernel_time);
     match estat.cause() {
         Trap::Exception(Exception::Syscall) => {
             //系统调用

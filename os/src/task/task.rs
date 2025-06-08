@@ -2,7 +2,7 @@
 
 use super::id::TaskUserRes;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
-use crate::trap::TrapContext;
+use crate::hal::trap::TrapContext;
 use crate::{mm::PhysPageNum, sync::UPSafeCell};
 use alloc::sync::{Arc, Weak};
 use core::cell::RefMut;

@@ -49,13 +49,12 @@ pub mod sync;
 pub mod syscall;
 pub mod task;
 pub mod timer;
-pub mod trap;
 pub mod hal;
 pub mod boot; // used to set up the initial environment
 
 #[cfg(target_arch = "loongarch64")]
 use crate::{
-    trap::enable_timer_interrupt,
+    hal::trap::{enable_timer_interrupt, init},
     task::add_initproc,
     hal::arch::info::{print_machine_info, kernel_layout},
 };
@@ -80,9 +79,9 @@ pub fn main(cpu: usize) -> ! {
     
     mm::init();
     #[cfg(target_arch = "riscv64")] mm::remap_test();
-    trap::init();
+    hal::trap::init();
     #[cfg(target_arch = "loongarch64")] print_machine_info();
-    trap::enable_timer_interrupt();
+    hal::trap::enable_timer_interrupt();
     #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
 
     fs::list_apps();
