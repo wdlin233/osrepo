@@ -1,8 +1,7 @@
-//! SBI call wrappers
-
-#![allow(unused)]
+pub mod console;
 
 use core::arch::asm;
+use console::{get_char, Console};
 /// set timer sbi call id
 const SBI_SET_TIMER: usize = 0x54494D45;
 /// console putchar sbi call id
@@ -43,9 +42,10 @@ pub fn console_putchar(c: usize) {
 }
 
 /// use sbi call to getchar from console (qemu uart handler)
-#[cfg(target_arch = "riscv64")]
+
 pub fn console_getchar() -> usize {
-    sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0)
+    #[cfg(target_arch = "riscv64")] return sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0);
+    #[cfg(target_arch = "loongarch64")] return get_char() as usize; 
 }
 
 /// use sbi call to shutdown the kernel
@@ -63,22 +63,4 @@ pub(crate) extern "C" fn shutdown() -> ! {
             asm!("idle 0");
         }
     }
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn console_putchar(_c: usize) {
-    // You can implement UART output for loongarch64 here if needed
-    unimplemented!()
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn console_getchar() -> usize {
-    // You can implement UART input for loongarch64 here if needed
-    0
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn set_timer(_timer: usize) {
-    // Timer not implemented for loongarch64
-    unimplemented!()
 }

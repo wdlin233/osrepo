@@ -552,6 +552,7 @@ pub fn remap_test() {
         .translate(mid_data.floor())
         .unwrap()
         .executable(),);
+    use crate::println;
     println!("remap_test passed!");
 }
 

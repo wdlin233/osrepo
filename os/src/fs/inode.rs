@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 use bitflags::*;
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
+use crate::println;
 
 /// inode in memory
 /// A wrapper around a filesystem inode

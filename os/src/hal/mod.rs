@@ -1,4 +1,5 @@
 pub mod uart;
+pub mod utils;
 #[cfg(target_arch = "loongarch64")]
 pub mod info;
 

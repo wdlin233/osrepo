@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
 use crate::virt_to_phys;
+use crate::println;
 
 /// tracker for physical page frame allocation and deallocation
 #[derive(Clone)]
@@ -168,5 +169,6 @@ pub fn frame_allocator_test() {
         v.push(frame);
     }
     drop(v);
+    use crate::println;
     println!("frame_allocator_test passed!");
 }

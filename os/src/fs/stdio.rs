@@ -1,7 +1,8 @@
 use super::File;
 use crate::mm::UserBuffer;
-use crate::sbi::console_getchar;
+use crate::hal::utils::console_getchar;
 use crate::task::suspend_current_and_run_next;
+use crate::print;
 
 /// stdin file for getting chars from console
 pub struct Stdin;

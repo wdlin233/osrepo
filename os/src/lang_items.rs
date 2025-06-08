@@ -1,10 +1,11 @@
 //! The panic handler and backtrace
 
-use crate::sbi::shutdown;
+use crate::hal::utils::shutdown;
 #[cfg(target_arch = "riscv64")]
 use crate::task::current_kstack_top;
 use core::arch::asm;
 use core::panic::PanicInfo;
+    use crate::println;
 
 #[panic_handler]
 /// panic handler

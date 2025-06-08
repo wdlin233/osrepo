@@ -39,14 +39,12 @@ extern crate bitflags;
 mod board;
 
 #[macro_use]
-mod console;
 pub mod config;
 pub mod drivers;
 pub mod fs;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
-pub mod sbi;
 pub mod sync;
 pub mod syscall;
 pub mod task;
@@ -64,10 +62,12 @@ use crate::{
 };
 
 use core::arch::global_asm;
-use crate::console::CONSOLE;
 use config::FLAG;
-use crate::hal::{
-    clear_bss,
+use crate::{
+    hal::{
+        clear_bss,
+        utils::console::CONSOLE,
+    }
 };
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::{

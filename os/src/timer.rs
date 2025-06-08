@@ -11,8 +11,6 @@ use alloc::sync::Arc;
 use lazy_static::*;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::time;
-#[cfg(target_arch = "riscv64")]
-use crate::sbi::set_timer;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::time::{get_timer_freq, Time};
 
@@ -42,6 +40,7 @@ pub fn get_time_us() -> usize {
 #[cfg(target_arch = "riscv64")]
 /// Set the next timer interrupt
 pub fn set_next_trigger() {
+    use crate::hal::utils::set_timer;
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
