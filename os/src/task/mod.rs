@@ -21,7 +21,8 @@ mod task;
 mod stride;
 
 use self::id::TaskUserRes;
-use crate::fs::{open_file, OpenFlags};
+//use crate::fs::ext4::ROOT_INO;
+use crate::fs::{open_file, OpenFlags, ROOT_INODE};
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
@@ -178,13 +179,13 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 lazy_static! {
-    /// Creation of initial process
-    ///
-    /// the name "initproc" may be changed to any other app name like "usertests",
-    /// but we have user_shell, so we don't need to change it.
+    /// INITPROC static doc
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
-        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
-        let v = inode.read_all();
+        let root_ino = ROOT_INODE.clone();
+
+        // 读取文件逻辑？
+        let dentry = open_file(root_ino, "spawn", OpenFlags::O_RDONLY).unwrap();
+        let v = dentry.inode().read_all();
         ProcessControlBlock::new(v.as_slice())
     };
 }

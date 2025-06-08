@@ -22,3 +22,9 @@ pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 pub use crate::board::{CLOCK_FREQ, MMIO};
 /// yield wakeup task
 pub const YIELD_CHECK: usize = 90;
+
+#[allow(unused)]
+/// Use a fs block size of 512 bytes
+pub const BLOCK_SIZE: usize = 4096;
+/// The io block size of the disk layer
+pub const IO_BLOCK_SIZE: usize = 512;

@@ -223,6 +223,48 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .get_mut()
 }
 
+// 读取迭代器实现
+pub struct Iter<'a> {
+    buffers: core::slice::Iter<'a, &'static mut [u8]>,
+    current: &'a [u8],
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a u8;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.is_empty() {
+            self.current = self.buffers.next()?;
+        }
+        
+        let (first, rest) = self.current.split_first()?;
+        self.current = rest;
+        Some(first)
+    }
+}
+
+// 可变迭代器实现
+pub struct IterMut<'a> {
+    buffers: core::slice::IterMut<'a, &'static mut [u8]>,
+    current: &'a mut [u8],
+}
+
+impl<'a> Iterator for IterMut<'a> {
+    type Item = &'a mut u8;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.is_empty() {
+            self.current = self.buffers.next()?;
+        }
+        
+        // 安全：从当前切片分离出第一个元素
+        let slice = core::mem::replace(&mut self.current, &mut []);
+        let (first, rest) = slice.split_first_mut()?;
+        self.current = rest;
+        Some(first)
+    }
+}
+
 /// An abstraction over a buffer passed from user space to kernel space
 pub struct UserBuffer {
     /// A list of buffers
@@ -241,6 +283,102 @@ impl UserBuffer {
             total += b.len();
         }
         total
+    }
+    /// 转换为不可变字节切片 (数据拷贝)
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut result = Vec::with_capacity(self.len());
+        for buffer in &self.buffers {
+            result.extend_from_slice(buffer);
+        }
+        result
+    }
+
+    /// 转换为不可变字节切片引用 (零拷贝)
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            if self.buffers.is_empty() {
+                &[]
+            } else if self.buffers.len() == 1 {
+                &self.buffers[0]
+            } else {
+                core::slice::from_raw_parts(
+                    self.buffers[0].as_ptr(), 
+                    self.len()
+                )
+            }
+        }
+    }
+
+    /// 转换为可变字节切片 (零拷贝)
+    /// 注意：仅在物理内存连续时安全
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            if self.buffers.is_empty() {
+                &mut []
+            } else if self.buffers.len() == 1 {
+                &mut self.buffers[0]
+            } else if self.is_physically_contiguous() {
+                core::slice::from_raw_parts_mut(
+                    self.buffers[0].as_mut_ptr(), 
+                    self.len()
+                )
+            } else {
+                panic!("Buffers are not physically contiguous");
+            }
+        }
+    }
+
+    /// 检查所有缓冲区是否物理连续
+    fn is_physically_contiguous(&self) -> bool {
+        let mut next_ptr = None;
+        
+        for buffer in &self.buffers {
+            let start_ptr = buffer.as_ptr() as usize;
+            let end_ptr = start_ptr + buffer.len();
+            
+            if let Some(expected_next) = next_ptr {
+                if start_ptr != expected_next {
+                    return false;
+                }
+            }
+            
+            next_ptr = Some(end_ptr);
+        }
+        
+        true
+    }
+
+    /// 实现读取迭代器
+    pub fn iter(&self) -> Iter<'_> {
+        Iter {
+            buffers: self.buffers.iter(),
+            current: &[],
+        }
+    }
+
+    /// 实现写入迭代器
+    pub fn iter_mut(&mut self) -> IterMut<'_> {
+        IterMut {
+            buffers: self.buffers.iter_mut(),
+            current: &mut [],
+        }
+    }
+
+    /// 高效复制到连续缓冲区
+    pub fn copy_to_slice(&self, dest: &mut [u8]) -> usize {
+        let mut copied = 0;
+        
+        for buf in &self.buffers {
+            if copied >= dest.len() {
+                break;
+            }
+            
+            let to_copy = (buf.len()).min(dest.len() - copied);
+            dest[copied..copied + to_copy].copy_from_slice(&buf[..to_copy]);
+            copied += to_copy;
+        }
+        
+        copied
     }
 }
 

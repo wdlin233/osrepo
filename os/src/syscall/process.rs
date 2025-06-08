@@ -1,12 +1,8 @@
 use crate::{
-    fs::{open_file, OpenFlags},
-    mm::{copy_to_virt, translated_ref, translated_refmut, translated_str},
-    task::{
-        current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
-        suspend_current_and_run_next, SignalFlags, mmap, munmap,block_current_and_run_next,
+    config::PAGE_SIZE, fs::{open_file, OpenFlags, ROOT_INODE}, mm::{copy_to_virt, translated_ref, translated_refmut, translated_str}, task::{
+        block_current_and_run_next, current_process, current_task, current_user_token, exit_current_and_run_next, mmap, munmap, pid2process, suspend_current_and_run_next, SignalFlags
 
-    }, 
-    config::PAGE_SIZE,
+    }
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
@@ -92,8 +88,9 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
             args = args.add(1);
         }
     }
-    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
-        let all_data = app_inode.read_all();
+    let root_ino = ROOT_INODE.clone();
+    if let Some(app_inode_entry) = open_file(root_ino, path.as_str(), OpenFlags::O_RDONLY) {
+        let all_data = app_inode_entry.inode().read_all();
         let process = current_process();
         let argc = args_vec.len();
         //trace!("argc in syscall {}", argc);

@@ -66,6 +66,9 @@ fn clear_bss() {
     }
 }
 
+/// buffers doc
+pub mod buffers;
+
 #[no_mangle]
 /// the rust entry-point of os
 pub fn rust_main() -> ! {
@@ -77,7 +80,18 @@ pub fn rust_main() -> ! {
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    fs::list_apps();
+    
+    // 此处插入模块测试代码
+    // 1. buffers/bio.rs的实现测试
+    // println!("[kernel] Hello, world!");
+    //println!("[kernel] Begin kernel level Test!");
+    
+    //buffers::bio_unit_tests();
+
+    //println!("[kernel] End kernel level Test!");
+    // 结束模块测试代码
+
+    //fs::list_apps();
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
