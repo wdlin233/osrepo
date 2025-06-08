@@ -51,14 +51,13 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod hal;
-#[cfg(target_arch = "loongarch64")]
-mod loongarch;
-#[cfg(target_arch = "loongarch64")]
-pub mod boot;
+pub mod boot; // used to set up the initial environment
+
 #[cfg(target_arch = "loongarch64")]
 use crate::{
     trap::enable_timer_interrupt,
     task::add_initproc,
+    hal::arch::info::{print_machine_info, kernel_layout},
 };
 
 use core::arch::global_asm;
@@ -69,58 +68,25 @@ use crate::{
         utils::console::CONSOLE,
     }
 };
-#[cfg(target_arch = "loongarch64")]
-use crate::hal::{
-    info::{print_machine_info, kernel_layout},
-};
 
-#[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("entry.asm"));
-
-
-#[cfg(target_arch = "riscv64")]
 #[no_mangle]
-/// the rust entry-point of os
-pub fn rust_main() -> ! {
-    clear_bss();
-    println!("{}", FLAG);
-    println!("[kernel] Hello, world!");
-    logging::init();
-    mm::init();
-    mm::remap_test();
-    trap::init();
-    trap::enable_timer_interrupt();
-    timer::set_next_trigger();
-    fs::list_apps();
-    task::add_initproc();
-    task::run_tasks();
-    panic!("Unreachable in rust_main!");
-}
-
-#[cfg(target_arch = "loongarch64")]
-#[no_mangle]
-fn main(cpu: usize) {
-    use fs::list_apps;
-    use task::add_initproc;
-
+pub fn main(cpu: usize) -> ! {
     clear_bss();
     println!("{}", FLAG);
     println!("[kernel] Hello, world!");
     println!("cpu: {}", cpu);
     logging::init();
     log::error!("Logging init success");
-    // rtc_init(); println!("CURRENT TIME {:?}", rtc_time_read());
-    kernel_layout();
-
+    
     mm::init();
+    #[cfg(target_arch = "riscv64")] mm::remap_test();
     trap::init();
-    print_machine_info();
-    println!("machine info success");
-    // sata 硬盘 ahci_init()
+    #[cfg(target_arch = "loongarch64")] print_machine_info();
+    trap::enable_timer_interrupt();
+    #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
 
-    enable_timer_interrupt();
-    list_apps();
-    add_initproc();   
+    fs::list_apps();
+    task::add_initproc();
     task::run_tasks();
-    panic!("Unreachable section for loongarch64");
+    panic!("Unreachable section for kernel!");
 }

@@ -1,8 +1,6 @@
 //! The panic handler and backtrace
 
 use crate::hal::utils::shutdown;
-#[cfg(target_arch = "riscv64")]
-use crate::task::current_kstack_top;
 use core::arch::asm;
 use core::panic::PanicInfo;
     use crate::println;
@@ -29,6 +27,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[allow(unused)]
 #[cfg(target_arch = "riscv64")]
 unsafe fn backtrace() {
+    use crate::task::current_kstack_top;
     let mut fp: usize;
     let stop = current_kstack_top();
     asm!("mv {}, s0", out(reg) fp);

@@ -1,7 +1,5 @@
-pub mod uart;
 pub mod utils;
-#[cfg(target_arch = "loongarch64")]
-pub mod info;
+pub mod arch; 
 
 pub fn clear_bss() {
     extern "C" {

@@ -12,7 +12,6 @@ mod frame_allocator; // frame allocator
 
 #[cfg(target_arch = "riscv64")]
 mod heap_allocator;
-
 #[cfg(target_arch = "loongarch64")]
 pub mod system_allocator; // heap allocator
 
@@ -29,7 +28,7 @@ pub use page_table::{
 };
 #[cfg(target_arch = "loongarch64")]
 use crate::{
-    loongarch::VIRT_BIAS,
+    config::VIRT_BIAS,
 };
 
 #[cfg(target_arch = "loongarch64")]
@@ -53,13 +52,13 @@ pub fn init() {
 #[macro_export]
 macro_rules! virt_to_phys {
     ($va:expr) => {
-        $va - crate::loongarch::VIRT_BIAS
+        $va - crate::config::VIRT_BIAS
     };
 }
 /// Translate a physical address to a virtual address.
 #[macro_export]
 macro_rules! phys_to_virt {
     ($pa:expr) => {
-        $pa + crate::loongarch::VIRT_BIAS
+        $pa + crate::config::VIRT_BIAS
     };
 }

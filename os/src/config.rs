@@ -25,7 +25,7 @@ pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
-pub const VIRT_BIAS: usize = 0x9000000000000000;
+pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
 #[cfg(target_arch = "riscv64")]

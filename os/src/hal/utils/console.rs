@@ -15,7 +15,7 @@ impl Write for Stdout {
     }
 }
 
-use crate::{config::UART, hal::uart::Uart};
+use crate::{config::UART, hal::arch::uart::Uart};
 use spin::{Lazy, Mutex};
 
 pub struct Console {
