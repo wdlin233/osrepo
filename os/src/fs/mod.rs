@@ -6,7 +6,6 @@ pub mod stdio;
 
 // 根据编译时的条件选择模块
 pub mod ext4;
-pub mod easyfs;
 
 pub mod defs;
 pub mod dentry;
