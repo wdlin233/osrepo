@@ -11,7 +11,7 @@ pub use virtio_blk::VirtIOBlock;
 
 use alloc::sync::Arc;
 // use easy_fs::BlockDevice;
-use crate::fs::BlockDevice;
+use crate::drivers::BlockDevice;
 use lazy_static::*;
 use crate::println;
 
