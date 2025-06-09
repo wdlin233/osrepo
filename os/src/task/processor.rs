@@ -162,6 +162,7 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.exclusive_access();
     let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);
+    debug!("in schedule, to switch");
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
