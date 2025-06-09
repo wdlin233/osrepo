@@ -44,7 +44,7 @@ use core::arch::{asm, global_asm};
 use riscv::register::{
     mtvec::TrapMode,
     scause::{self, Exception, Interrupt, Trap},
-    sie, stval, stvec,
+    sie, stval, stvec, satp,
 };
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::{
@@ -447,3 +447,27 @@ fn tlb_page_fault() {
 }
 
 pub use context::TrapContext;
+
+#[allow(unused_variables)]
+
+///wait ret
+pub fn wait_return() {
+    info!("new round of father waiting for child to return");
+    set_user_trap_entry();
+    let trap_cx_user_va: usize = current_trap_cx_user_va().into();
+    let user_satp = current_user_token();
+    debug!(
+        "[kernel] wait_return, trap_cx_user_va = {:#x}, user_satp = {:#x}",
+        trap_cx_user_va, user_satp
+    );
+
+    extern "C" {
+        fn __wait_return();
+    }
+    let entry_va = __wait_return as usize;
+    warn!("reset satp to {:#x}", user_satp);
+    unsafe {
+        satp::write(user_satp);
+        asm!("sfence.vma");
+    }
+}

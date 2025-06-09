@@ -6,7 +6,7 @@ use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
-use crate::fs::{File, Stdin, Stdout};
+use crate::fs::{file::File, stdio::{Stdin, Stdout}};
 use crate::mm::{MemorySet, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};

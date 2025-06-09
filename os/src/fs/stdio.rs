@@ -1,8 +1,11 @@
-use super::File;
+use super::file;
 use crate::mm::UserBuffer;
 use crate::hal::utils::console_getchar;
 use crate::task::suspend_current_and_run_next;
 use crate::print;
+use riscv::register::sstatus;
+
+use super::{file::File, inode::Stat};
 
 /// stdin file for getting chars from console
 pub struct Stdin;
@@ -17,13 +20,17 @@ impl File for Stdin {
     fn writable(&self) -> bool {
         false
     }
-    fn read(&self, mut user_buf: UserBuffer) -> usize {
-        assert_eq!(user_buf.len(), 1);
+    fn read(&self, user_buf: &mut [u8]) -> usize {
+        // assert_eq!(user_buf.len(), 1);
         // busy loop
+        unsafe {
+            sstatus::set_sum();
+        }
         let mut c: usize;
         loop {
             c = console_getchar();
             if c == 0 {
+                debug!("stdin: no char, suspend and run next");
                 suspend_current_and_run_next();
                 continue;
             } else {
@@ -31,16 +38,23 @@ impl File for Stdin {
             }
         }
         let ch = c as u8;
+        user_buf[0] = ch;
         unsafe {
-            user_buf.buffers[0].as_mut_ptr().write_volatile(ch);
+            sstatus::clear_sum();
         }
         1
     }
-    fn write(&self, _user_buf: UserBuffer) -> usize {
+    fn read_all(&self) -> alloc::vec::Vec<u8> {
+        panic!("Stdin::read_all not implemented");
+    }
+    fn write(&self, _user_buf: &[u8]) -> usize {
         panic!("Cannot write to stdin!");
     }
-    fn state(&self) -> Option<super::Stat> {
-        unimplemented!()
+    fn fstat(&self) -> Option<Stat> {
+        None
+    }
+    fn hang_up(&self) -> bool {
+        todo!()
     }
 }
 
@@ -51,16 +65,24 @@ impl File for Stdout {
     fn writable(&self) -> bool {
         true
     }
-    fn read(&self, _user_buf: UserBuffer) -> usize {
+    fn read(&self, _user_buf: &mut [u8]) -> usize {
         panic!("Cannot read from stdout!");
     }
-    fn write(&self, user_buf: UserBuffer) -> usize {
-        for buffer in user_buf.buffers.iter() {
-            print!("{}", core::str::from_utf8(*buffer).unwrap());
+    fn read_all(&self) -> alloc::vec::Vec<u8> {
+        panic!("Stdout::read_all not allowed");
+    }
+    fn write(&self, user_buf: &[u8]) -> usize {
+        unsafe {
+            sstatus::set_sum();
+            print!("{}", core::str::from_utf8(user_buf).unwrap());
+            sstatus::clear_sum();
         }
         user_buf.len()
     }
-    fn state(&self) -> Option<super::Stat> {
-        unimplemented!()
+    fn fstat(&self) -> Option<Stat> {
+        None
+    }
+    fn hang_up(&self) -> bool {
+        todo!()
     }
 }

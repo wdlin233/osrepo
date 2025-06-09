@@ -68,6 +68,9 @@ use crate::{
     }
 };
 
+/// buffers doc
+pub mod buffers;
+
 #[no_mangle]
 pub fn main(cpu: usize) -> ! {
     clear_bss();
@@ -84,7 +87,9 @@ pub fn main(cpu: usize) -> ! {
     hal::trap::enable_timer_interrupt();
     #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
 
-    fs::list_apps();
+    //buffers::bio_unit_tests();
+
+    //fs::list_apps();
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable section for kernel!");

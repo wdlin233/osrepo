@@ -46,7 +46,13 @@ endif
 
 
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
-FS_IMG := target/fs.img
+ifeq ($(ARCH), riscv64)
+	FS_IMG := sdcard-rv.img
+else ifeq ($(ARCH), loongarch64)
+	FS_IMG := sdcard-rv.img
+else
+  	$(error "ARCH" must be one of "riscv64" or "loongarch64")
+endif
 
 # temporarily set, need to reset to the situation of competition later
 #qemu-system-riscv64 -machine virt -kernel {os_file} -m {mem} -nographic -smp {smp} -bios default -drive file={fs},if=none,format=raw,id=x0 \
@@ -80,7 +86,6 @@ $(KERNEL_BIN):
 ifeq ($(ARCH),riscv64)
 fs-img: $(APPS)	
 	@make -C ../user build
-	@rm -f $(FS_IMG)
 	@cp ../user/build/elf/* ../testcases/riscv64/
 	@cp -r $(TESTCASES) ../testcases/riscv64/
 	@mkdir -p target
@@ -88,7 +93,6 @@ fs-img: $(APPS)
 else ifeq ($(ARCH),loongarch64)
 fs-img: $(APPS)	
 	@make build -C ../user_la
-	@rm -f $(FS_IMG)
 	@cp ../user_la/target/loongarch64-unknown-none/release/initproc ../testcases/loongarch64/
 	@cp ../user_la/target/loongarch64-unknown-none/release/user_shell ../testcases/loongarch64/
 	@cp ../user_la/target/loongarch64-unknown-none/release/usertests_simple ../testcases/loongarch64/
@@ -150,7 +154,7 @@ debug: build
 	@tmux new-session -d \
 		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -drive file=$(FS_IMG),if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -s -S" && \
 		tmux split-window -h "riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'" && \
-		tmux -2 attach-session -d
+		tmux -2 attach-session -d 
 
 
 gdbserver: build

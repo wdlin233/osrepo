@@ -2,6 +2,8 @@
 use core::ptr::NonNull;
 
 use super::BlockDevice;
+//use super::BlockDevice;
+use crate::drivers::block::BLOCK_SZ;
 use crate::mm::{
     frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr, frame_alloc_contiguous, KERNEL_SPACE,
@@ -23,26 +25,64 @@ lazy_static! {
     static ref QUEUE_FRAMES: UPSafeCell<Vec<FrameTracker>> = unsafe { UPSafeCell::new(Vec::new()) };
 }
 
-unsafe impl Sync for VirtIOBlock {}
 unsafe impl Send for VirtIOBlock {}
+unsafe impl Sync for VirtIOBlock {}
 
-impl BlockDevice for VirtIOBlock {
-    /// Read a block from the virtio_blk device
-    fn read_block(&self, block_id: usize, buf: &mut [u8]) {
-        //assert!(buf.len() == 512, "read_block: buf size must be 512, got {}", buf.len());
-        //info!("Reading block {} from VirtIOBlk", block_id);
-        let result = self.0.exclusive_access().read_blocks(block_id, buf);
-        if let Err(e) = &result {
-            error!("VirtIOBlk read_blocks failed: {:?}, block_id={}, capacity={}", e, block_id, self.0.exclusive_access().capacity());
-        }
-        result.expect("Error when reading VirtIOBlk");
-    }
-    ///
-    fn write_block(&self, block_id: usize, buf: &[u8]) {
+/// Interfaces BlockDevices
+use core::any::Any;
+
+// impl BlockDevice for VirtIOBlock {
+//     /// Read a block from the virtio_blk device
+//     fn read_blocks(&self, block_id: usize, buf: &mut [u8]) {
+//         //assert!(buf.len() == 512, "read_block: buf size must be 512, got {}", buf.len());
+//         //info!("Reading block {} from VirtIOBlk", block_id);
+//         let result = self.0.exclusive_access().read_blocks(block_id, buf);
+//         if let Err(e) = &result {
+//             error!("VirtIOBlk read_blocks failed: {:?}, block_id={}, capacity={}", e, block_id, self.0.exclusive_access().capacity());
+//         }
+//         result.expect("Error when reading VirtIOBlk");
+//     }
+//     ///
+//     fn write_blocks(&self, block_id: usize, buf: &[u8]) {
+//         self.0
+//             .exclusive_access()
+//             .write_blocks(block_id, buf)
+//             .expect("Error when writing VirtIOBlk");
+//     }
+// }
+
+impl ext4_rs::BlockDevice for VirtIOBlock {
+    fn read_offset(&self, offset: usize) -> Vec<u8> {
+        // debug!("read_offset: offset = {:#x}", offset);
+        let mut buf = [0u8; 4096];
         self.0
             .exclusive_access()
-            .write_blocks(block_id, buf)
-            .expect("Error when writing VirtIOBlk");
+            .read_blocks(offset / BLOCK_SZ, &mut buf)
+            .expect("Error when reading VirtIOBlk");
+        // debug!("read_offset = {:#x}, buf = {:x?}", offset, buf);
+        buf[offset % BLOCK_SZ..].to_vec()
+    }
+    fn write_offset(&self, offset: usize, data: &[u8]) {
+        debug!("write_offset: offset = {:#x}", offset);
+        //     debug!("data len = {:#x}", data.len());
+        let mut write_size = 0;
+        while write_size < data.len() {
+            let block_id = (offset + write_size) / BLOCK_SZ;
+            let block_offset = (offset + write_size) % BLOCK_SZ;
+            let mut buf = [0u8; BLOCK_SZ];
+            let copy_size = core::cmp::min(data.len() - write_size, BLOCK_SZ - block_offset);
+            self.0
+                .exclusive_access()
+                .read_blocks(block_id, &mut buf)
+                .expect("Error when reading VirtIOBlk");
+            buf[block_offset..block_offset + copy_size]
+                .copy_from_slice(&data[write_size..write_size + copy_size]);
+            self.0
+                .exclusive_access()
+                .write_blocks(block_id, &buf)
+                .expect("Error when writing VirtIOBlk");
+            write_size += copy_size;
+        }
     }
 }
 
