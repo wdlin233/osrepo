@@ -197,7 +197,8 @@ lazy_static! {
         let root_ino = ROOT_INODE.clone();
 
         // 读取文件逻辑？
-        let dentry = open_file(root_ino, "spawn", OpenFlags::O_RDONLY).unwrap();
+        let dentry = open_file(root_ino, "usertest.elf", OpenFlags::O_RDONLY).unwrap();
+        //let dentry = open_file(root_ino, "run-all.sh", OpenFlags::O_RDONLY).unwrap(); // "Did not find ELF magic number"
         let v = dentry.inode().read_all();
         ProcessControlBlock::new(v.as_slice())
     };

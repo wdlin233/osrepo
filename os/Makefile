@@ -2,16 +2,10 @@
 ARCH := riscv64
 MODE := release
 
-# BOARD
-BOARD := qemu
-
 # Building mode argument
 ifeq ($(MODE), release)
 	MODE_ARG := --release
 endif
-
-# KERNEL ENTRY
-KERNEL_ENTRY_PA := 0x80200000
 
 # Binutils
 OBJDUMP := rust-objdump --arch-name=riscv64
@@ -84,33 +78,35 @@ $(KERNEL_BIN):
 
 # -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录
 ifeq ($(ARCH),riscv64)
-fs-img: $(APPS)	
+fs-img:
+	@sudo mkdir -p /mnt/image_part
+	@sudo mount $(FS_IMG) /mnt/image_part
 	@make -C ../user build
-	@cp ../user/build/elf/* ../testcases/riscv64/
-	@cp -r $(TESTCASES) ../testcases/riscv64/
-	@mkdir -p target
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/riscv64/ -t ../os/target/
+	@sudo cp ../user/build/elf/* /mnt/image_part/
+	@sudo cp -r $(TESTSUITS) /mnt/image_part/
+	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
-fs-img: $(APPS)	
+fs-img:	
+	@sudo mkdir -p /mnt/image_part
+	@sudo mount $(FS_IMG) /mnt/image_part
 	@make build -C ../user_la
-	@cp ../user_la/target/loongarch64-unknown-none/release/initproc ../testcases/loongarch64/
-	@cp ../user_la/target/loongarch64-unknown-none/release/user_shell ../testcases/loongarch64/
-	@cp ../user_la/target/loongarch64-unknown-none/release/usertests_simple ../testcases/loongarch64/
-	@cp -r $(TESTCASES) ../testcases/loongarch64/
-	@mkdir -p target
-	@cd ../easy-fs-fuse && cargo run --release -- -s ../testcases/loongarch64/ -t ../os/target/	
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/initproc /mnt/image_part/
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part/
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertests_simple /mnt/image_part/
+	@sudo cp -r $(TESTSUITS) /mnt/image_part/
+	@sudo umount /mnt/image_part
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
 
 # cargo build $(MODE_ARG) --target $(TARGET)
 kernel:
-	@echo Platform: $(BOARD)
 	cargo build --$(MODE) -p os --target ${TARGET}
 
 clean:
 	@cargo clean
 	@tmux kill-server
+	@sudo umount /mnt/image_part
 
 disasm: kernel
 	loongarch64-unknown-linux-gnu-objdump $(DISASM) $(KERNEL_ELF) > disasm_la.s
