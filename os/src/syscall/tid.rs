@@ -32,7 +32,7 @@ pub fn sys_writev(fd: usize, iov: *const IoVec, iovcnt: usize) -> isize {
                 token, 
                 (*iov_ptr).iov_base,
                 (*iov_ptr).iov_len,
-            ))) as isize;
+            )).as_bytes()) as isize;
         }
     } else {
         return -1;

@@ -2,12 +2,14 @@
 
 use core::cmp::Ordering;
 
+use core::{
+    //cmp::Ordering,
+    ops::{Add, AddAssign, Sub},
+};
+
 use crate::config::CLOCK_FREQ;
-use crate::sbi::set_timer;
 use crate::sync::UPSafeCell;
-#[cfg(target_arch = "loongarch64")]
-use crate::task::add_task;
-use crate::task::{ wakeup_task, TaskControlBlock};
+use crate::task::TaskControlBlock;
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
@@ -18,47 +20,148 @@ use riscv::register::time;
 use loongarch64::time::{get_timer_freq, Time};
 
 /// The number of microseconds per second
+pub const NSEC_PER_SEC: usize = 1_000_000_000;
+pub const NSEC_PER_MSEC: usize = 1_000_000;
+pub const NSEC_PER_USEC: usize = 1_000;
+
+pub const USEC_PER_SEC: usize = 1_000_000;
+pub const USEC_PER_MSEC: usize = 1_000;
+
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;
 
-#[cfg(target_arch = "riscv64")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Traditional UNIX timespec structures represent elapsed time, measured by the system clock
+/// # *CAUTION*
+/// tv_sec & tv_usec should be usize.
+/// SaZiKK impl TimeSpec ToT
+pub struct TimeSpec {
+    /// The tv_sec member represents the elapsed time, in whole seconds.
+    pub tv_sec:  usize,
+    /// The tv_usec member captures rest of the elapsed time, represented as the number of microseconds.
+    pub tv_nsec: usize,
+}
+impl AddAssign for TimeSpec {
+    fn add_assign(&mut self, rhs: Self) {
+        self.tv_sec += rhs.tv_sec;
+        self.tv_nsec += rhs.tv_nsec;
+    }
+}
+impl Add for TimeSpec {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut sec = self.tv_sec + other.tv_sec;
+        let mut nsec = self.tv_nsec + other.tv_nsec;
+        sec += nsec / NSEC_PER_SEC;
+        nsec %= NSEC_PER_SEC;
+        Self {
+            tv_sec:  sec,
+            tv_nsec: nsec,
+        }
+    }
+}
+
+impl Sub for TimeSpec {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        let self_ns = self.to_ns();
+        let other_ns = other.to_ns();
+        if self_ns <= other_ns {
+            TimeSpec::new()
+        } else {
+            TimeSpec::from_ns(self_ns - other_ns)
+        }
+    }
+}
+
+impl Ord for TimeSpec {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.tv_sec.cmp(&other.tv_sec) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Equal => self.tv_nsec.cmp(&other.tv_nsec),
+            Ordering::Greater => Ordering::Greater,
+        }
+    }
+}
+
+impl PartialOrd for TimeSpec {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl TimeSpec {
+    pub fn new() -> Self {
+        Self {
+            tv_sec:  0,
+            tv_nsec: 0,
+        }
+    }
+    pub fn from_tick(tick: usize) -> Self {
+        Self {
+            tv_sec:  tick / CLOCK_FREQ,
+            tv_nsec: (tick % CLOCK_FREQ) * NSEC_PER_SEC / CLOCK_FREQ,
+        }
+    }
+    pub fn from_s(s: usize) -> Self {
+        Self {
+            tv_sec:  s,
+            tv_nsec: 0,
+        }
+    }
+    pub fn from_ms(ms: usize) -> Self {
+        Self {
+            tv_sec:  ms / MSEC_PER_SEC,
+            tv_nsec: (ms % MSEC_PER_SEC) * NSEC_PER_MSEC,
+        }
+    }
+    pub fn from_us(us: usize) -> Self {
+        Self {
+            tv_sec:  us / USEC_PER_SEC,
+            tv_nsec: (us % USEC_PER_SEC) * NSEC_PER_USEC,
+        }
+    }
+    pub fn from_ns(ns: usize) -> Self {
+        Self {
+            tv_sec:  ns / NSEC_PER_SEC,
+            tv_nsec: ns % NSEC_PER_SEC,
+        }
+    }
+    pub fn to_ns(&self) -> usize {
+        self.tv_sec * NSEC_PER_SEC + self.tv_nsec
+    }
+    pub fn is_zero(&self) -> bool {
+        self.tv_sec == 0 && self.tv_nsec == 0
+    }
+    pub fn now() -> Self {
+        TimeSpec::from_tick(get_time())
+    }
+}
+
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-    time::read()
+    #[cfg(target_arch = "riscv64")] return time::read();
+    #[cfg(target_arch = "loongarch64")] return Time::read();
 }
 
-#[cfg(target_arch = "loongarch64")]
-/// Get the current time in ticks
-pub fn get_time() -> usize {
-    Time::read()
-}
-
-#[cfg(target_arch = "riscv64")]
 /// Get the current time in milliseconds
 pub fn get_time_ms() -> usize {
-    time::read() * MSEC_PER_SEC / CLOCK_FREQ
+    #[cfg(target_arch = "riscv64")] return time::read() * MSEC_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")] return Time::read() / (get_timer_freq() / MSEC_PER_SEC);
 }
 
-#[cfg(target_arch = "loongarch64")]
-/// Get the current time in milliseconds
-pub fn get_time_ms() -> usize {
-    Time::read() / (get_timer_freq() / MSEC_PER_SEC)
-}
-
-#[cfg(target_arch = "riscv64")]
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
-    time::read() * MICRO_PER_SEC / CLOCK_FREQ
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn get_time_us() -> usize {
-    Time::read() * MICRO_PER_SEC / get_timer_freq()
+    #[cfg(target_arch = "riscv64")] return time::read() * MICRO_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")] return Time::read() * MICRO_PER_SEC / get_timer_freq();
 }
 
 #[cfg(target_arch = "riscv64")]
 /// Set the next timer interrupt
 pub fn set_next_trigger() {
+    use crate::hal::utils::set_timer;
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
@@ -133,9 +236,15 @@ pub fn check_timer() {
     while let Some(timer) = timers.peek() {
         if timer.expire_ms <= current_ms {
             #[cfg(target_arch = "riscv64")]
-            wakeup_task(Arc::clone(&timer.task));
+            {
+                use crate::task::wakeup_task;
+                wakeup_task(Arc::clone(&timer.task));
+            }
             #[cfg(target_arch = "loongarch64")]
-            add_task(Arc::clone(&timer.task));
+            {
+                use crate::task::add_task;
+                add_task(Arc::clone(&timer.task));
+            }
             timers.pop();
         } else {
             break;

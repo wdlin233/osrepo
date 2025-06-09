@@ -17,6 +17,8 @@ virtio-drivers = { version = "0.6.0" }
 easy-fs = { path = "../easy-fs" }
 spin = "0.10"
 bit_field = "0.10.1"
+ext4_rs = { path = "libs/ext4_rs" }
+lru = "0.12"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
@@ -25,3 +27,4 @@ buddy_system_allocator = "0.6"
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongarch64 = { version = "*", package = "loongArch64" }
 buddy_system_allocator = "0.11.0"
+

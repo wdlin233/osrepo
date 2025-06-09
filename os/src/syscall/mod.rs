@@ -122,6 +122,7 @@ mod sync;
 mod thread;
 mod tid;
 mod uname;
+pub mod sys_result;
 
 use fs::*;
 use process::*;
@@ -130,9 +131,9 @@ use thread::*;
 use tid::*;
 use uname::*;
 
-use crate::fs::Stat;
 use crate::task::TmsInner;
 use crate::system::UTSname;
+use crate::fs::inode::Stat;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {

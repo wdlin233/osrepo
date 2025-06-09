@@ -2,15 +2,15 @@
 
 #[allow(unused)]
 
-pub const FLAG: &str = "
-███████╗██╗   ██╗██████╗ ███████╗████████╗██╗██╗   ██╗███╗   ███╗
-██╔════╝██║   ██║██╔══██╗██╔════╝╚══██╔══╝██║██║   ██║████╗ ████║
-███████╗██║   ██║██████╔╝███████╗   ██║   ██║██║   ██║██╔████╔██║
-╚════██║██║   ██║██╔══██╗╚════██║   ██║   ██║██║   ██║██║╚██╔╝██║
-███████║╚██████╔╝██████╔╝███████║   ██║   ██║╚██████╔╝██║ ╚═╝ ██║
-╚══════╝ ╚═════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝     ╚═╝
+pub const FLAG: &str = r#"
 
-"; // ANSI Shadow
+   _____       __         __  _               
+  / ___/__  __/ /_  _____/ /_(_)_  ______ ___ 
+  \__ \/ / / / __ \/ ___/ __/ / / / / __ `__ \
+ ___/ / /_/ / /_/ (__  ) /_/ / /_/ / / / / / /
+/____/\__,_/_.___/____/\__/_/\__,_/_/ /_/ /_/                     
+
+"#; // ANSI Shadow
 
 /// The number of ticks per second
 pub const TICKS_PER_SEC: usize = 100;
@@ -25,7 +25,7 @@ pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
-pub const VIRT_BIAS: usize = 0x9000000000000000;
+pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
 #[cfg(target_arch = "riscv64")]
@@ -56,3 +56,11 @@ pub const PALEN: usize = 48;
 pub const USER_STACK_SIZE: usize = PAGE_SIZE;
 #[cfg(target_arch = "loongarch64")]
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
+
+/// yield wakeup task
+pub const YIELD_CHECK: usize = 90;
+#[allow(unused)]
+/// Use a fs block size of 512 bytes
+pub const BLOCK_SIZE: usize = 4096;
+/// The io block size of the disk layer
+pub const IO_BLOCK_SIZE: usize = 512;

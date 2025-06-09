@@ -12,7 +12,6 @@ mod frame_allocator; // frame allocator
 
 #[cfg(target_arch = "riscv64")]
 mod heap_allocator;
-
 #[cfg(target_arch = "loongarch64")]
 pub mod system_allocator; // heap allocator
 
@@ -20,16 +19,18 @@ pub mod system_allocator; // heap allocator
 use address::VPNRange;
 pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker, frame_alloc_contiguous};
-pub use memory_set::remap_test;
-pub use memory_set::{kernel_token, MapPermission, MemorySet, KERNEL_SPACE};
+pub use memory_set::{MapPermission, MemorySet};
 use page_table::PTEFlags;
 pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
     PageTableEntry, UserBuffer, UserBufferIterator,
 };
+#[cfg(target_arch = "riscv64")]
+pub use memory_set::{KERNEL_SPACE, kernel_token, remap_test};
+
 #[cfg(target_arch = "loongarch64")]
 use crate::{
-    loongarch::VIRT_BIAS,
+    config::VIRT_BIAS,
 };
 
 #[cfg(target_arch = "loongarch64")]
@@ -53,13 +54,13 @@ pub fn init() {
 #[macro_export]
 macro_rules! virt_to_phys {
     ($va:expr) => {
-        $va - crate::loongarch::VIRT_BIAS
+        $va - crate::config::VIRT_BIAS
     };
 }
 /// Translate a physical address to a virtual address.
 #[macro_export]
 macro_rules! phys_to_virt {
     ($pa:expr) => {
-        $pa + crate::loongarch::VIRT_BIAS
+        $pa + crate::config::VIRT_BIAS
     };
 }

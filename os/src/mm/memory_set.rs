@@ -14,21 +14,9 @@ use lazy_static::*;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::satp;
 #[cfg(target_arch = "loongarch64")]
-use crate::info::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
-
+use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
 #[cfg(target_arch = "riscv64")]
-extern "C" {
-    fn stext();
-    fn etext();
-    fn srodata();
-    fn erodata();
-    fn sdata();
-    fn edata();
-    fn sbss_with_stack();
-    fn ebss();
-    fn ekernel();
-    fn strampoline();
-}
+use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss_with_stack, ebss, ekernel, strampoline};
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
@@ -42,20 +30,6 @@ lazy_static! {
 /// the kernel token
 pub fn kernel_token() -> usize {
     KERNEL_SPACE.exclusive_access().token()
-}
-
-#[cfg(target_arch = "loongarch64")]
-// remove later
-lazy_static! {
-    /// The kernel's initial memory mapping(kernel address space)
-    pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
-        Arc::new(unsafe { UPSafeCell::new(MemorySet::new_bare()) });
-}
-
-#[cfg(target_arch = "loongarch64")]
-// remove later
-pub fn kernel_token() -> usize {
-    unimplemented!()
 }
 
 /// address space
@@ -415,6 +389,7 @@ impl MapArea {
         }
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+        // only Framed type in LA64
         let ppn: PhysPageNum;
         #[cfg(target_arch = "riscv64")]
         match self.map_type {
@@ -474,8 +449,7 @@ impl MapArea {
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
-        #[cfg(target_arch = "riscv64")]
-        assert_eq!(self.map_type, MapType::Framed);
+        #[cfg(target_arch = "riscv64")] assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
         let len = data.len();
@@ -534,15 +508,18 @@ bitflags! {
         const RPLV = 1 << 63;
     }
 }
-#[cfg(target_arch = "loongarch64")]
+
 impl Default for MapPermission {
+    // alloc_user_res
     fn default() -> Self {
-        MapPermission::PLVL | MapPermission::PLVH
+        #[cfg(target_arch = "riscv64")] return MapPermission::R | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")] return MapPermission::PLVL | MapPermission::PLVH;
     }
 }
 
 /// remap test in kernel space
 /// Used? in RV64
+#[cfg(target_arch = "riscv64")]
 #[allow(unused)]
 pub fn remap_test() {
     let mut kernel_space = KERNEL_SPACE.exclusive_access();
@@ -564,6 +541,7 @@ pub fn remap_test() {
         .translate(mid_data.floor())
         .unwrap()
         .executable(),);
+    use crate::println;
     println!("remap_test passed!");
 }
 
@@ -580,17 +558,12 @@ impl MapPermission {
 
     
     /// Add user permission for MapPermission
-    #[cfg(target_arch = "riscv64")]
+    /// LA, 保留现有权限，添加用户模式所需的 PLV3 组合位
     pub fn with_user(self) -> Self {
-        self | MapPermission::U
+        #[cfg(target_arch = "riscv64")] return self | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")] return self | MapPermission::PLVL | MapPermission::PLVH;
     }
 
-    #[cfg(target_arch = "loongarch64")]
-    pub fn with_user(self) -> Self {
-        // 保留现有权限，添加用户模式所需的 PLV3 组合位
-        self | MapPermission::PLVL | MapPermission::PLVH
-    }
-    
     #[allow(unused)]
     #[cfg(target_arch = "loongarch64")]
     pub fn without_user(self) -> Self {

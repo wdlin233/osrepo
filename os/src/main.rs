@@ -39,109 +39,60 @@ extern crate bitflags;
 mod board;
 
 #[macro_use]
-mod console;
 pub mod config;
 pub mod drivers;
 pub mod fs;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
-pub mod sbi;
 pub mod sync;
 pub mod syscall;
 pub mod task;
 pub mod timer;
-pub mod trap;
-mod uart;
-#[cfg(target_arch = "loongarch64")]
-mod loongarch;
+pub mod hal;
+pub mod boot; // used to set up the initial environment
 
 #[cfg(target_arch = "loongarch64")]
-pub mod boot;
-#[cfg(target_arch = "loongarch64")]
-mod info;
-#[cfg(target_arch = "loongarch64")]
 use crate::{
-    info::{kernel_layout, print_machine_info},
-    trap::enable_timer_interrupt,
+    hal::trap::{enable_timer_interrupt, init},
     task::add_initproc,
+    hal::arch::info::{print_machine_info, kernel_layout},
 };
 pub mod system;
 pub mod users;
 
 use core::arch::global_asm;
-use crate::console::CONSOLE;
 use config::FLAG;
-
-#[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("entry.asm"));
-
-#[cfg(target_arch = "riscv64")]
-fn clear_bss() {
-    extern "C" {
-        fn sbss();
-        fn ebss();
+use crate::{
+    hal::{
+        clear_bss,
+        utils::console::CONSOLE,
     }
-    unsafe {
-        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
-            .fill(0);
-    }
-}
+};
 
-#[cfg(target_arch = "loongarch64")]
-pub fn clear_bss() {
-    extern "C" {
-        fn sbss();
-        fn ebss();
-    }
-    (sbss as usize..ebss as usize).for_each(|addr| unsafe {
-        (addr as *mut u8).write_volatile(0);
-    });
-}
+/// buffers doc
+pub mod buffers;
 
-#[cfg(target_arch = "riscv64")]
 #[no_mangle]
-/// the rust entry-point of os
-pub fn rust_main() -> ! {
-    clear_bss();
-    //println!("{}", FLAG);
-    println!("[kernel] Hello, world!");
-    logging::init();
-    mm::init();
-    mm::remap_test();
-    trap::init();
-    trap::enable_timer_interrupt();
-    timer::set_next_trigger();
-    fs::list_apps();
-    task::add_initproc();
-    task::run_tasks();
-    panic!("Unreachable in rust_main!");
-}
-
-#[cfg(target_arch = "loongarch64")]
-#[no_mangle]
-fn main(cpu: usize) {
-    use fs::list_apps;
-    use task::add_initproc;
-
+pub fn main(cpu: usize) -> ! {
     clear_bss();
     println!("{}", FLAG);
     println!("[kernel] Hello, world!");
     println!("cpu: {}", cpu);
     logging::init();
     log::error!("Logging init success");
-    // rtc_init(); println!("CURRENT TIME {:?}", rtc_time_read());
-    kernel_layout();
-
+    
     mm::init();
-    trap::init();
-    print_machine_info();
-    println!("machine info success");
-    // sata 硬盘 ahci_init()
+    #[cfg(target_arch = "riscv64")] mm::remap_test();
+    hal::trap::init();
+    #[cfg(target_arch = "loongarch64")] print_machine_info();
+    hal::trap::enable_timer_interrupt();
+    #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
 
-    enable_timer_interrupt();
-    list_apps();
-    add_initproc();   
+    //buffers::bio_unit_tests();
+
+    //fs::list_apps();
+    task::add_initproc();
     task::run_tasks();
-    panic!("Unreachable section for loongarch64");
+    panic!("Unreachable section for kernel!");
 }

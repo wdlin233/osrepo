@@ -1,3 +1,4 @@
+/// A part of loongarch kernel trap handling code.
 #[naked]
 pub unsafe extern "C" fn kernel_trap_entry() {
     core::arch::naked_asm!(

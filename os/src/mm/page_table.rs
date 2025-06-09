@@ -80,53 +80,47 @@ impl fmt::Debug for PageTableEntry {
 
 impl PageTableEntry {
     /// Create a new page table entry
-    #[cfg(target_arch = "riscv64")]
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
-        PageTableEntry {
+        #[cfg(target_arch = "riscv64")]
+        return PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
+        };
+        #[cfg(target_arch = "loongarch64")]
+        {
+             //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
+            let mut bits = 0usize;
+            bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
+            bits = bits | flags.bits;
+            PageTableEntry { bits }
         }
-    }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
-        //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
-        let mut bits = 0usize;
-        bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
-        bits = bits | flags.bits;
-        PageTableEntry { bits }
     }
     /// Create an empty page table entry
     pub fn empty() -> Self {
         PageTableEntry { bits: 0 }
     }
 
-    /// Get the physical page number from the page table entry
-    #[cfg(target_arch = "riscv64")]
+    /// Get the physical page number from the page table entry 
+    /// 返回物理页号---页表项
     pub fn ppn(&self) -> PhysPageNum {
-        (self.bits >> 10 & ((1usize << 44) - 1)).into()
+        #[cfg(target_arch = "riscv64")] return (self.bits >> 10 & ((1usize << 44) - 1)).into();
+        #[cfg(target_arch = "loongarch64")] return self.bits.get_bits(14..PALEN).into();
     }
     /// Get the flags from the page table entry
-    #[cfg(target_arch = "riscv64")]
+    /// 返回标志位
     pub fn flags(&self) -> PTEFlags {
-        PTEFlags::from_bits(self.bits as u8).unwrap()
-    }
-    // 返回物理页号---页表项
-    #[cfg(target_arch = "loongarch64")]
-    pub fn ppn(&self) -> PhysPageNum {
-        self.bits.get_bits(14..PALEN).into()
+        #[cfg(target_arch = "riscv64")] return PTEFlags::from_bits(self.bits as u8).unwrap();
+        #[cfg(target_arch = "loongarch64")] {
+            //这里只需要标志位，需要把非标志位的位置清零
+            let mut bits = self.bits;
+            bits.set_bits(14..PALEN, 0);
+            PTEFlags::from_bits(bits).unwrap()
+        }
     }
     // 返回物理页号---页目录项
     // 在一级和二级页目录表中目录项存放的是只有下一级的基地址
     #[cfg(target_arch = "loongarch64")]
     pub fn directory_ppn(&self) -> PhysPageNum {
         (self.bits >> PAGE_SIZE_BITS).into()
-    }
-    // 返回标志位
-    #[cfg(target_arch = "loongarch64")]
-    pub fn flags(&self) -> PTEFlags {
-        //这里只需要标志位，需要把非标志位的位置清零
-        let mut bits = self.bits;
-        bits.set_bits(14..PALEN, 0);
-        PTEFlags::from_bits(bits).unwrap()
     }
 
     /// The page pointered by page table entry is valid?
@@ -138,22 +132,14 @@ impl PageTableEntry {
         (self.flags() & PTEFlags::W) != PTEFlags::empty()
     }
     /// The page pointered by page table entry is readable?
-    #[cfg(target_arch = "riscv64")]
     pub fn readable(&self) -> bool {
-        (self.flags() & PTEFlags::R) != PTEFlags::empty()
+        #[cfg(target_arch = "riscv64")] return (self.flags() & PTEFlags::R) != PTEFlags::empty();
+        #[cfg(target_arch = "loongarch64")] return !((self.flags() & PTEFlags::NR) != PTEFlags::empty());
     }
     /// The page pointered by page table entry is executable?
-    #[cfg(target_arch = "riscv64")]
     pub fn executable(&self) -> bool {
-        (self.flags() & PTEFlags::X) != PTEFlags::empty()
-    }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn readable(&self) -> bool {
-        !((self.flags() & PTEFlags::NR) != PTEFlags::empty())
-    }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn executable(&self) -> bool {
-        !((self.flags() & PTEFlags::NX) != PTEFlags::empty())
+        #[cfg(target_arch = "riscv64")] return (self.flags() & PTEFlags::X) != PTEFlags::empty();
+        #[cfg(target_arch = "loongarch64")] return !((self.flags() & PTEFlags::NX) != PTEFlags::empty());
     }
     //设置脏位
     #[cfg(target_arch = "loongarch64")]
@@ -205,11 +191,11 @@ impl PageTable {
         }
     }
     /// Find PageTableEntry by VirtPageNum, create a frame for a 4KB page table if not exist
-    #[cfg(target_arch = "riscv64")]
-    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+    pub fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
+        #[cfg(target_arch = "riscv64")]
         for (i, idx) in idxs.iter().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
@@ -223,13 +209,7 @@ impl PageTable {
             }
             ppn = pte.ppn();
         }
-        result
-    }
-    #[cfg(target_arch = "loongarch64")]
-    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        let idxs = vpn.indexes();
-        let mut ppn = self.root_ppn;
-        let mut result: Option<&mut PageTableEntry> = None;
+        #[cfg(target_arch = "loongarch64")]
         for i in 0..3 {
             let pte = &mut ppn.get_pte_array()[idxs[i]];
             if i == 2 {
@@ -250,11 +230,11 @@ impl PageTable {
         result
     }
     /// Find PageTableEntry by VirtPageNum
-    #[cfg(target_arch = "riscv64")]
-    fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+    pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
+        #[cfg(target_arch = "riscv64")]
         for (i, idx) in idxs.iter().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
@@ -266,13 +246,7 @@ impl PageTable {
             }
             ppn = pte.ppn();
         }
-        result
-    }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        let idxs = vpn.indexes();
-        let mut ppn = self.root_ppn;
-        let mut result: Option<&mut PageTableEntry> = None;
+        #[cfg(target_arch = "loongarch64")]
         for i in 0..3 {
             let pte = &mut ppn.get_pte_array()[idxs[i]];
             if pte.is_zero() {
@@ -326,13 +300,9 @@ impl PageTable {
         })
     }
     /// get the token from the page table
-    #[cfg(target_arch = "riscv64")]
     pub fn token(&self) -> usize {
-        8usize << 60 | self.root_ppn.0
-    }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn token(&self) -> usize {
-        self.root_ppn.0
+        #[cfg(target_arch = "riscv64")] return 8usize << 60 | self.root_ppn.0;
+        #[cfg(target_arch = "loongarch64")] return self.root_ppn.0;
     }
 }
 
@@ -397,6 +367,48 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .get_mut()
 }
 
+// 读取迭代器实现
+pub struct Iter<'a> {
+    buffers: core::slice::Iter<'a, &'static mut [u8]>,
+    current: &'a [u8],
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a u8;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.is_empty() {
+            self.current = self.buffers.next()?;
+        }
+        
+        let (first, rest) = self.current.split_first()?;
+        self.current = rest;
+        Some(first)
+    }
+}
+
+// 可变迭代器实现
+pub struct IterMut<'a> {
+    buffers: core::slice::IterMut<'a, &'static mut [u8]>,
+    current: &'a mut [u8],
+}
+
+impl<'a> Iterator for IterMut<'a> {
+    type Item = &'a mut u8;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.is_empty() {
+            self.current = self.buffers.next()?;
+        }
+        
+        // 安全：从当前切片分离出第一个元素
+        let slice = core::mem::replace(&mut self.current, &mut []);
+        let (first, rest) = slice.split_first_mut()?;
+        self.current = rest;
+        Some(first)
+    }
+}
+
 /// An abstraction over a buffer passed from user space to kernel space
 pub struct UserBuffer {
     /// A list of buffers
@@ -415,6 +427,102 @@ impl UserBuffer {
             total += b.len();
         }
         total
+    }
+    /// 转换为不可变字节切片 (数据拷贝)
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut result = Vec::with_capacity(self.len());
+        for buffer in &self.buffers {
+            result.extend_from_slice(buffer);
+        }
+        result
+    }
+
+    /// 转换为不可变字节切片引用 (零拷贝)
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            if self.buffers.is_empty() {
+                &[]
+            } else if self.buffers.len() == 1 {
+                &self.buffers[0]
+            } else {
+                core::slice::from_raw_parts(
+                    self.buffers[0].as_ptr(), 
+                    self.len()
+                )
+            }
+        }
+    }
+
+    /// 转换为可变字节切片 (零拷贝)
+    /// 注意：仅在物理内存连续时安全
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            if self.buffers.is_empty() {
+                &mut []
+            } else if self.buffers.len() == 1 {
+                &mut self.buffers[0]
+            } else if self.is_physically_contiguous() {
+                core::slice::from_raw_parts_mut(
+                    self.buffers[0].as_mut_ptr(), 
+                    self.len()
+                )
+            } else {
+                panic!("Buffers are not physically contiguous");
+            }
+        }
+    }
+
+    /// 检查所有缓冲区是否物理连续
+    fn is_physically_contiguous(&self) -> bool {
+        let mut next_ptr = None;
+        
+        for buffer in &self.buffers {
+            let start_ptr = buffer.as_ptr() as usize;
+            let end_ptr = start_ptr + buffer.len();
+            
+            if let Some(expected_next) = next_ptr {
+                if start_ptr != expected_next {
+                    return false;
+                }
+            }
+            
+            next_ptr = Some(end_ptr);
+        }
+        
+        true
+    }
+
+    /// 实现读取迭代器
+    pub fn iter(&self) -> Iter<'_> {
+        Iter {
+            buffers: self.buffers.iter(),
+            current: &[],
+        }
+    }
+
+    /// 实现写入迭代器
+    pub fn iter_mut(&mut self) -> IterMut<'_> {
+        IterMut {
+            buffers: self.buffers.iter_mut(),
+            current: &mut [],
+        }
+    }
+
+    /// 高效复制到连续缓冲区
+    pub fn copy_to_slice(&self, dest: &mut [u8]) -> usize {
+        let mut copied = 0;
+        
+        for buf in &self.buffers {
+            if copied >= dest.len() {
+                break;
+            }
+            
+            let to_copy = (buf.len()).min(dest.len() - copied);
+            dest[copied..copied + to_copy].copy_from_slice(&buf[..to_copy]);
+            copied += to_copy;
+        }
+        
+        copied
     }
 }
 

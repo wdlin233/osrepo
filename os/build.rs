@@ -1,4 +1,4 @@
-static TARGET_PATH: &str = "../user/target/riscv64gc-unknown-none-elf/release/";
+static TARGET_PATH: &str = "../user/target/riscv64gc-unknown-none-elf/release/"; // riscv64gc-unknown-none-elf
 
 use std::{env, fs::File, include_bytes, io::Write, path::Path};
 

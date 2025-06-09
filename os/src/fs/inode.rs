@@ -1,213 +1,209 @@
-//! `Arc<Inode>` -> `OSInodeInner`: In order to open files concurrently
-//! we need to wrap `Inode` into `Arc`,but `Mutex` in `Inode` prevents
-//! file systems from being accessed simultaneously
-//!
-//! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
-//! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::{File, Stat, StatMode};
-use crate::mm::UserBuffer;
-use crate::sync::UPSafeCell;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use bitflags::*;
-use easy_fs::{EasyFileSystem, Inode};
-use lazy_static::*;
+#![allow(missing_docs)] 
 
-/// inode in memory
-/// A wrapper around a filesystem inode
-/// to implement File trait atop
-pub struct OSInode {
-    readable: bool,
-    writable: bool,
-    inner: UPSafeCell<OSInodeInner>,
-}
-/// The OS inode inner in 'UPSafeCell'
-pub struct OSInodeInner {
-    offset: usize,
-    inode: Arc<Inode>,
-}
+use alloc::{string::String, sync::Arc, vec::Vec};
+use core::any::Any;
 
-impl OSInode {
-    /// create a new inode in memory
-    pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
-        Self {
-            readable,
-            writable,
-            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
-        }
-    }
-    /// read all data from the inode
-    pub fn read_all(&self) -> Vec<u8> {
-        let mut inner = self.inner.exclusive_access();
-        // debug!("Reading all data from inode with id: {}", inner.inode.inode_id());
-        // let mut buffer: Vec<u8> = Vec::with_capacity(512);
-        // buffer.resize(512, 0);
-        // can be written more efficiently
+// use super::{dentry::Dentry, file::File, vfs::FileSystemType};
+// use crate::{config::BLOCK_SIZE, mm::UserBuffer, timer::TimeSpec};
+
+use super::{dentry::Dentry, vfs::FileSystemType};
+use crate::{config::BLOCK_SIZE, timer::TimeSpec};
+
+/* Inode Operators */
+
+pub trait Inode: Any + Send + Sync {
+    fn fstype(&self) -> FileSystemType;
+    /// lookup an inode in the directory with the name (just name not path)
+    fn lookup(self: Arc<Self>, name: &str) -> Option<Arc<Dentry>>;
+    /// create an inode in the directory with the name and type
+    fn create(self: Arc<Self>, name: &str, type_: InodeType) -> Option<Arc<Dentry>>;
+    /// unlink an inode in the directory with the name (just name not path)
+    fn unlink(self: Arc<Self>, name: &str) -> bool;
+    /// link an inode in the directory with the name (just name not path)
+    fn link(self: Arc<Self>, name: &str, target: Arc<Dentry>) -> bool;
+    /// rename an inode in the directory with the old name and new name
+    fn rename(self: Arc<Self>, old_name: &str, new_name: &str) -> bool;
+    /// make a directory in the directory with the name
+    fn mkdir(self: Arc<Self>, name: &str) -> bool;
+    /// remove a directory in the directory with the name
+    fn rmdir(self: Arc<Self>, name: &str) -> bool;
+    /// list all inodes in the directory
+    fn ls(&self) -> Vec<String>;
+    /// clear the inode
+    fn clear(&self);
+    /// read at the offset of the inode
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize;
+    /// write at the offset of the inode
+    fn write_at(&self, offset: usize, buf: &[u8]) -> usize;
+    /// read all data from the inode in memory
+    fn read_all(&self) -> Vec<u8> {
+        trace!("kernel: OSInode::read_all");
+        let mut pos = 0;
         let mut buffer = [0u8; 512];
         let mut v: Vec<u8> = Vec::new();
         loop {
-            let len = inner.inode.read_at(inner.offset, &mut buffer);
+            let len = self.read_at(pos, &mut buffer);
             if len == 0 {
                 break;
             }
-            inner.offset += len;
+            pos += len;
             v.extend_from_slice(&buffer[..len]);
         }
         v
     }
 }
 
-lazy_static! {
-    pub static ref ROOT_INODE: Arc<Inode> = {
-        //#[cfg(target_arch = "riscv64")]
-        let efs = EasyFileSystem::open(crate::drivers::BLOCK_DEVICE.clone());
-        //#[cfg(target_arch = "loongarch64")]
-        //let efs = EasyFileSystem::open(crate::loongarch::BLOCK_DEVICE.clone());
-        debug!("EasyFileSystem opened successfully");
-        Arc::new(EasyFileSystem::root_inode(&efs))
-    };
+/* Inode Types */
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InodeType {
+    Regular,
+    Directory,
+    BlockDevice,
+    CharDevice,
+    Pipe,
 }
 
-/// List all apps in the root directory
-pub fn list_apps() {
-    println!("/**** APPS ****");
-    debug!("Listing apps in root directory:");
-    for app in ROOT_INODE.ls() {
-        println!("{}", app);
+/* Inode Status */
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InodeStat {
+    Dirty,
+    Synced,
+}
+
+/* Inode Manager */
+
+/*
+pub struct InodeManager {
+    inodes: BTreeMap<u64, Arc<dyn Inode>>,
+}
+
+impl InodeManager {
+    pub fn new() -> Self {
+        Self {
+            inodes: BTreeMap::new(),
+        }
     }
-    println!("**************/");
+
+    pub fn get(&self, ino: &u64) -> Option<Arc<Inode>> {
+        let inode = self.inodes.get(ino);
+        match inode {
+            Some(inode) => Some(Arc::clone(inode)),
+            None => None,
+        }
+    }
+
+    pub fn insert(&mut self, inode: Inode) {
+        self.inodes.insert(inode.ino, Arc::new(inode));
+    }
+
+    pub fn remove(&mut self) {
+        todo!();
+    }
+}
+
+lazy_static! {
+    pub static ref INODE_MANAGER: Mutex<InodeManager> = todo!();
+}
+
+*/
+
+/* Inode Stat */
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct Stat {
+    /// ID of device containing file
+    st_dev:      u64,
+    /// Inode number
+    st_ino:      u64,
+    /// File type and mode   
+    st_mode:     u32,
+    /// Number of hard links
+    st_nlink:    u32,
+    /// User ID of the file's owner.
+    st_uid:      u32,
+    /// Group ID of the file's group.
+    st_gid:      u32,
+    /// Device ID (if special file)
+    st_rdev:     u64,
+    __pad:       u64,
+    /// Size of file, in bytes.
+    pub st_size: i64,
+    /// Optimal block size for I/O.
+    st_blksize:  u32,
+    __pad2:      i32,
+    /// Number 512-byte blocks allocated.
+    st_blocks:   u64,
+    /// Backward compatibility. Used for time of last access.
+    st_atime:    TimeSpec,
+    /// Time of last modification.
+    st_mtime:    TimeSpec,
+    /// Time of last status change.
+    st_ctime:    TimeSpec,
+    __unused:    u64,
+}
+
+impl Stat {
+    /// create a new stat
+    pub fn new(
+        st_dev: u64, st_ino: u64, st_mode: u32, st_nlink: u32, st_rdev: u64, st_size: i64,
+        st_atime_sec: i64, st_mtime_sec: i64, st_ctime_sec: i64,
+    ) -> Self {
+        Self {
+            st_dev,
+            st_ino,
+            st_mode,
+            st_nlink,
+            st_uid: 0,
+            st_gid: 0,
+            st_rdev,
+            __pad: 0,
+            st_size,
+            st_blksize: BLOCK_SIZE as u32,
+            __pad2: 0,
+            st_blocks: (st_size as u64 + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64,
+            st_atime: TimeSpec {
+                tv_sec:  st_atime_sec as usize,
+                tv_nsec: 0,
+            },
+            st_mtime: TimeSpec {
+                tv_sec:  st_mtime_sec as usize,
+                tv_nsec: 0,
+            },
+            st_ctime: TimeSpec {
+                tv_sec:  st_ctime_sec as usize,
+                tv_nsec: 0,
+            },
+            __unused: 0,
+        }
+    }
+    /// check whether the inode is a directory
+    pub fn is_dir(&self) -> bool {
+        StatMode::from_bits(self.st_mode)
+            .unwrap()
+            .contains(StatMode::DIR)
+    }
+
+    /// check whether the inode is a file
+    pub fn is_file(&self) -> bool {
+        StatMode::from_bits(self.st_mode)
+            .unwrap()
+            .contains(StatMode::FILE)
+    }
 }
 
 bitflags! {
-    ///  The flags argument to the open() system call is constructed by ORing together zero or more of the following values:
-    pub struct OpenFlags: u32 {
-        /// readyonly
-        const RDONLY = 0;
-        /// writeonly
-        const WRONLY = 1 << 0;
-        /// read and write
-        const RDWR = 1 << 1;
-        /// create new file
-        const CREATE = 1 << 9;
-        /// truncate file size to 0
-        const TRUNC = 1 << 10;
+    /// The mode of a inode
+    /// whether a directory or a file
+    pub struct StatMode: u32 {
+        /// null
+        const NULL  = 0;
+        /// directory
+        const DIR   = 0o040000;
+        /// ordinary regular file
+        const FILE  = 0o100000;
     }
-}
-
-impl OpenFlags {
-    /// Do not check validity for simplicity
-    /// Return (readable, writable)
-    pub fn read_write(&self) -> (bool, bool) {
-        if self.is_empty() {
-            (true, false)
-        } else if self.contains(Self::WRONLY) {
-            (false, true)
-        } else {
-            (true, true)
-        }
-    }
-}
-
-/// Open a file
-pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
-    let (readable, writable) = flags.read_write();
-    if flags.contains(OpenFlags::CREATE) {
-        if let Some(inode) = ROOT_INODE.find(name) {
-            // clear size
-            inode.clear();
-            Some(Arc::new(OSInode::new(readable, writable, inode)))
-        } else {
-            // create file
-            ROOT_INODE
-                .create(name)
-                .map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
-        }
-    } else {
-        ROOT_INODE.find(name).map(|inode| {
-            if flags.contains(OpenFlags::TRUNC) {
-                inode.clear();
-            }
-            Arc::new(OSInode::new(readable, writable, inode))
-        })
-    }
-}
-
-impl File for OSInode {
-    fn readable(&self) -> bool {
-        self.readable
-    }
-    fn writable(&self) -> bool {
-        self.writable
-    }
-    fn read(&self, mut buf: UserBuffer) -> usize {
-        let mut inner = self.inner.exclusive_access();
-        debug!("Reading from inode with id: {}", inner.inode.inode_id());
-        let mut total_read_size = 0usize;
-        for slice in buf.buffers.iter_mut() {
-            let read_size = inner.inode.read_at(inner.offset, *slice);
-            if read_size == 0 {
-                break;
-            }
-            inner.offset += read_size;
-            total_read_size += read_size;
-        }
-        total_read_size
-    }
-    fn write(&self, buf: UserBuffer) -> usize {
-        let mut inner = self.inner.exclusive_access();
-        debug!("Writing to inode with id: {}", inner.inode.inode_id());
-        let mut total_write_size = 0usize;
-        for slice in buf.buffers.iter() {
-            let write_size = inner.inode.write_at(inner.offset, *slice);
-            assert_eq!(write_size, slice.len());
-            inner.offset += write_size;
-            total_write_size += write_size;
-        }
-        total_write_size
-    }
-
-    fn state(&self) -> Option<Stat> {
-        let inode = &self.inner.exclusive_access().inode;
-        let mode = if inode.is_dir() {
-            StatMode::DIR
-        } else if inode.is_file() {
-            StatMode::FILE
-        } else {
-            StatMode::NULL
-        };
-        Some(Stat {
-            dev: 0,
-            ino: inode.inode_id() as u64,
-            mode,
-            nlink: inode.links_count() as u32,
-            pad: [0; 7],
-        })
-    }
-}
-
-/// Unlink a file
-pub fn unlink_at(path: &str) -> isize {
-    let Some(file) = ROOT_INODE.remove(path) else {
-        return -1;
-    };
-
-    if file.links_count() == 0 {
-        file.dealloc_resource();
-    }
-    0
-}
-
-/// Link a file
-pub fn link_at(old_name: &str, new_name: &str) -> isize {
-    let Some(file) = ROOT_INODE.find(old_name) else {
-        return -1;
-    };
-    if file.is_dir() {
-        return -1;
-    }
-    let inode = file.inode_id();
-    if ROOT_INODE.add_dirent(new_name, inode).is_none() {
-        return -1;
-    }
-    0
 }

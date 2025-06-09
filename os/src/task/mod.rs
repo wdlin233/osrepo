@@ -21,7 +21,8 @@ mod task;
 mod stride;
 
 use self::id::TaskUserRes;
-use crate::fs::{open_file, OpenFlags};
+//use crate::fs::ext4::ROOT_INO;
+use crate::fs::{open_file, OpenFlags, ROOT_INODE};
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
@@ -29,6 +30,7 @@ use lazy_static::*;
 use manager::fetch_task;
 use process::ProcessControlBlock;
 use switch::__switch;
+use crate::println;
 
 pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
@@ -115,12 +117,12 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if tid == 0 {
         let pid = process.getpid();
-        #[cfg(target_arch = "riscv64")]
         if pid == IDLE_PID {
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
                 exit_code
             );
+            #[cfg(target_arch = "riscv64")]
             if exit_code != 0 {
                 //crate::sbi::shutdown(255); //255 == -1 for err hint
                 crate::board::QEMU_EXIT_HANDLE.exit_failure();
@@ -128,15 +130,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 //crate::sbi::shutdown(0); //0 for success hint
                 crate::board::QEMU_EXIT_HANDLE.exit_success();
             }
-        }
-        #[cfg(target_arch = "loongarch64")]
-        if pid == IDLE_PID {
-            println!(
-                "[kernel] Idle process exit with exit_code {} ...",
-                exit_code
-            );
-            // 0号进程退出
-            panic!("Idle process exit with exit_code {}", exit_code);
+            #[cfg(target_arch = "loongarch64")]
+            panic!("Idle process exit with exit_code {}", exit_code); // 0号进程退出
         }
         remove_from_pid2process(pid);
         let mut process_inner = process.inner_exclusive_access();
@@ -197,13 +192,13 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 lazy_static! {
-    /// Creation of initial process
-    ///
-    /// the name "initproc" may be changed to any other app name like "usertests",
-    /// but we have user_shell, so we don't need to change it.
+    /// INITPROC static doc
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
-        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
-        let v = inode.read_all();
+        let root_ino = ROOT_INODE.clone();
+
+        // 读取文件逻辑？
+        let dentry = open_file(root_ino, "spawn", OpenFlags::O_RDONLY).unwrap();
+        let v = dentry.inode().read_all();
         ProcessControlBlock::new(v.as_slice())
     };
 }

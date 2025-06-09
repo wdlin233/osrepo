@@ -1,4 +1,9 @@
-use crate::fs::{make_pipe, open_file, OpenFlags, Stat, link_at, unlink_at};
+//use crate::fs::ext4::ROOT_INO;
+use crate::fs::file::cast_inode_to_file;
+use crate::fs::{ROOT_INODE};
+use crate::fs::{open_file, OpenFlags, inode::Stat}; //::{link, unlink}
+use crate::fs::pipe::make_pipe;
+
 use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer, copy_to_virt};
 use crate::task::{current_process, current_user_token};
 use alloc::sync::Arc;
@@ -21,7 +26,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         let file = file.clone();
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
-        file.write(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize
+        file.write(&UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut()) as isize
     } else {
         -1
     }
@@ -46,7 +51,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
         //trace!("kernel: sys_read .. file.read");
-        file.read(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize
+        file.read(UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut()) as isize
     } else {
         -1
     }
@@ -60,10 +65,12 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
     let process = current_process();
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
+    let inode = ROOT_INODE.clone();
+    if let Some(dentry) = open_file(inode, path.as_str(), OpenFlags::from_bits(flags as i32).unwrap()) {
         let mut inner = process.inner_exclusive_access();
         let fd = inner.alloc_fd();
-        inner.fd_table[fd] = Some(inode);
+        let file = cast_inode_to_file(dentry.inode());
+        inner.fd_table[fd] = file;
         fd as isize
     } else {
         -1
@@ -137,7 +144,7 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
         let file = file.clone();
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
-        let stat = file.state().unwrap();
+        let stat = file.fstat().unwrap();
         copy_to_virt(&stat, st);
         return 0
     }
@@ -153,7 +160,19 @@ pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     let token = current_user_token();
     let old_path = translated_str(token, old_name);
     let new_path = translated_str(token, new_name);
-    link_at(&old_path, &new_path)
+    //ROOT_INODE.
+    // let curdir = current_process()
+    //     .inner_exclusive_access()
+    //     .work_dir
+    //     .clone();
+    let curdir = Arc::new(crate::fs::dentry::Dentry::new("/", ROOT_INODE.clone()));
+
+    let target = curdir.inode().lookup(old_path.as_str()).unwrap();
+    if curdir.inode().link(&new_path, target) {
+        0
+    } else {
+        super::sys_result::SysError::ENOENT as isize
+    }
 }
 
 /// YOUR JOB: Implement unlinkat.
@@ -164,5 +183,12 @@ pub fn sys_unlinkat(name: *const u8) -> isize {
     // );
     let token = current_user_token();
     let path = translated_str(token, name);
-    unlink_at(&path)
+
+    let curdir = Arc::new(crate::fs::dentry::Dentry::new("/", ROOT_INODE.clone()));
+
+    if curdir.inode().unlink(&path) {
+        0
+    } else {
+        super::sys_result::SysError::ENOENT as isize
+    }
 }
