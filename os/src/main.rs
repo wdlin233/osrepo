@@ -58,6 +58,8 @@ use crate::{
     task::add_initproc,
     hal::arch::info::{print_machine_info, kernel_layout},
 };
+pub mod system;
+pub mod users;
 
 use core::arch::global_asm;
 use config::FLAG;

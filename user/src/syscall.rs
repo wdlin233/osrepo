@@ -208,8 +208,8 @@ pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
     )
 }
 
-pub fn sys_waitpid(pid: isize, xstatus: *mut i32) -> isize {
-    syscall(SYSCALL_WAITPID, [pid as usize, xstatus as usize, 0])
+pub fn sys_waitpid(pid: isize, xstatus: *mut i32,options:usize) -> isize {
+    syscall(SYSCALL_WAITPID, [pid as usize, xstatus as usize, options])
 }
 
 pub fn sys_set_priority(prio: isize) -> isize {

@@ -39,18 +39,7 @@ pub fn sys_yield() -> isize {
     suspend_current_and_run_next();
     0
 }
-/// getpid syscall
-pub fn sys_getpid() -> isize {
-    // trace!(
-    //     "kernel: sys_getpid pid:{}",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
-    current_task().unwrap().process.upgrade().unwrap().getpid() as isize
-}
-/// getppid syscall
-pub fn sys_getppid() -> isize {
-    current_task().unwrap().process.upgrade().unwrap().getppid() as isize
-}
+
 /// fork child process syscall
 pub fn sys_fork() -> isize {
     // trace!(
@@ -171,6 +160,28 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize 
         }
     }
     -2
+}
+
+/// getpid syscall
+pub fn sys_getpid() -> isize {
+    // trace!(
+    //     "kernel: sys_getpid pid:{}",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
+    current_task().unwrap().process.upgrade().unwrap().getpid() as isize
+}
+/// getppid syscall
+pub fn sys_getppid() -> isize {
+    current_task().unwrap().process.upgrade().unwrap().getppid() as isize
+}
+
+/// getuid syscall
+pub fn sys_getuid()->isize{
+    current_task().unwrap().process.upgrade().unwrap().getuid() as isize
+}
+/// getgid syscall
+pub fn sys_getgid()->isize{
+    current_task().unwrap().process.upgrade().unwrap().getgid() as isize
 }
 
 /// kill syscall

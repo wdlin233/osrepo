@@ -10,6 +10,12 @@ use crate::fs::{file::File, stdio::{Stdin, Stdout}};
 use crate::mm::{MemorySet, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};
+<<<<<<< HEAD
+use crate::loaders::ElfLoader;
+use crate::timer::get_time;
+use crate::users::{User,current_user};
+=======
+>>>>>>> master
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -28,6 +34,8 @@ use crate::config::PAGE_SIZE_BITS;
 pub struct ProcessControlBlock {
     /// immutable
     pub pid: PidHandle,
+    /// immutable default user
+    pub user: Arc<User>,
     /// mutable
     inner: UPSafeCell<ProcessControlBlockInner>,
 }
@@ -181,9 +189,11 @@ impl ProcessControlBlock {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
         // allocate a pid
+        let user = current_user().unwrap();
         let pid_handle = pid_alloc();
         let process = Arc::new(Self {
             pid: pid_handle,
+            user,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
@@ -365,7 +375,11 @@ impl ProcessControlBlock {
 
     /// Only support processes with a single thread.
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
+<<<<<<< HEAD
+        let user = self.user.clone();
+=======
         //trace!("kernel: fork");
+>>>>>>> master
         let mut parent = self.inner_exclusive_access();
         assert_eq!(parent.thread_count(), 1);
         // clone parent's memory_set completely including trampoline/ustacks/trap_cxs
@@ -384,6 +398,7 @@ impl ProcessControlBlock {
         // create child process pcb
         let child = Arc::new(Self {
             pid,
+            user,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
@@ -457,6 +472,14 @@ impl ProcessControlBlock {
         let inner = self.inner_exclusive_access();
         let parent = inner.parent.clone().unwrap();
         parent.upgrade().unwrap().getpid()
+    }
+    /// get default uid
+    pub fn getuid(&self)->usize {
+        self.user.getuid()
+    }
+    /// get default gid
+    pub fn getgid(&self)->usize{
+        self.user.getgid()
     }
 }
 

@@ -61,9 +61,9 @@ impl Inode {
     fn find_inode_id(&self, name: &str, disk_inode: &DiskInode) -> Option<u32> {
         // assert it is a directory
         assert!(disk_inode.is_dir());
-        trace!("find inode id: {}", self.inode_id);
+        //trace!("find inode id: {}", self.inode_id);
         let file_count = (disk_inode.size as usize) / DIRENT_SZ;
-        trace!("file count: {}", file_count);
+        //trace!("file count: {}", file_count);
         let mut dirent = DirEntry::empty();
         for i in 0..file_count {
             //debug!("dirent index: {}", i);
@@ -252,7 +252,7 @@ impl Inode {
         self.modify_disk_inode(|disk_inode| {
             assert!(disk_inode.is_dir());
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;
-            trace!("file count: {}", file_count);
+            //trace!("file count: {}", file_count);
             let last_dirent_offset = DIRENT_SZ * (file_count - 1);
             let mut temp_dirent = DirEntry::empty();
             disk_inode.read_at(
@@ -272,7 +272,7 @@ impl Inode {
 
     /// Remove a file from the directory
     pub fn remove(&self, path: &str) -> Option<Arc<Inode>>{
-        trace!("remove file: {}", path);
+        //trace!("remove file: {}", path);
         let fs = self.fs.lock();
         let op = |root_inode: &DiskInode| {
             // assert it is a directory
@@ -308,7 +308,7 @@ impl Inode {
 
     /// Deallocate the corresponding resouce from the disk
     pub fn dealloc_resource(&self) {
-        trace!("dealloc resource: {}", self.inode_id);
+        //trace!("dealloc resource: {}", self.inode_id);
         let mut fs = self.fs.lock();
         self.modify_disk_inode(|disk_inode| {
             let size = disk_inode.size;

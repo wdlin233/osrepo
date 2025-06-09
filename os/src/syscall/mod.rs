@@ -46,10 +46,16 @@ pub const SYSCALL_SET_PRIORITY: usize = 140;
 pub const SYSCALL_TIMES: usize = 153;
 /// gettimeofday syscall
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
+/// get system name
+pub const SYSCALL_UNAME: usize = 160;
 /// getpid syscall
 pub const SYSCALL_GETPID: usize = 172;
 /// getppid syscall
 pub const SYSCALL_GETPPID: usize = 173;
+/// getuid syscall
+pub const SYSCALL_GETUID: usize = 174;
+/// getgid syscall
+pub const SYSCALL_GETGID: usize = 176;
 /// gettid syscall
 pub const SYSCALL_GETTID: usize = 178;
 /// fork syscall
@@ -115,6 +121,7 @@ mod process;
 mod sync;
 mod thread;
 mod tid;
+mod uname;
 pub mod sys_result;
 
 use fs::*;
@@ -122,13 +129,18 @@ use process::*;
 use sync::*;
 use thread::*;
 use tid::*;
+use uname::*;
 
 use crate::task::TmsInner;
+use crate::system::UTSname;
 use crate::fs::inode::Stat;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
     match syscall_id {
+        SYSCALL_GETGID=>sys_getgid(),
+        SYSCALL_GETUID=>sys_getuid(),
+        SYSCALL_UNAME=>sys_uname(args[0] as *mut UTSname),
         SYSCALL_TIMES=>sys_tms(args[0] as *mut TmsInner),
         SYSCALL_BRK=>sys_brk(args[0] as i32),
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
