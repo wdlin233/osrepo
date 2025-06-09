@@ -17,11 +17,14 @@ const TESTS: &[&str] = &[
     "write\0",
     "yield\0",
     "brk\0", 
-    "getppid\0", 
+
     "times\0", 
-    
-    "exit\0",
     "uname\0", 
+    
+
+    "getppid\0", 
+    "exit\0",
+
     
 
     "chdir\0", // 34
@@ -59,7 +62,7 @@ pub fn main() -> i32 {
             pids[i] = pid;
         }
         let mut xstate: i32 = Default::default();
-        let wait_pid = waitpid(pids[i] as usize, &mut xstate);
+        let wait_pid = waitpid(pids[i] as usize, &mut xstate,0);
         assert_eq!(pids[i], wait_pid);
         println!(
             "\x1b[32mUsertests: Test {} in Process {} exited with code {}\x1b[0m",
