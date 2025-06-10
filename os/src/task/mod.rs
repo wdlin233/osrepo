@@ -82,6 +82,7 @@ pub fn block_current_and_run_next() {
     task_inner.task_status = TaskStatus::Blocked;
     drop(task_inner);
     add_block_task(task);
+    debug!("blocking, to schedule");
     schedule(task_cx_ptr);
 }
 

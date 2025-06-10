@@ -213,7 +213,7 @@ pub fn exit(exit_code: i32) -> ! {
     sys_exit(exit_code);
 }
 
-pub fn yield_() -> isize {
+pub fn sched_yield() -> isize {
     sys_yield()
 }
 
@@ -243,7 +243,7 @@ pub fn set_priority(prio: isize) -> isize {
 
 pub fn wait(exit_code: &mut i32) -> isize {
     loop {
-        match sys_waitpid(-1, exit_code as *mut _) {
+        match sys_waitpid(-1, exit_code as *mut _,0) {
             -2 => {
                 sys_yield();
             }
@@ -254,9 +254,9 @@ pub fn wait(exit_code: &mut i32) -> isize {
     }
 }
 
-pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
+pub fn waitpid(pid: usize, exit_code: &mut i32,options:usize) -> isize {
     loop {
-        match sys_waitpid(pid as isize, exit_code as *mut _) {
+        match sys_waitpid(pid as isize, exit_code as *mut _,options) {
             -2 => {
                 sys_yield();
             }
@@ -329,7 +329,7 @@ pub fn waittid(tid: usize) -> isize {
     loop {
         match sys_waittid(tid) {
             -2 => {
-                yield_();
+                sched_yield();
             }
             exit_code => return exit_code,
         }

@@ -9,23 +9,30 @@ const TESTS: &[&str] = &[
     "dup2\0",
     "clone\0",
     "execve\0",
-    "exit\0",
-    "fork\0",
     "getpid\0",
+    "fork\0",
     "gettimeofday\0",
     "wait\0",
     "waitpid\0",
     "write\0",
     "yield\0",
+    "brk\0", 
 
-    "brk\0", // 214
+    "times\0", 
+    "uname\0", 
+    
+
+    "getppid\0", 
+    "exit\0",
+
+    
+
     "chdir\0", // 34
     "close\0", // panic
     "dup\0", // 23
     "fstat\0", // fatal
     "getcwd\0", // 17
     "getdents\0", // 61
-    "getppid\0", // error
     "mkdir_\0", // 34
     "mmap\0", // panic
     "mount\0", // 40
@@ -34,9 +41,7 @@ const TESTS: &[&str] = &[
     "open\0", // fatal
     "pipe\0", // waiting forever
     "read\0", // fatal
-    "times\0", // 153
     "umount\0", // panic
-    "uname\0", // 160
     "unlink\0", // panic
 ];
 
@@ -57,7 +62,7 @@ pub fn main() -> i32 {
             pids[i] = pid;
         }
         let mut xstate: i32 = Default::default();
-        let wait_pid = waitpid(pids[i] as usize, &mut xstate);
+        let wait_pid = waitpid(pids[i] as usize, &mut xstate,0);
         assert_eq!(pids[i], wait_pid);
         println!(
             "\x1b[32mUsertests: Test {} in Process {} exited with code {}\x1b[0m",

@@ -77,11 +77,12 @@ $(KERNEL_BIN):
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 # -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录
+#		
 ifeq ($(ARCH),riscv64)
 fs-img:
 	@sudo mkdir -p /mnt/image_part
-	@sudo mount $(FS_IMG) /mnt/image_part
 	@make -C ../user build
+	@sudo mount $(FS_IMG) /mnt/image_part
 	@sudo cp ../user/build/elf/* /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
 	@sudo umount /mnt/image_part
