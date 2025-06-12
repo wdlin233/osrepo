@@ -7,7 +7,7 @@ use crate::fs::pipe::make_pipe;
 use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer, copy_to_virt};
 use crate::task::{current_process, current_user_token};
 use alloc::sync::Arc;
-use crate::ext4::dentry::Dentry;
+use crate::ext4::dentry::Ext4Dentry;
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     // trace!(
@@ -27,7 +27,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         let file = file.clone();
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
-        file.write(&UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut()) as isize
+        file.write(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize
     } else {
         -1
     }
@@ -52,30 +52,31 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
         //trace!("kernel: sys_read .. file.read");
-        file.read(UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut()) as isize
+        file.read(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize
     } else {
         -1
     }
 }
 /// open sys
-pub fn sys_open(path: *const u8, flags: u32) -> isize {
+pub fn sys_open(_path: *const u8, _flags: u32) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_open",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    let process = current_process();
-    let token = current_user_token();
-    let path = translated_str(token, path);
-    //let inode = ROOT_INODE.clone();
-    if let Some(dentry) = open_file(path.as_str(), OpenFlags::from_bits(flags as i32).unwrap()) {
-        let mut inner = process.inner_exclusive_access();
-        let fd = inner.alloc_fd();
-        let file = dentry.inode(); // wrong logic, should be cast_inode_to_file
-        inner.fd_table[fd] = file;
-        fd as isize
-    } else {
-        -1
-    }
+    // let process = current_process();
+    // let token = current_user_token();
+    // let path = translated_str(token, path);
+    // //let inode = ROOT_INODE.clone();
+    // if let Some(dentry) = open_file(path.as_str(), OpenFlags::from_bits(flags as i32).unwrap()) {
+    //     let mut inner = process.inner_exclusive_access();
+    //     let fd = inner.alloc_fd();
+    //     let file = dentry.get_inode(); // wrong logic, should be cast_inode_to_file
+    //     inner.fd_table[fd] = file;
+    //     fd as isize
+    // } else {
+    //     -1
+    // }
+    unimplemented!()
 }
 /// close syscall
 pub fn sys_close(fd: usize) -> isize {
@@ -131,7 +132,7 @@ pub fn sys_dup(fd: usize) -> isize {
     new_fd as isize
 }
 /// YOUR JOB: Implement fstat.
-pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+pub fn sys_fstat(fd: usize, _st: *mut Stat) -> isize {
     // debug!(
     //     "kernel:pid[{}] sys_fstat(fd: {}, st: 0x{:x?})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(), fd, st
@@ -142,11 +143,11 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
         return -1;
     }
     if let Some(file) = &inner.fd_table[fd] {
-        let file = file.clone();
+        let _file = file.clone();
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
-        let stat = file.fstat().unwrap();
-        copy_to_virt(&stat, st);
+        //let stat = file.fstat().unwrap(); 先固定返回值
+        //copy_to_virt(&stat, st);
         return 0
     }
     -1
@@ -158,10 +159,10 @@ pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
     //     "kernel:pid[{}] sys_linkat(old_name: 0x{:x?}, new_name: 0x{:x?})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(), old_name, new_name
     // );
-    let _token = current_user_token();
-    let _old_path = translated_str(_token, _old_name);
-    let _new_path = translated_str(_token, _new_name);
-    //ROOT_INODE.
+    // let _token = current_user_token();
+    // let _old_path = translated_str(_token, _old_name);
+    // let _new_path = translated_str(_token, _new_name);
+    // //ROOT_INODE.
     // let curdir = current_process()
     //     .inner_exclusive_access()
     //     .work_dir
@@ -184,8 +185,8 @@ pub fn sys_unlinkat(_name: *const u8) -> isize {
     //     "kernel:pid[{}] sys_unlinkat(name: 0x{:x?})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(), name
     // );
-    let _token = current_user_token();
-    let _path = translated_str(token, name);
+    // let _token = current_user_token();
+    // let _path = translated_str(_token, _name);
 
     // let curdir = Arc::new(crate::ext4::dentry::Dentry::new("/", ROOT_INODE.clone()));
 

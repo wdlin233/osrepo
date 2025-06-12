@@ -42,6 +42,9 @@ impl File for Stdin {
     fn state(&self) -> Option<super::Stat> {
         unimplemented!()
     }
+    fn is_dir(&self) -> bool {
+        unimplemented!()
+    }
 }
 
 impl File for Stdout {
@@ -61,6 +64,9 @@ impl File for Stdout {
         user_buf.len()
     }
     fn state(&self) -> Option<super::Stat> {
+        unimplemented!()
+    }
+    fn is_dir(&self) -> bool {
         unimplemented!()
     }
 }

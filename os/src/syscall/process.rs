@@ -102,15 +102,16 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     }
     //use crate::fs::ROOT_INODE;
     //let root_ino = ROOT_INODE.clone();
-    if let Some(app_inode_entry) = open_file(path.as_str(), OpenFlags::O_RDONLY) {
-        let all_data = app_inode_entry.inode().read_all();
-        let process = current_process();
-        let argc = args_vec.len();
-        //trace!("argc in syscall {}", argc);
-        //trace!("args_vec {:?}", args_vec);
-        process.exec(all_data.as_slice(), args_vec);
-        // return argc because cx.x[10] will be covered with it later
-        argc as isize
+    if let Some(_app_inode_entry) = open_file(path.as_str(), OpenFlags::O_RDONLY) {
+        unimplemented!()
+        // let all_data = app_inode_entry.get_inode().read_all();
+        // let process = current_process();
+        // let argc = args_vec.len();
+        // //trace!("argc in syscall {}", argc);
+        // //trace!("args_vec {:?}", args_vec);
+        // process.exec(all_data.as_slice(), args_vec);
+        // // return argc because cx.x[10] will be covered with it later
+        // argc as isize
     } else {
         -1
     }

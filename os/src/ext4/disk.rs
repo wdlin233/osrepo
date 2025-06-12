@@ -40,7 +40,7 @@ impl ext4_rs::BlockDevice for Ext4Disk {
             let bytes_to_copy =
             (dst.len() - total_bytes_read).min(DISK_BLOCK_SZ - offset_in_block);
 
-            get_block_cache(current_block_id, self.dev.clone())
+            get_block_cache(current_block_id, self.device.clone())
             .lock()
             .read(0, |data_block: &DataBlock|{
                 dst[total_bytes_read..total_bytes_read + bytes_to_copy]
@@ -62,7 +62,7 @@ impl ext4_rs::BlockDevice for Ext4Disk {
             let current_block_id = start_block_id + (total_bytes_written / DISK_BLOCK_SZ);
             let bytes_to_copy =
                 (bytes_to_write - total_bytes_written).min(DISK_BLOCK_SZ - offset_in_block);
-            get_block_cache(current_block_id, self.dev.clone())
+            get_block_cache(current_block_id, self.device.clone())
             .lock()
             .modify(0, |data_block: &mut DataBlock|{
                 data_block[offset_in_block..offset_in_block + bytes_to_copy]

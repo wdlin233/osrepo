@@ -115,7 +115,6 @@ mod process;
 mod sync;
 mod thread;
 mod tid;
-pub mod sys_result;
 
 use fs::*;
 use process::*;

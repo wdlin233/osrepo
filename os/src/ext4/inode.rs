@@ -1,6 +1,6 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
 
-use super::fs::Ext4FS;
+use crate::mm::UserBuffer;
 use crate::{
     fs::StatMode, 
     sync::UPSafeCell
@@ -8,8 +8,7 @@ use crate::{
 
 use super::Ext4SuperBlock;
 use crate::fs::{Stat, File};
-use crate::fs::inode::{InodeType};
-use crate::ext4::dentry::Dentry;
+use crate::ext4::dentry::Ext4Dentry;
 
 /// Ext4Inode defines here
 pub struct Ext4Inode {
@@ -17,7 +16,6 @@ pub struct Ext4Inode {
     pub ino: usize,
     pub superblock: Arc<Ext4SuperBlock>,
     pub mode: StatMode,
-    /// Ext4 UPSafeCell<Ext4InodeInner>
     //pub inner: UPSafeCell<Ext4InodeInner>,
 }
 
@@ -42,12 +40,13 @@ impl Ext4Inode {
     fn clear(&self) {
         todo!()
     }
-    fn create(self: Arc<Self>, _name: &str, _type_: InodeType) -> Option<Arc<Ext4Dentry>> {
+    fn create(self: Arc<Self>, _name: &str, _type_: StatMode) -> Option<Arc<Ext4Dentry>> {
         todo!()
     }    
 
-    fn unlink(self: Arc<Self>, name: &str) -> bool {
-        self.fs.ext4.ext4_file_remove(self.ino, name).is_ok()
+    fn unlink(self: Arc<Self>, _name: &str) -> bool {
+        //self.fs.ext4.ext4_file_remove(self.ino, name).is_ok()
+        unimplemented!()
     }
 
     fn link(self: Arc<Self>, _name: &str, _target: Arc<Ext4Dentry>) -> bool {
@@ -59,24 +58,27 @@ impl Ext4Inode {
         todo!()
     }
 
-    fn mkdir(self: Arc<Self>, name: &str) -> bool {
-        self.fs.ext4.ext4_dir_mk(self.ino, name).is_ok()
+    fn mkdir(self: Arc<Self>, _name: &str) -> bool {
+        //self.fs.ext4.ext4_dir_mk(self.ino, name).is_ok()
+        unimplemented!()
     }
 
-    fn rmdir(self: Arc<Self>, name: &str) -> bool {
-        self.fs.ext4.ext4_dir_remove(self.ino, name).is_ok()
+    fn rmdir(self: Arc<Self>, _name: &str) -> bool {
+        //self.fs.ext4.ext4_dir_remove(self.ino, name).is_ok()
+        unimplemented!()
     }
 
     fn ls(&self) -> Vec<String> {
-        self.fs
-            .ext4
-            .read_dir_entry(self.ino as u64)
-            .iter()
-            .map(|x| x.get_name())
-            .collect()
+        // self.fs
+        //     .ext4
+        //     .read_dir_entry(self.ino as u64)
+        //     .iter()
+        //     .map(|x| x.get_name())
+        //     .collect()
+        unimplemented!()
     }
 
-    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> usize {
+    fn read_at(&self, _offset: usize, _buf: UserBuffer) -> usize {
         // let mut file = Ext4File::new();
         // file.inode = self.ino;
         // file.fpos = offset;
@@ -90,7 +92,7 @@ impl Ext4Inode {
         0
     }
 
-    fn write_at(&self, _offset: usize, _buf: &[u8]) -> usize {
+    fn write_at(&self, _offset: usize, _buf: UserBuffer) -> usize {
         // let inode_ref = Ext4InodeRef::get_inode_ref(Arc::downgrade(&self.fs.ext4), self.ino);
         // let mut file = Ext4File::new();
         // file.fpos = offset;
@@ -111,12 +113,13 @@ impl File for Ext4Inode {
     fn is_dir(&self) -> bool {
         self.mode == StatMode::DIR
     }
-    fn read(&self, buf: &mut [u8]) -> usize {
-        // TODO: 暂时不考虑 pos file!(), line!()
-        let mut inner = self.inner.exclusive_access();
-        let read_size = self.read_at(inner.fpos, buf);
-        inner.fpos += read_size;
-        read_size
+    fn read(&self, _buf: UserBuffer) -> usize {
+        // // TODO: 暂时不考虑 pos file!(), line!()
+        // let mut inner = self.inner.exclusive_access();
+        // let read_size = self.read_at(inner.fpos, buf);
+        // inner.fpos += read_size;
+        // read_size
+        0
     }
     fn readable(&self) -> bool {
         true
@@ -124,7 +127,7 @@ impl File for Ext4Inode {
     fn writable(&self) -> bool {
         true
     }
-    fn write(&self, buf: &[u8]) -> usize {
+    fn write(&self, buf: UserBuffer) -> usize {
         // 暂时不考虑 pos
         let write_size = self.write_at(0, buf);
         write_size

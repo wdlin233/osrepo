@@ -1,26 +1,36 @@
 use ext4_rs::Ext4;
-use spin::{once::Once, Once};
-use crate::ext4::{dentry::Dentry, Ext4Dentry, Ext4Disk, Ext4Inode, ROOT_INO};
+use spin::{once::Once};
+use crate::ext4::superblock;
+use crate::ext4::{dentry::Ext4Dentry, Ext4Disk, Ext4Inode, ROOT_INO};
 use alloc::sync::Arc;
 use crate::fs::StatMode;
 use crate::drivers::BlockDevice;
-use crate::ext4::fs::Ext4FS;
 
-#[derive(Clone, Debug)]
 pub struct Ext4SuperBlock {
     pub device: Arc<dyn BlockDevice>,
     pub root_dentry: Once<Arc<Ext4Dentry>>,
-    pub fs: Arc<Ext4FS>,
+    pub ext4: Arc<Ext4>,
 }
 
 impl Ext4SuperBlock {
     /// Create a new Ext4SuperBlock instance
-    pub fn new(device: Arc<dyn BlockDevice>) -> Self {
-        Self {
-            device: device.clone(),
+    pub fn mount(block_dev: Arc<dyn BlockDevice>) -> Arc<Self> {
+        // 1. 创建底层 ext4 结构
+        let disk = Arc::new(Ext4Disk::new(block_dev.clone()));
+        let ext4 = Arc::new(Ext4::open(disk));
+        
+        // 2. 创建 superblock (此时 root_dentry 未初始化)
+        let sb = Arc::new(Self {
+            device: block_dev.clone(),
             root_dentry: Once::new(),
-            fs: Arc::new(Ext4FS::new(device.clone())),
-        }
+            ext4,
+        });
+        
+        // 3. 使用 superblock 本身来初始化 root_dentry
+        let root = init_root_dentry(sb.clone());
+        sb.root_dentry.call_once(|| root);
+        
+        sb
     }
 
     /// Get the block device
@@ -34,17 +44,18 @@ impl Ext4SuperBlock {
             .expect("root_dentry must be initialized")
     }
 
-    pub fn set_root_dentry(&mut self, dentry: Arc<Exr4Dentry>) {
-        self.root_dentry = dentry;
+    pub fn set_root_dentry(&self, dentry: Arc<Ext4Dentry>) {
+        self.root_dentry = dentry.into();
     }
+}
 
-    pub fn init_root_dentry(&mut self) {
-        let root_inode = Arc::new(Ext4Inode::new(ROOT_INO, self.clone().into(), StatMode::DIR));
-        let root_dentry = Ext4Dentry::new(
-            "/",
-            root_inode.clone(),
-            None,
-        );
-        self.set_root_dentry(root_dentry);
-    }
+pub fn init_root_dentry(superblock: Arc<Ext4SuperBlock>) -> Arc<Ext4Dentry> {
+    let root_inode = Arc::new(Ext4Inode::new(ROOT_INO, superblock, StatMode::DIR));
+    let root_dentry = Ext4Dentry::new(
+        "/",
+        root_inode.clone(),
+        None,
+    );
+    superblock.set_root_dentry(root_dentry);
+    root_dentry
 }

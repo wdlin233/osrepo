@@ -18,7 +18,7 @@ use core::cell::RefMut;
 use core::arch::asm;
 use crate::timer::get_time;
 use crate::fs::inode::get_root_dentry;
-use crate::ext4::dentry::Dentry;
+use crate::ext4::dentry::Ext4Dentry;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 #[cfg(target_arch = "loongarch64")]
@@ -203,7 +203,7 @@ impl ProcessControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
-                    cwd: Arc::new(crate::fs::get_root_dentry()),
+                    cwd: crate::fs::get_root_dentry(),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),

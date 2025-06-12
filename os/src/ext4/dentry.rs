@@ -9,7 +9,7 @@ use crate::{ext4::{Ext4Inode, Ext4SuperBlock}, fs::StatMode};
 use alloc::collections::BTreeMap;
 use crate::fs::defs::{OpenFlags};
 use crate::fs::File;
-use spin::Mutex;
+use spin::mutex::Mutex;
 
 // dentry​​：负责路径解析和目录结构管理
 // inode​​：负责文件数据和元数据管理
@@ -92,9 +92,9 @@ impl Ext4Dentry {
         let superblock = self.get_superblock(); 
         let child = self.get_child(name).unwrap();
         let path = self.get_child(name)?.path();
-        let res = superblock.fs.ext4.ext4_dir_open(path.as_str()).expect("Failed to open directory");
+        let res = superblock.ext4.ext4_dir_open(path.as_str()).expect("Failed to open directory");
         
-        let inode_ref = superblock.fs.ext4.get_inode_ref(res);
+        let inode_ref = superblock.ext4.get_inode_ref(res);
         let mode: StatMode = if inode_ref.inode.is_dir() {
             StatMode::DIR
         } else if inode_ref.inode.is_file() {
@@ -107,18 +107,18 @@ impl Ext4Dentry {
         Some(child)
     }
 
-    pub fn new_child(self: Arc<Self>, name: &str) -> Arc<Ext4Dentry> {
+    pub fn new_child(self, name: &str) -> Arc<Ext4Dentry> {
         let dentry_father = self.clone();
         let child = Ext4Dentry::new(
             name, 
             Arc::new(Ext4Inode::new(0, self.get_superblock(), StatMode::FILE)), // use concrete_create, temporarily set inode to 0 
             Some(dentry_father)
         );
-        self.add_child(Arc::downgrade(&new_dentry));
+        self.add_child(Arc::downgrade(&child));
         child
     }
 
-    pub fn find_dentry_create(self: Arc<Self>, name: &str, _type: StatMode) -> Arc<Ext4Dentry> {
+    pub fn find_dentry_create(&self, name: &str, _type: StatMode) -> Arc<Ext4Dentry> {
         if let Some(child) = self.get_child(name) {
             return child;
         }
@@ -136,11 +136,11 @@ impl Ext4Dentry {
             return None; // 只能在目录中创建
         }
         let spblock = self.clone().get_superblock();
-        let child = self.find_dentry_create(name, _type);
+        let _child = self.find_dentry_create(name, _type);
         // 创建一个新的 dentry
         let new_dentry = self.new_child(name);
     
-        new_dentry.set_inode(Arc::new(Ext4Inode::new(0, spblock, type_))); // use concrete_create, temporarily set inode to 0
+        new_dentry.set_inode(Arc::new(Ext4Inode::new(0, spblock, _type))); // use concrete_create, temporarily set inode to 0
         Some(new_dentry)
     }
     pub fn clear(&self) {

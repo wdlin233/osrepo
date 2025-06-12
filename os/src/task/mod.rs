@@ -198,10 +198,11 @@ lazy_static! {
         //let root_dentry = ROOT_DENTRY.clone();
 
         // 读取文件逻辑？
-        let dentry = open_file("usertest.elf", OpenFlags::O_RDONLY).unwrap();
+        let _dentry = open_file("usertest.elf", OpenFlags::O_RDONLY).unwrap();
         //let dentry = open_file(root_ino, "run-all.sh", OpenFlags::O_RDONLY).unwrap(); // "Did not find ELF magic number"
-        let v = dentry.inode().read_all();
-        ProcessControlBlock::new(v.as_slice())
+        unimplemented!()
+        //let v = dentry.inode().read_all();
+        //ProcessControlBlock::new(v.as_slice())
     };
 }
 

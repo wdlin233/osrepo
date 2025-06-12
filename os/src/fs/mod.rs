@@ -52,7 +52,7 @@ bitflags! {
     }
 }
 
-pub use inode::{list_apps, open_file, OSInode, unlink_at, link_at, get_root_dentry};
+pub use inode::{list_apps, open_file, OSInode, get_root_dentry};
 pub use pipe::{make_pipe, Pipe};
 pub use stdio::{Stdin, Stdout};
 pub use defs::OpenFlags;

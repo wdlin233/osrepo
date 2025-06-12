@@ -180,4 +180,7 @@ impl File for Pipe {
     fn state(&self) -> Option<Stat> {
         unimplemented!()
     }
+    fn is_dir(&self) -> bool {
+        false
+    }
 }
