@@ -100,9 +100,9 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
             args = args.add(1);
         }
     }
-    use crate::fs::ROOT_INODE;
-    let root_ino = ROOT_INODE.clone();
-    if let Some(app_inode_entry) = open_file(root_ino, path.as_str(), OpenFlags::O_RDONLY) {
+    //use crate::fs::ROOT_INODE;
+    //let root_ino = ROOT_INODE.clone();
+    if let Some(app_inode_entry) = open_file(path.as_str(), OpenFlags::O_RDONLY) {
         let all_data = app_inode_entry.inode().read_all();
         let process = current_process();
         let argc = args_vec.len();

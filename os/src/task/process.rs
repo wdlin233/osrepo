@@ -6,7 +6,7 @@ use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
-use crate::fs::{file::File, stdio::{Stdin, Stdout}};
+use crate::fs::{File, stdio::{Stdin, Stdout}};
 use crate::mm::{MemorySet, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};
@@ -17,6 +17,8 @@ use alloc::vec::Vec;
 use core::cell::RefMut;
 use core::arch::asm;
 use crate::timer::get_time;
+use crate::fs::inode::get_root_dentry;
+use crate::ext4::dentry::Dentry;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 #[cfg(target_arch = "loongarch64")]
@@ -46,6 +48,8 @@ pub struct ProcessControlBlockInner {
     pub exit_code: i32,
     /// file descriptor table
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    /// current working directory
+    pub cwd: Arc<Ext4Dentry>,
     /// signal flags
     pub signals: SignalFlags,
     /// tasks(also known as threads)
@@ -199,6 +203,7 @@ impl ProcessControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
+                    cwd: Arc::new(crate::fs::get_root_dentry()),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),
@@ -392,6 +397,7 @@ impl ProcessControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    cwd: parent.cwd.clone(),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),

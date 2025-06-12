@@ -2,7 +2,6 @@
 use core::ptr::NonNull;
 
 use crate::drivers::BlockDevice;
-use crate::drivers::block::BLOCK_SZ;
 use crate::mm::{
     frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr, frame_alloc_contiguous, KERNEL_SPACE,

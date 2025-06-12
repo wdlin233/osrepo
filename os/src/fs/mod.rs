@@ -1,97 +1,58 @@
-#![allow(missing_docs)] 
+//! File trait & inode(dir, file, pipe, stdin, stdout)
 
-//! filesystem chooser
+pub mod inode;
 pub mod pipe;
 pub mod stdio;
-
-// 根据编译时的条件选择模块
-pub mod ext4;
-
 pub mod defs;
-pub mod dentry;
 
-pub mod file;
-mod vfs;
-pub mod inode;
-mod path;
-// 创建模块别名
+use crate::mm::UserBuffer;
 
-
-// pub use easyfs as fs;
-// pub use easyfs::*;
-
-// pub trait BlockDevice: Send + Sync + Any {
-//     fn read_offset(&self, offset: usize) -> Vec<u8>;
-//     fn write_offset(&self, offset: usize, data: &[u8]);
-// }
-
-/// Trait for block devices
-/// which reads and writes data in the unit of blocks
-// pub use easy_fs::BlockDevice as BlockDevice;
-pub use ext4_rs::BlockDevice as BlockDevice;
-
-pub use defs::OpenFlags as OpenFlags;
-
-use alloc::sync::Arc;
-
-use dentry::Dentry;
-use ext4::fs::Ext4FS;
-use vfs::FileSystemManager;
-use inode::{Inode, InodeType};
-use lazy_static::lazy_static;
-use spin::Mutex;
-
-use crate::drivers::BLOCK_DEVICE;
-
-lazy_static! {
-    pub static ref FS_MANAGER: Mutex<FileSystemManager> = Mutex::new(FileSystemManager::new());
+/// trait File for all file types
+pub trait File: Send + Sync {
+    /// the file readable?
+    fn readable(&self) -> bool;
+    /// the file writable?
+    fn writable(&self) -> bool;
+    /// read from the file to buf, return the number of bytes read
+    fn read(&self, buf: UserBuffer) -> usize;
+    /// write to the file from buf, return the number of bytes written
+    fn write(&self, buf: UserBuffer) -> usize;
+    /// get the file state
+    fn state(&self) -> Option<Stat>;
+    /// check if the file is a directory
+    fn is_dir(&self) -> bool;
 }
 
-lazy_static! {
-    pub static ref ROOT_INODE: Arc<dyn Inode> = {
-        let ext4fs = Arc::new(Ext4FS::new(BLOCK_DEVICE.clone()));
-        FS_MANAGER.lock().mount(ext4fs, "/");
-        FS_MANAGER.lock().rootfs().root_inode()
-    };
+/// The stat of a inode
+#[repr(C)]
+#[derive(Debug)]
+pub struct Stat {
+    /// ID of device containing file
+    pub dev: u64,
+    /// inode number
+    pub ino: u64,
+    /// file type and mode
+    pub mode: StatMode,
+    /// number of hard links
+    pub nlink: u32,
+    /// unused pad
+    pad: [u64; 7],
 }
 
-pub fn init() {
-    let _root = ROOT_INODE.clone();
-}
-
-/// Open a file
-pub fn open_file(inode: Arc<dyn Inode>, name: &str, flags: OpenFlags) -> Option<Arc<Dentry>> {
-    // TODO: read_write
-    // let (readable, writable) = flags.read_write();
-    if flags.contains(OpenFlags::O_CREAT) {
-        if let Some(dentry) = inode.clone().lookup(name) {
-            // clear size
-            dentry.inode().clear();
-            Some(dentry)
-        } else {
-            // create file
-            let type_ = if flags.contains(OpenFlags::O_DIRECTORY) {
-                InodeType::Directory
-            } else {
-                InodeType::Regular
-            };
-            let dentry = inode.create(name, type_)?;
-            Some(dentry)
-        }
-    } else if let Some(dentry) = inode.lookup(name) {
-        if flags.contains(OpenFlags::O_TRUNC) {
-            dentry.inode().clear();
-        }
-        Some(dentry)
-    } else {
-        None
+bitflags! {
+    /// The mode of a inode
+    /// whether a directory or a file
+    pub struct StatMode: u32 {
+        /// null
+        const NULL  = 0;
+        /// directory
+        const DIR   = 0o040000;
+        /// ordinary regular file
+        const FILE  = 0o100000;
     }
 }
 
-pub struct Iovec {
-    pub iov_base: usize,
-    pub iov_len:  usize,
-}
-
-// pub use ext4 as fs;
-// pub use ext4::*;
+pub use inode::{list_apps, open_file, OSInode, unlink_at, link_at, get_root_dentry};
+pub use pipe::{make_pipe, Pipe};
+pub use stdio::{Stdin, Stdout};
+pub use defs::OpenFlags;

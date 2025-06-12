@@ -51,6 +51,7 @@ pub mod task;
 pub mod timer;
 pub mod hal;
 pub mod boot; // used to set up the initial environment
+pub mod ext4;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::{
@@ -69,7 +70,7 @@ use crate::{
 };
 
 /// buffers doc
-pub mod buffers;
+//pub mod buffers;
 
 #[no_mangle]
 pub fn main(cpu: usize) -> ! {

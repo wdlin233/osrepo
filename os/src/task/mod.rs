@@ -21,8 +21,9 @@ mod task;
 mod stride;
 
 use self::id::TaskUserRes;
+use crate::fs::inode::ROOT_DENTRY;
 //use crate::fs::ext4::ROOT_INO;
-use crate::fs::{open_file, OpenFlags, ROOT_INODE};
+use crate::fs::{open_file, OpenFlags};
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
@@ -194,10 +195,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 lazy_static! {
     /// INITPROC static doc
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
-        let root_ino = ROOT_INODE.clone();
+        //let root_dentry = ROOT_DENTRY.clone();
 
         // 读取文件逻辑？
-        let dentry = open_file(root_ino, "usertest.elf", OpenFlags::O_RDONLY).unwrap();
+        let dentry = open_file("usertest.elf", OpenFlags::O_RDONLY).unwrap();
         //let dentry = open_file(root_ino, "run-all.sh", OpenFlags::O_RDONLY).unwrap(); // "Did not find ELF magic number"
         let v = dentry.inode().read_all();
         ProcessControlBlock::new(v.as_slice())
