@@ -36,3 +36,34 @@ impl<T> UPSafeCell<T> {
         self.inner.borrow_mut()
     }
 }
+
+pub struct SyncUnsafeCell<T>(core::cell::SyncUnsafeCell<T>);
+
+impl<T> SyncUnsafeCell<T> {
+    #[inline]
+    pub fn new(value: T) -> Self {
+        Self(core::cell::SyncUnsafeCell::new(value))
+    }
+
+    /// This method is unsafe.
+    /// 绕过所有权检查
+    #[inline]
+    pub fn get_unchecked_mut(&self) -> &mut T {
+        unsafe { &mut *self.0.get() }
+    }
+
+    #[inline]
+    pub fn get(&self) -> *mut T {
+        self.0.get()
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut()
+    }
+
+    pub fn get_unchecked_ref(&self) -> &T {
+        unsafe { &*self.0.get() }
+    }
+}
+

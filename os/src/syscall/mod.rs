@@ -187,3 +187,19 @@ pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }
+
+bitflags! {
+    //表示对应在文件上等待或者发生过的事件
+    pub struct PollEvents: u16 {
+        /// 可读
+        const IN = 0x0001;
+        /// 可写
+        const OUT = 0x0004;
+        /// 报错
+        const ERR = 0x0008;
+        /// 已终止，如 pipe 的另一端已关闭连接的情况
+        const HUP = 0x0010;
+        /// 无效的 fd
+        const INVAL = 0x0020;
+    }
+}

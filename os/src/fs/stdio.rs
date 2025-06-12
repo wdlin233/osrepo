@@ -3,16 +3,27 @@ use crate::mm::UserBuffer;
 use crate::hal::utils::console_getchar;
 use crate::task::suspend_current_and_run_next;
 use crate::print;
+
+use super::{File, Kstat, StMode};
+use crate::utils::{SysErrNo, SyscallRet};
+use crate::{
+    mm::UserBuffer, sbi::console_getchar, syscall::PollEvents, task::suspend_current_and_run_next,
+};
+use alloc::vec::Vec;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::sstatus;
 
 use super::{file::File, inode::Stat};
+use crate::fs::{Kstat, PollEvents, StMode};
 
 /// stdin file for getting chars from console
 pub struct Stdin;
 
 /// stdout file for putting chars to console
 pub struct Stdout;
+
+const LF: usize = 0x0a;
+const CR: usize = 0x0d;
 
 impl File for Stdin {
     fn readable(&self) -> bool {
@@ -21,18 +32,15 @@ impl File for Stdin {
     fn writable(&self) -> bool {
         false
     }
-    fn read(&self, user_buf: &mut [u8]) -> usize {
-        // assert_eq!(user_buf.len(), 1);
+    fn read(&self, mut user_buf: UserBuffer) -> SyscallRet {
+        /*
+        //一次读取单个字符
+        assert_eq!(user_buf.len(), 1);
         // busy loop
-        #[cfg(target_arch = "riscv64")]
-        unsafe {
-            sstatus::set_sum();
-        }
         let mut c: usize;
         loop {
             c = console_getchar();
             if c == 0 {
-                debug!("stdin: no char, suspend and run next");
                 suspend_current_and_run_next();
                 continue;
             } else {
@@ -40,24 +48,59 @@ impl File for Stdin {
             }
         }
         let ch = c as u8;
-        user_buf[0] = ch;
-        #[cfg(target_arch = "riscv64")]
         unsafe {
-            sstatus::clear_sum();
+            user_buf.buffers[0].as_mut_ptr().write_volatile(ch);
         }
         1
+        */
+        //一次读取多个字符
+        let mut c: usize;
+        let mut count: usize = 0;
+        let mut buf = Vec::new();
+        while count < user_buf.len() {
+            c = console_getchar();
+            match c {
+                // `c > 255`是为了兼容OPENSBI，OPENSBI未获取字符时会返回-1
+                0 | 256.. => {
+                    suspend_current_and_run_next();
+                    continue;
+                }
+                CR => {
+                    buf.push(LF as u8);
+                    count += 1;
+                    break;
+                }
+                LF => {
+                    buf.push(LF as u8);
+                    count += 1;
+                    break;
+                }
+                _ => {
+                    buf.push(c as u8);
+                    count += 1;
+                }
+            }
+        }
+        user_buf.write(buf.as_slice());
+        Ok(count)
     }
-    fn read_all(&self) -> alloc::vec::Vec<u8> {
-        panic!("Stdin::read_all not implemented");
+    fn write(&self, _user_buf: UserBuffer) -> SyscallRet {
+        Err(SysErrNo::EINVAL)
+        // panic!("Cannot write to stdin!");
     }
-    fn write(&self, _user_buf: &[u8]) -> usize {
-        panic!("Cannot write to stdin!");
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let mut revents = PollEvents::empty();
+        if events.contains(PollEvents::IN) {
+            revents |= PollEvents::IN;
+        }
+        revents
     }
-    fn fstat(&self) -> Option<Stat> {
-        None
-    }
-    fn hang_up(&self) -> bool {
-        todo!()
+    fn fstat(&self) -> Kstat {
+        Kstat {
+            st_mode: StMode::FCHR.bits(),
+            st_nlink: 1,
+            ..Kstat::default()
+        }
     }
 }
 
@@ -68,27 +111,27 @@ impl File for Stdout {
     fn writable(&self) -> bool {
         true
     }
-    fn read(&self, _user_buf: &mut [u8]) -> usize {
+    fn read(&self, _user_buf: UserBuffer) -> SyscallRet {
         panic!("Cannot read from stdout!");
     }
-    fn read_all(&self) -> alloc::vec::Vec<u8> {
-        panic!("Stdout::read_all not allowed");
-    }
-    fn write(&self, user_buf: &[u8]) -> usize {
-        #[cfg(target_arch = "riscv64")]
-        unsafe {
-            sstatus::set_sum();
-            print!("{}", core::str::from_utf8(user_buf).unwrap());
-            sstatus::clear_sum();
+    fn write(&self, user_buf: UserBuffer) -> SyscallRet {
+        for buffer in user_buf.buffers.iter() {
+            print!("{}", core::str::from_utf8(*buffer).unwrap());
         }
-        #[cfg(target_arch = "loongarch64")]
-        print!("{}", core::str::from_utf8(user_buf).unwrap());
-        user_buf.len()
+        Ok(user_buf.len())
     }
-    fn fstat(&self) -> Option<Stat> {
-        None
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let mut revents = PollEvents::empty();
+        if events.contains(PollEvents::OUT) {
+            revents |= PollEvents::OUT;
+        }
+        revents
     }
-    fn hang_up(&self) -> bool {
-        todo!()
+    fn fstat(&self) -> Kstat {
+        KStat {
+            st_mode: StMode::FCHR.bits(),
+            st_nlink: 1,
+            ..Kstat::default()
+        }
     }
 }

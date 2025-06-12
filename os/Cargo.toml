@@ -16,7 +16,8 @@ xmas-elf = "0.7.0"
 virtio-drivers = { version = "0.6.0" }
 spin = "0.10"
 bit_field = "0.10.1"
-ext4_rs = { path = "libs/ext4_rs" }
+#ext4_rs = { path = "libs/ext4_rs" }
+lwext4_rust= { path = "/home/lc/osrepo/os/libs/lwext4_rsut"}
 lru = "0.12"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
