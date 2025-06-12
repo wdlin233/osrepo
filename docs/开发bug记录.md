@@ -103,6 +103,31 @@ process_inner.memory_set.insert_framed_area(
 
 修改用户栈大小后转变为zombie process. 疑似 `usertests_simple` 中的 `waitpid` 有问题. 并不是. 是因为之前在完成 basic 测例时修改了 `block_current_and_run_next` 的逻辑，将 `add_block_task(task);` 保留就可以正常运行了.
 
+## 2025.6.12
+
+队友实现了 ext4 的文件系统，开始适配对 la 的支持了. 前几天尝试了一下使用更新版本的 `ext4_rs` 对文件系统进行适配，发现难度有一点大，要花费很多时间，于是先这么使用了.
+
+在 la 上遇到的第一个问题，就是会出现地址段的重复映射，经过排查发现是因为 `PAGE_SIZE` 的大小在 rv 和 la 上并不一样，之前也遇到过类似的问题.
+
+```shell
+[DEBUG] elf program header count: 5
+[DEBUG] start_va: VA:0x0, end_va: VA:0x2da0, map_perm: PLVL | PLVH
+[ INFO] MapArea::new: 0x0 - 0x2da0
+[ INFO] MapArea::new start floor = 0, end ceil = 1
+[DEBUG] map_area: MapArea { vpn_range: SimpleRange { l: VPN:0x0, r: VPN:0x1 }, data_frames: {}, map_perm: PLVL | PLVH }
+[ INFO] map vpn VPN:0x0 to ppn PPN:0x81c with flags PLVL | PLVH
+[DEBUG] start_va: VA:0x3000, end_va: VA:0x3f30, map_perm: NX | PLVL | PLVH
+[ INFO] MapArea::new: 0x3000 - 0x3f30
+[ INFO] MapArea::new start floor = 0, end ceil = 1
+[DEBUG] map_area: MapArea { vpn_range: SimpleRange { l: VPN:0x0, r: VPN:0x1 }, data_frames: {}, map_perm: NX | PLVL | PLVH }
+[ INFO] map vpn VPN:0x0 to ppn PPN:0x81f with flags PLVL | PLVH | NX
+[kernel] Panicked at src/mm/page_table.rs:271 vpn VPN:0x0 is mapped before mapping
+```
+
+发现是加载成 rv 的镜像了，幽默. 不过更换之后还是遇到了不能打开文件的问题 `[kernel] Panicked at src/task/mod.rs:201 called `Option::unwrap()` on a `None` value`.
+
+用 `ls` 指令查看后发现现在只能打开 `.elf` 尾缀的程序.
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
@@ -111,3 +136,4 @@ process_inner.memory_set.insert_framed_area(
 注意在 LoongArch 中有 `pwcl::set_ptwidth(0xb); //16KiB的页大小` 对寄存器设置页大小等操作，配置页大小并不是 `config` 修改一个常量这么简单，为了保险起见这里就不对两个架构的基本参数进行改动了.
 
 la 和 rv 的主要区别除了一些参数外，就在于 la 因为有窗口映射就没有设置内核地址空间，以及需要手动处理 TLB 的一些操作.
+

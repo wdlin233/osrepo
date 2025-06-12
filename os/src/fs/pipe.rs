@@ -153,7 +153,7 @@ impl File for Pipe {
                 drop(ring_buffer);
                 debug!("kernel: Pipe::read suspend_current_and_run_next");
                 suspend_current_and_run_next();
-                trap::wait_return();
+                #[cfg(target_arch = "riscv64")] trap::wait_return();
                 continue;
             }
             for _ in 0..loop_read {

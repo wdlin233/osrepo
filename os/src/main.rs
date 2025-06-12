@@ -70,9 +70,6 @@ use crate::{
     }
 };
 
-/// buffers doc
-pub mod buffers;
-
 #[no_mangle]
 pub fn main(cpu: usize) -> ! {
     clear_bss();
@@ -88,8 +85,6 @@ pub fn main(cpu: usize) -> ! {
     #[cfg(target_arch = "loongarch64")] print_machine_info();
     hal::trap::enable_timer_interrupt();
     #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
-
-    //buffers::bio_unit_tests();
 
     //fs::list_apps();
     task::add_initproc();

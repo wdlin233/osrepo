@@ -451,6 +451,7 @@ pub use context::TrapContext;
 #[allow(unused_variables)]
 
 ///wait ret
+#[cfg(target_arch = "riscv64")]
 pub fn wait_return() {
     info!("new round of father waiting for child to return");
     set_user_trap_entry();

@@ -20,8 +20,7 @@ lazy_static! {
     pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(VirtIOBlock::new());
 }
 
-/// BLOCK_SZ
-pub const BLOCK_SZ: usize = 512;
+use crate::config::IO_BLOCK_SIZE;
 
 // #[allow(unused)]
 // /// Test the block device

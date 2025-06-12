@@ -10,7 +10,7 @@ fn main() -> i32 {
     println!("[initproc] Init process started");
     if fork() == 0 {
         //println!("[initproc] Forked child process, executing user_shell");
-        exec("usertests_simple\0", &[core::ptr::null::<u8>()]);
+        exec("usertest\0", &[core::ptr::null::<u8>()]);
         //exec("user_shell\0", &[core::ptr::null::<u8>()]);
     } else {
         //println!("[initproc] Parent process waiting for child to finish");

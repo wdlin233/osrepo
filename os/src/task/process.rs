@@ -182,6 +182,7 @@ impl ProcessControlBlock {
     /// new process from elf file
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
+        // debug!("kernel: create process from elf data, size = {}", elf_data.len());
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
         // allocate a pid
         let user = current_user().unwrap();
@@ -216,7 +217,6 @@ impl ProcessControlBlock {
                 })
             },
         });
-        // debug!("kernel: create process, pid = {}", process.getpid());
         // create a main thread, we should allocate ustack and trap_cx here
         let task = Arc::new(TaskControlBlock::new(
             Arc::clone(&process),

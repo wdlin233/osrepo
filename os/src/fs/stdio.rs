@@ -3,6 +3,7 @@ use crate::mm::UserBuffer;
 use crate::hal::utils::console_getchar;
 use crate::task::suspend_current_and_run_next;
 use crate::print;
+#[cfg(target_arch = "riscv64")]
 use riscv::register::sstatus;
 
 use super::{file::File, inode::Stat};
@@ -23,6 +24,7 @@ impl File for Stdin {
     fn read(&self, user_buf: &mut [u8]) -> usize {
         // assert_eq!(user_buf.len(), 1);
         // busy loop
+        #[cfg(target_arch = "riscv64")]
         unsafe {
             sstatus::set_sum();
         }
@@ -39,6 +41,7 @@ impl File for Stdin {
         }
         let ch = c as u8;
         user_buf[0] = ch;
+        #[cfg(target_arch = "riscv64")]
         unsafe {
             sstatus::clear_sum();
         }
@@ -72,11 +75,14 @@ impl File for Stdout {
         panic!("Stdout::read_all not allowed");
     }
     fn write(&self, user_buf: &[u8]) -> usize {
+        #[cfg(target_arch = "riscv64")]
         unsafe {
             sstatus::set_sum();
             print!("{}", core::str::from_utf8(user_buf).unwrap());
             sstatus::clear_sum();
         }
+        #[cfg(target_arch = "loongarch64")]
+        print!("{}", core::str::from_utf8(user_buf).unwrap());
         user_buf.len()
     }
     fn fstat(&self) -> Option<Stat> {

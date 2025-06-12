@@ -43,7 +43,7 @@ DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 ifeq ($(ARCH), riscv64)
 	FS_IMG := sdcard-rv.img
 else ifeq ($(ARCH), loongarch64)
-	FS_IMG := sdcard-rv.img
+	FS_IMG := sdcard-la.img
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
@@ -85,6 +85,7 @@ fs-img:
 	@sudo mount $(FS_IMG) /mnt/image_part
 	@sudo cp ../user/build/elf/* /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
+	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
 fs-img:	
@@ -93,8 +94,9 @@ fs-img:
 	@make build -C ../user_la
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/initproc /mnt/image_part/
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertests_simple /mnt/image_part/
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
+	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")

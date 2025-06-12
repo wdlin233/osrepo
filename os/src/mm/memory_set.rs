@@ -200,12 +200,13 @@ impl MemorySet {
         assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
         let mut max_end_vpn = VirtPageNum(0);
+        debug!("elf program header count: {}", ph_count);
         for i in 0..ph_count {
             let ph = elf.program_header(i).unwrap();
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                //debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
+                debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
 
                 #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
@@ -237,15 +238,15 @@ impl MemorySet {
                         map_perm |= MapPermission::NX;
                     }
                 }
-                // debug!(
-                //     "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-                //     start_va, end_va, map_perm
-                // );
+                debug!(
+                    "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
+                    start_va, end_va, map_perm
+                );
                 #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm);
-                // debug!("map_area: {:?}", map_area);
+                debug!("map_area: {:?}", map_area);
                 
                 max_end_vpn = map_area.vpn_range.get_end();
                 // A optimization for mapping data, keep aligned
@@ -369,10 +370,10 @@ impl MapArea {
         #[cfg(target_arch = "riscv64")] map_type: MapType,
         map_perm: MapPermission,
     ) -> Self {
-        // TRACE!("MapArea::new: {:#x}-{:# x}", start_va.0, end_va.0);
+        info!("MapArea::new: {:#x} - {:#x}", start_va.0, end_va.0);
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
-        //debug!("in maparea start floor = {}",start_va.floor().0);
+        info!("MapArea::new start floor = {}, end ceil = {}",start_va.floor().0, end_va.ceil().0);
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
