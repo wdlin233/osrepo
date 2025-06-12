@@ -39,7 +39,6 @@ else
 endif
 
 
-DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 ifeq ($(ARCH), riscv64)
 	FS_IMG := sdcard-rv.img
 else ifeq ($(ARCH), loongarch64)
@@ -111,14 +110,16 @@ clean:
 	@tmux kill-server
 	@sudo umount /mnt/image_part
 
+ifeq ($(ARCH),riscv64)
 disasm: kernel
+	riscv64-linux-musl-objdump $(DISASM) $(KERNEL_ELF) > disasm_rv.s
+else ifeq ($(ARCH),loongarch64)
+disasm: kernel	
 	loongarch64-unknown-linux-gnu-objdump $(DISASM) $(KERNEL_ELF) > disasm_la.s
+else
+	$(error "ARCH" must be one of "riscv64" or "loongarch64")
+endif
 
-disasm-vim: kernel
-	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)
-	@vim $(DISASM_TMP)
-	@rm $(DISASM_TMP)
-	
 # -d in_asm,cpu,exec,int,unimp,guest_errors
 run: build run-inner
 QEMU_EXEC += -nographic \

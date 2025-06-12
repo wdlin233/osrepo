@@ -6,6 +6,7 @@ extern crate user_lib;
 
 // Basic 测例中除去 mnt 以外的
 const TESTS: &[&str] = &[
+    "mmap\0", // panic
     "dup2\0",
     "clone\0",
     "execve\0",
@@ -34,7 +35,7 @@ const TESTS: &[&str] = &[
     "getcwd\0", // 17
     "getdents\0", // 61
     "mkdir_\0", // 34
-    "mmap\0", // panic
+    
     "mount\0", // 40
     "munmap\0", // panic
     "openat\0", // panic

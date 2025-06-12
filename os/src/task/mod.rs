@@ -21,11 +21,13 @@ mod task;
 mod stride;
 
 use self::id::TaskUserRes;
+use crate::drivers::BLOCK_DEVICE;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::{open_file, OpenFlags, ROOT_INODE};
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
+use ext4_rs::Ext4;
 use lazy_static::*;
 use manager::fetch_task;
 use process::ProcessControlBlock;
@@ -195,13 +197,35 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 lazy_static! {
     /// INITPROC static doc
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
-        let root_ino = ROOT_INODE.clone();
+        let ext4 = Ext4::open(BLOCK_DEVICE.clone()); 
+        let path = "usertest.elf";
 
-        // 读取文件逻辑？
-        let dentry = open_file(root_ino, "usertest", OpenFlags::O_RDONLY).unwrap();
-        //let dentry = open_file(root_ino, "run-all.sh", OpenFlags::O_RDONLY).unwrap(); // "Did not find ELF magic number"
-        let v = dentry.inode().read_all();
-        ProcessControlBlock::new(v.as_slice())
+        let mut dev = 0;
+
+        // 3. 打开文件获取inode
+        let inode = ext4.generic_open(path, &mut 2, false, 1, &mut dev)
+            .expect("Failed to open usertest");
+        
+        // 4. 确定文件大小（这里假设最大1MB）
+        use alloc::vec;
+        let mut buffer = vec![0u8; 1024 * 4096]; // 1MB缓冲区
+        
+        // 5. 读取文件内容（从偏移量0开始）
+        let bytes_read = ext4.read_at(inode, 0, &mut buffer)
+            .expect("Failed to read usertest");
+        
+        // 6. 截取实际读取的数据
+        let content = &buffer[..bytes_read];
+        
+        // 7. 创建进程控制块
+        ProcessControlBlock::new(content)
+
+        // let root_ino = ROOT_INODE.clone();
+        // // 读取文件逻辑？
+        // let dentry = open_file(root_ino, "/usertest", OpenFlags::O_RDONLY).unwrap();
+        // //let dentry = open_file(root_ino, "run-all.sh", OpenFlags::O_RDONLY).unwrap(); // "Did not find ELF magic number"
+        // let v = dentry.inode().read_all();
+        // ProcessControlBlock::new(v.as_slice())
     };
 }
 

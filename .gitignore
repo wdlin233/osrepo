@@ -27,5 +27,7 @@ testcases/build
 testcases/riscv64/*
 testcases/loongarch64/*
 **/disasm_la.s
+**/disasm_rv.s
+**/user.s
 **/sdcard-*.img
 test-riscv/**

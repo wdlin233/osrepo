@@ -32,17 +32,17 @@ use core::any::Any;
 
 impl ext4_rs::BlockDevice for VirtIOBlock {
     fn read_offset(&self, offset: usize) -> Vec<u8> {
-        // debug!("read_offset: offset = {:#x}", offset);
+        //debug!("read_offset: offset = {:#x}", offset);
         let mut buf = [0u8; 4096];
         self.0
             .exclusive_access()
             .read_blocks(offset / IO_BLOCK_SIZE, &mut buf)
             .expect("Error when reading VirtIOBlk");
-        // debug!("read_offset = {:#x}, buf = {:x?}", offset, buf);
+        //debug!("read_offset = {:#x}, buf = {:x?}", offset, buf);
         buf[offset % IO_BLOCK_SIZE..].to_vec()
     }
     fn write_offset(&self, offset: usize, data: &[u8]) {
-        debug!("write_offset: offset = {:#x}", offset);
+        //debug!("write_offset: offset = {:#x}", offset);
         //     debug!("data len = {:#x}", data.len());
         let mut write_size = 0;
         while write_size < data.len() {

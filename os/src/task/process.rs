@@ -255,6 +255,7 @@ impl ProcessControlBlock {
     /// Only support processes with a single thread.
     pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>) {
         //trace!("kernel: exec");
+        debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
         // memory_set with elf program headers/trampoline/trap context/user stack
         //trace!("kernel: exec .. MemorySet::from_elf");
@@ -271,6 +272,7 @@ impl ProcessControlBlock {
         let mut task_inner = task.inner_exclusive_access();
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
+        debug!("kernel: exec .. alloc user resource for main thread again, pid = {}", self.getpid());
         #[cfg(target_arch = "riscv64")]
         {
             task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();

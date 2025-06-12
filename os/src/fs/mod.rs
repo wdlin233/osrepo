@@ -5,7 +5,7 @@ pub mod pipe;
 pub mod stdio;
 
 // 根据编译时的条件选择模块
-pub mod ext4;
+//pub mod ext4;
 
 pub mod defs;
 pub mod dentry;
@@ -35,7 +35,7 @@ pub use defs::OpenFlags as OpenFlags;
 use alloc::sync::Arc;
 
 use dentry::Dentry;
-use ext4::fs::Ext4FS;
+//use ext4::fs::Ext4FS;
 use vfs::FileSystemManager;
 use inode::{Inode, InodeType};
 use lazy_static::lazy_static;
@@ -49,9 +49,10 @@ lazy_static! {
 
 lazy_static! {
     pub static ref ROOT_INODE: Arc<dyn Inode> = {
-        let ext4fs = Arc::new(Ext4FS::new(BLOCK_DEVICE.clone()));
-        FS_MANAGER.lock().mount(ext4fs, "/");
-        FS_MANAGER.lock().rootfs().root_inode()
+        unimplemented!()
+        // let ext4fs = Arc::new(Ext4FS::new(BLOCK_DEVICE.clone()));
+        // FS_MANAGER.lock().mount(ext4fs, "/");
+        // FS_MANAGER.lock().rootfs().root_inode()
     };
 }
 
@@ -79,6 +80,7 @@ pub fn open_file(inode: Arc<dyn Inode>, name: &str, flags: OpenFlags) -> Option<
             Some(dentry)
         }
     } else if let Some(dentry) = inode.lookup(name) {
+        // 程序将在这里被执行
         if flags.contains(OpenFlags::O_TRUNC) {
             dentry.inode().clear();
         }

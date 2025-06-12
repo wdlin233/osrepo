@@ -37,6 +37,7 @@ impl Inode for Ext4Inode {
         todo!()
     }
     fn create(self: Arc<Self>, _name: &str, _type_: InodeType) -> Option<Arc<Dentry>> {
+        error!("Ext4Inode::create not implemented");
         todo!()
     }
 

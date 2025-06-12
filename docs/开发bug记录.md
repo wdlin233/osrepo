@@ -128,6 +128,14 @@ process_inner.memory_set.insert_framed_area(
 
 用 `ls` 指令查看后发现现在只能打开 `.elf` 尾缀的程序.
 
+考虑更直接的使用 `ext4_rs` 的接口，可以打开文件，但是执行过程中会出现 
+
+```shell
+[ERROR] [kernel] trap_handler: Exception(LoadPageFault) in application, bad addr = 0x6000, bad instruction = 0x10a0, kernel killed it.
+``` 
+
+的错误 
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.

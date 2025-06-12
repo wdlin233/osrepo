@@ -1,7 +1,7 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::any::Any;
 
-use crate::fs::ext4::inode::Ext4Inode;
+//use crate::fs::ext4::inode::Ext4Inode;
 
 use super::{
     // ext4::inode::Ext4Inode,
@@ -62,12 +62,14 @@ pub fn cast_file_to_inode(file: Arc<dyn File>) -> Option<Arc<dyn Inode>> {
     // }
 }
 
-pub fn cast_inode_to_file(inode: Arc<dyn Inode>) -> Option<Arc<dyn File + Send + Sync>> {
-    unsafe {
-        let file_ptr = Arc::into_raw(inode) as *const Ext4Inode;
-        let _q = Arc::from_raw(file_ptr);
-        Some(_q)
-    }
+pub fn cast_inode_to_file(_inode: Arc<dyn Inode>) -> Option<Arc<dyn File + Send + Sync>> {
+    // unsafe {
+    //     unimplemented!()
+    //     // let file_ptr = Arc::into_raw(inode) as *const Ext4Inode;
+    //     // let _q = Arc::from_raw(file_ptr);
+    //     // Some(_q)
+    // }
+    unimplemented!()
     // unsafe {
     //     let inode_ptr = Arc::into_raw(inode);
     //     let inode_ref = &*(inode_ptr as *const dyn Any);
