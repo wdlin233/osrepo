@@ -1,24 +1,24 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
-
-use ext4_rs::{Ext4File, Ext4InodeRef};
+use ext4_rs::Ext4;
 
 use super::fs::Ext4FS;
 use crate::{
     fs::{
         dentry::Dentry,
         file::File,
-        vfs::FileSystemType,
         inode::{Inode, InodeType, Stat},
+        vfs::FileSystemType,
     },
     sync::UPSafeCell,
 };
+use ext4_rs::ext4_defs::FileAttr;
 
 /// Ext4Inode defines here
 pub struct Ext4Inode {
     /// Ext4 Wrapper
-    pub fs:    Arc<Ext4FS>,
+    pub fs: Arc<Ext4FS>,
     /// inode num
-    pub ino:   u32,
+    pub ino: u32,
     /// Ext4 UPSafeCell<Ext4InodeInner>
     pub inner: UPSafeCell<Ext4InodeInner>,
 }
@@ -30,25 +30,30 @@ pub struct Ext4InodeInner {
 }
 
 impl Inode for Ext4Inode {
+    fn get_inode_num(&self) -> u32 {
+        self.ino
+    }
     fn fstype(&self) -> FileSystemType {
         FileSystemType::EXT4
     }
     fn clear(&self) {
         todo!()
     }
-    fn create(self: Arc<Self>, _name: &str, _type_: InodeType) -> Option<Arc<Dentry>> {
+    fn create(self: Arc<Self>, _name: &str, _mode: u32, _type_: InodeType) -> Option<Arc<Dentry>> {
         todo!()
     }
 
     fn lookup(self: Arc<Self>, name: &str) -> Option<Arc<Dentry>> {
-        let mut file = Ext4File::new();
-        self.fs
+        debug!("in lookup, name is: {}", name);
+        let file = self
+            .fs
             .ext4
-            .ext4_open_from(self.ino, &mut file, name, "r", false)
-            .ok()?;
+            .fuse_lookup(self.ino as u64, name)
+            .ok()
+            .unwrap();
         let inode = Ext4Inode {
-            fs:    self.fs.clone(),
-            ino:   file.inode,
+            fs: self.fs.clone(),
+            ino: file.ino as u32,
             inner: unsafe { UPSafeCell::new(Ext4InodeInner { fpos: 0 }) },
         };
         let dentry = Dentry::new(name, Arc::new(inode));
@@ -56,7 +61,7 @@ impl Inode for Ext4Inode {
     }
 
     fn unlink(self: Arc<Self>, name: &str) -> bool {
-        self.fs.ext4.ext4_file_remove(self.ino, name).is_ok()
+        self.fs.ext4.fuse_unlink(self.ino as u64, name).is_ok()
     }
 
     fn link(self: Arc<Self>, _name: &str, _target: Arc<Dentry>) -> bool {
@@ -68,43 +73,42 @@ impl Inode for Ext4Inode {
         todo!()
     }
 
-    fn mkdir(self: Arc<Self>, name: &str) -> bool {
-        self.fs.ext4.ext4_dir_mk(self.ino, name).is_ok()
+    fn mkdir(self: Arc<Self>, _name: &str, _mode: u32) -> bool {
+        todo!()
+        // self.fs
+        //     .ext4
+        //     .fuse_mkdir(self.ino as u64, name, mode, 0)
+        //     .is_ok()
     }
 
     fn rmdir(self: Arc<Self>, name: &str) -> bool {
-        self.fs.ext4.ext4_dir_remove(self.ino, name).is_ok()
+        self.fs.ext4.dir_remove(self.ino, name).is_ok()
     }
 
     fn ls(&self) -> Vec<String> {
-        self.fs
-            .ext4
-            .read_dir_entry(self.ino as u64)
-            .iter()
-            .map(|x| x.get_name())
-            .collect()
+        self.fs.ext4.fuse_ls(self.ino)
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
-        let mut file = Ext4File::new();
-        file.inode = self.ino;
-        file.fpos = offset;
-        file.fsize = offset as u64;
-        let mut read_size = 0;
-        let _ = self
+        let flags: i32 = 0;
+        //debug!("in read, to fuse read");
+        let read_size = self
             .fs
             .ext4
-            .ext4_file_read(&mut file, buf, buf.len(), &mut read_size);
+            .fuse_read(self.ino as u64, 0, offset as i64, buf, flags, None)
+            .ok()
+            .unwrap();
         read_size
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
-        let inode_ref = Ext4InodeRef::get_inode_ref(Arc::downgrade(&self.fs.ext4), self.ino);
-        let mut file = Ext4File::new();
-        file.fpos = offset;
-        file.fsize = inode_ref.inner.inode.inode_get_size();
-        self.fs.ext4.ext4_file_write(&mut file, buf, buf.len());
-        buf.len()
+    fn write_at(&self, _offset: usize, _buf: &[u8]) -> usize {
+        todo!()
+        // let inode_ref = Ext4InodeRef::get_inode_ref(Arc::downgrade(&self.fs.ext4), self.ino);
+        // let mut file = Ext4File::new();
+        // file.fpos = offset;
+        // file.fsize = inode_ref.inner.inode.inode_get_size();
+        // self.fs.ext4.ext4_file_write(&mut file, offset as i64, buf);
+        // buf.len()
     }
 }
 

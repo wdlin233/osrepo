@@ -1,17 +1,17 @@
 use crate::{
+    config::PAGE_SIZE,
     fs::{open_file, OpenFlags},
     mm::{copy_to_virt, translated_ref, translated_refmut, translated_str},
     task::{
-        current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
-        suspend_current_and_run_next, SignalFlags, mmap, munmap,block_current_and_run_next,
-        TmsInner,
-    }, 
-    config::PAGE_SIZE,
+        block_current_and_run_next, current_process, current_task, current_user_token,
+        exit_current_and_run_next, mmap, munmap, pid2process, suspend_current_and_run_next,
+        SignalFlags, TmsInner,
+    },
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
 #[repr(C)]
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct TimeVal {
     pub sec: usize,
     pub usec: usize,
@@ -91,6 +91,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     }
     use crate::fs::ROOT_INODE;
     let root_ino = ROOT_INODE.clone();
+    debug!("in sys exec, name is: {}", path.as_str());
     if let Some(app_inode_entry) = open_file(root_ino, path.as_str(), OpenFlags::O_RDONLY) {
         let all_data = app_inode_entry.inode().read_all();
         let process = current_process();
@@ -110,7 +111,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 /// block to wait
-pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize {
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize {
     debug!("kernel: sys_waitpid");
     {
         let process = current_process();
@@ -128,7 +129,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize 
             //- release current PCB
         }
     }
-    if options ==0 {
+    if options == 0 {
         loop {
             let process = current_process();
             let mut inner = process.inner_exclusive_access();
@@ -146,13 +147,12 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32,options: usize) -> isize 
                 let exit_code = child.inner_exclusive_access().exit_code;
                 debug!(
                     "sys_waitpid: found child pid {}, exit_code {}",
-                    found_pid,
-                    exit_code
+                    found_pid, exit_code
                 );
                 // ++++ release child PCB
                 *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
                 return found_pid as isize;
-            }else {
+            } else {
                 drop(inner);
                 debug!("sys_waitpid: no child found, block current process");
                 block_current_and_run_next();
@@ -176,11 +176,11 @@ pub fn sys_getppid() -> isize {
 }
 
 /// getuid syscall
-pub fn sys_getuid()->isize{
+pub fn sys_getuid() -> isize {
     current_task().unwrap().process.upgrade().unwrap().getuid() as isize
 }
 /// getgid syscall
-pub fn sys_getgid()->isize{
+pub fn sys_getgid() -> isize {
     current_task().unwrap().process.upgrade().unwrap().getgid() as isize
 }
 
@@ -220,15 +220,14 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 }
 
 /// get times
-pub fn sys_tms(tms: *mut TmsInner)->isize {
+pub fn sys_tms(tms: *mut TmsInner) -> isize {
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let process_tms = inner.tms.inner;
     drop(inner);
-    copy_to_virt(&process_tms,tms);
+    copy_to_virt(&process_tms, tms);
     0
 }
-
 
 /// YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
@@ -237,14 +236,14 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
     const PORT_MASK: usize = 0b111;
-     
+
     let aligned_start = start % PAGE_SIZE == 0;
     let port_valid = (port & !PORT_MASK) == 0;
     let port_not_none = (port & PORT_MASK) != 0;
-     
+
     //trace!("each condition: aligned_start={}, port_valid={}, port_not_none={}", aligned_start, port_valid, port_not_none);
     if aligned_start && port_valid && port_not_none {
-        return mmap(start, len, port)
+        return mmap(start, len, port);
     }
     -1
 }
@@ -257,7 +256,7 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     // );
     let aligned_start = start % PAGE_SIZE == 0;
     if aligned_start {
-        return munmap(start, len)
+        return munmap(start, len);
     }
     -1
 }
@@ -268,12 +267,11 @@ pub fn sys_brk(_path: i32) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
     if let Some(result) = inner.res.as_mut().unwrap().change_program_brk(_path) {
-        debug!("to returning result : {}",result);
+        debug!("to returning result : {}", result);
         result as isize
     } else {
         -1
     }
-    
 }
 // like sys_spawn a unnecessary syscall
 

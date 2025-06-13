@@ -1,14 +1,14 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+#[cfg(target_arch = "loongarch64")]
+use crate::config::{PAGE_SIZE_BITS, PALEN};
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
-use bitflags::*;
-use core::fmt::{self};
 #[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
-#[cfg(target_arch = "loongarch64")]
-use crate::config::{PAGE_SIZE_BITS, PALEN};
+use bitflags::*;
+use core::fmt::{self};
 
 #[cfg(target_arch = "riscv64")]
 bitflags! {
@@ -87,7 +87,7 @@ impl PageTableEntry {
         };
         #[cfg(target_arch = "loongarch64")]
         {
-             //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
+            //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
             let mut bits = 0usize;
             bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
             bits = bits | flags.bits;
@@ -99,17 +99,21 @@ impl PageTableEntry {
         PageTableEntry { bits: 0 }
     }
 
-    /// Get the physical page number from the page table entry 
+    /// Get the physical page number from the page table entry
     /// 返回物理页号---页表项
     pub fn ppn(&self) -> PhysPageNum {
-        #[cfg(target_arch = "riscv64")] return (self.bits >> 10 & ((1usize << 44) - 1)).into();
-        #[cfg(target_arch = "loongarch64")] return self.bits.get_bits(14..PALEN).into();
+        #[cfg(target_arch = "riscv64")]
+        return (self.bits >> 10 & ((1usize << 44) - 1)).into();
+        #[cfg(target_arch = "loongarch64")]
+        return self.bits.get_bits(14..PALEN).into();
     }
     /// Get the flags from the page table entry
     /// 返回标志位
     pub fn flags(&self) -> PTEFlags {
-        #[cfg(target_arch = "riscv64")] return PTEFlags::from_bits(self.bits as u8).unwrap();
-        #[cfg(target_arch = "loongarch64")] {
+        #[cfg(target_arch = "riscv64")]
+        return PTEFlags::from_bits(self.bits as u8).unwrap();
+        #[cfg(target_arch = "loongarch64")]
+        {
             //这里只需要标志位，需要把非标志位的位置清零
             let mut bits = self.bits;
             bits.set_bits(14..PALEN, 0);
@@ -133,13 +137,17 @@ impl PageTableEntry {
     }
     /// The page pointered by page table entry is readable?
     pub fn readable(&self) -> bool {
-        #[cfg(target_arch = "riscv64")] return (self.flags() & PTEFlags::R) != PTEFlags::empty();
-        #[cfg(target_arch = "loongarch64")] return !((self.flags() & PTEFlags::NR) != PTEFlags::empty());
+        #[cfg(target_arch = "riscv64")]
+        return (self.flags() & PTEFlags::R) != PTEFlags::empty();
+        #[cfg(target_arch = "loongarch64")]
+        return !((self.flags() & PTEFlags::NR) != PTEFlags::empty());
     }
     /// The page pointered by page table entry is executable?
     pub fn executable(&self) -> bool {
-        #[cfg(target_arch = "riscv64")] return (self.flags() & PTEFlags::X) != PTEFlags::empty();
-        #[cfg(target_arch = "loongarch64")] return !((self.flags() & PTEFlags::NX) != PTEFlags::empty());
+        #[cfg(target_arch = "riscv64")]
+        return (self.flags() & PTEFlags::X) != PTEFlags::empty();
+        #[cfg(target_arch = "loongarch64")]
+        return !((self.flags() & PTEFlags::NX) != PTEFlags::empty());
     }
     //设置脏位
     #[cfg(target_arch = "loongarch64")]
@@ -264,10 +272,10 @@ impl PageTable {
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
-        info!(
-            "map vpn {:?} to ppn {:?} with flags {:?}",
-            vpn, ppn, flags
-        );
+        // info!(
+        //     "map vpn {:?} to ppn {:?} with flags {:?}",
+        //     vpn, ppn, flags
+        // );
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         #[cfg(target_arch = "riscv64")]
         {
@@ -301,8 +309,10 @@ impl PageTable {
     }
     /// get the token from the page table
     pub fn token(&self) -> usize {
-        #[cfg(target_arch = "riscv64")] return 8usize << 60 | self.root_ppn.0;
-        #[cfg(target_arch = "loongarch64")] return self.root_ppn.0;
+        #[cfg(target_arch = "riscv64")]
+        return 8usize << 60 | self.root_ppn.0;
+        #[cfg(target_arch = "loongarch64")]
+        return self.root_ppn.0;
     }
 }
 
@@ -375,12 +385,12 @@ pub struct Iter<'a> {
 
 impl<'a> Iterator for Iter<'a> {
     type Item = &'a u8;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.current.is_empty() {
             self.current = self.buffers.next()?;
         }
-        
+
         let (first, rest) = self.current.split_first()?;
         self.current = rest;
         Some(first)
@@ -395,12 +405,12 @@ pub struct IterMut<'a> {
 
 impl<'a> Iterator for IterMut<'a> {
     type Item = &'a mut u8;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.current.is_empty() {
             self.current = self.buffers.next()?;
         }
-        
+
         // 安全：从当前切片分离出第一个元素
         let slice = core::mem::replace(&mut self.current, &mut []);
         let (first, rest) = slice.split_first_mut()?;
@@ -445,10 +455,7 @@ impl UserBuffer {
             } else if self.buffers.len() == 1 {
                 &self.buffers[0]
             } else {
-                core::slice::from_raw_parts(
-                    self.buffers[0].as_ptr(), 
-                    self.len()
-                )
+                core::slice::from_raw_parts(self.buffers[0].as_ptr(), self.len())
             }
         }
     }
@@ -462,10 +469,7 @@ impl UserBuffer {
             } else if self.buffers.len() == 1 {
                 &mut self.buffers[0]
             } else if self.is_physically_contiguous() {
-                core::slice::from_raw_parts_mut(
-                    self.buffers[0].as_mut_ptr(), 
-                    self.len()
-                )
+                core::slice::from_raw_parts_mut(self.buffers[0].as_mut_ptr(), self.len())
             } else {
                 panic!("Buffers are not physically contiguous");
             }
@@ -475,20 +479,20 @@ impl UserBuffer {
     /// 检查所有缓冲区是否物理连续
     fn is_physically_contiguous(&self) -> bool {
         let mut next_ptr = None;
-        
+
         for buffer in &self.buffers {
             let start_ptr = buffer.as_ptr() as usize;
             let end_ptr = start_ptr + buffer.len();
-            
+
             if let Some(expected_next) = next_ptr {
                 if start_ptr != expected_next {
                     return false;
                 }
             }
-            
+
             next_ptr = Some(end_ptr);
         }
-        
+
         true
     }
 
@@ -511,17 +515,17 @@ impl UserBuffer {
     /// 高效复制到连续缓冲区
     pub fn copy_to_slice(&self, dest: &mut [u8]) -> usize {
         let mut copied = 0;
-        
+
         for buf in &self.buffers {
             if copied >= dest.len() {
                 break;
             }
-            
+
             let to_copy = (buf.len()).min(dest.len() - copied);
             dest[copied..copied + to_copy].copy_from_slice(&buf[..to_copy]);
             copied += to_copy;
         }
-        
+
         copied
     }
 }

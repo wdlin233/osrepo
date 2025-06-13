@@ -15,14 +15,15 @@ mod manager;
 mod process;
 mod processor;
 mod signal;
+mod stride;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-mod stride;
 
 use self::id::TaskUserRes;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::{open_file, OpenFlags, ROOT_INODE};
+use crate::println;
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
@@ -30,25 +31,24 @@ use lazy_static::*;
 use manager::fetch_task;
 use process::ProcessControlBlock;
 use switch::__switch;
-use crate::println;
 
 pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
-    add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,add_block_task,
+    add_block_task, add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,
     wakeup_task_by_pid,
 };
-pub use processor::{
-    current_process, current_task, current_trap_cx, 
-    current_user_token, run_tasks, schedule, take_current_task, mmap, munmap,
-};
-#[cfg(target_arch = "riscv64")]
-pub use processor::{current_kstack_top, current_trap_cx_user_va};
+pub use process::{Tms, TmsInner};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
+#[cfg(target_arch = "riscv64")]
+pub use processor::{current_kstack_top, current_trap_cx_user_va};
+pub use processor::{
+    current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
+    schedule, take_current_task,
+};
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
-pub use process::{Tms,TmsInner};
 
 #[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;
@@ -67,7 +67,7 @@ pub fn suspend_current_and_run_next() {
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
     // ---- release current TCB
-    
+
     // push back to ready queue.
     add_task(task);
     // jump to scheduling cycle
@@ -143,7 +143,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // wakeup his parent
         let parent = process_inner.parent.clone().unwrap();
         wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
-        
+
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
         // otherwise they will be deallocated twice
@@ -198,7 +198,7 @@ lazy_static! {
         let root_ino = ROOT_INODE.clone();
 
         // 读取文件逻辑？
-        let dentry = open_file(root_ino, "usertest", OpenFlags::O_RDONLY).unwrap();
+        let dentry = open_file(root_ino, "uname", OpenFlags::O_RDONLY).unwrap();
         //let dentry = open_file(root_ino, "run-all.sh", OpenFlags::O_RDONLY).unwrap(); // "Did not find ELF magic number"
         let v = dentry.inode().read_all();
         ProcessControlBlock::new(v.as_slice())

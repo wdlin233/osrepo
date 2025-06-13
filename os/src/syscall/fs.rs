@@ -1,10 +1,12 @@
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::file::cast_inode_to_file;
-use crate::fs::{ROOT_INODE};
-use crate::fs::{open_file, OpenFlags, inode::Stat}; //::{link, unlink}
 use crate::fs::pipe::make_pipe;
+use crate::fs::ROOT_INODE;
+use crate::fs::{inode::Stat, open_file, OpenFlags}; //::{link, unlink}
 
-use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer, copy_to_virt};
+use crate::mm::{
+    copy_to_virt, translated_byte_buffer, translated_refmut, translated_str, UserBuffer,
+};
 use crate::task::{current_process, current_user_token};
 use alloc::sync::Arc;
 /// write syscall
@@ -26,7 +28,8 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         let file = file.clone();
         // release current task TCB manually to avoid multi-borrow
         drop(inner);
-        file.write(&UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut()) as isize
+        file.write(&UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut())
+            as isize
     } else {
         -1
     }
@@ -66,7 +69,12 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
     let inode = ROOT_INODE.clone();
-    if let Some(dentry) = open_file(inode, path.as_str(), OpenFlags::from_bits(flags as i32).unwrap()) {
+    debug!("in sys open, the name is: {}", path.as_str());
+    if let Some(dentry) = open_file(
+        inode,
+        path.as_str(),
+        OpenFlags::from_bits(flags as i32).unwrap(),
+    ) {
         let mut inner = process.inner_exclusive_access();
         let fd = inner.alloc_fd();
         let file = cast_inode_to_file(dentry.inode());
@@ -146,7 +154,7 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
         drop(inner);
         let stat = file.fstat().unwrap();
         copy_to_virt(&stat, st);
-        return 0
+        return 0;
     }
     -1
 }

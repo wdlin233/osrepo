@@ -1,4 +1,4 @@
-#![allow(missing_docs)] 
+#![allow(missing_docs)]
 
 use alloc::{string::String, sync::Arc, vec::Vec};
 use core::any::Any;
@@ -12,11 +12,13 @@ use crate::{config::BLOCK_SIZE, timer::TimeSpec};
 /* Inode Operators */
 
 pub trait Inode: Any + Send + Sync {
+    //get inode num
+    fn get_inode_num(&self) -> u32;
     fn fstype(&self) -> FileSystemType;
     /// lookup an inode in the directory with the name (just name not path)
     fn lookup(self: Arc<Self>, name: &str) -> Option<Arc<Dentry>>;
     /// create an inode in the directory with the name and type
-    fn create(self: Arc<Self>, name: &str, type_: InodeType) -> Option<Arc<Dentry>>;
+    fn create(self: Arc<Self>, name: &str, mode: u32, type_: InodeType) -> Option<Arc<Dentry>>;
     /// unlink an inode in the directory with the name (just name not path)
     fn unlink(self: Arc<Self>, name: &str) -> bool;
     /// link an inode in the directory with the name (just name not path)
@@ -24,7 +26,7 @@ pub trait Inode: Any + Send + Sync {
     /// rename an inode in the directory with the old name and new name
     fn rename(self: Arc<Self>, old_name: &str, new_name: &str) -> bool;
     /// make a directory in the directory with the name
-    fn mkdir(self: Arc<Self>, name: &str) -> bool;
+    fn mkdir(self: Arc<Self>, name: &str, mode: u32) -> bool;
     /// remove a directory in the directory with the name
     fn rmdir(self: Arc<Self>, name: &str) -> bool;
     /// list all inodes in the directory
@@ -116,41 +118,48 @@ lazy_static! {
 #[derive(Debug)]
 pub struct Stat {
     /// ID of device containing file
-    st_dev:      u64,
+    st_dev: u64,
     /// Inode number
-    st_ino:      u64,
+    st_ino: u64,
     /// File type and mode   
-    st_mode:     u32,
+    st_mode: u32,
     /// Number of hard links
-    st_nlink:    u32,
+    st_nlink: u32,
     /// User ID of the file's owner.
-    st_uid:      u32,
+    st_uid: u32,
     /// Group ID of the file's group.
-    st_gid:      u32,
+    st_gid: u32,
     /// Device ID (if special file)
-    st_rdev:     u64,
-    __pad:       u64,
+    st_rdev: u64,
+    __pad: u64,
     /// Size of file, in bytes.
     pub st_size: i64,
     /// Optimal block size for I/O.
-    st_blksize:  u32,
-    __pad2:      i32,
+    st_blksize: u32,
+    __pad2: i32,
     /// Number 512-byte blocks allocated.
-    st_blocks:   u64,
+    st_blocks: u64,
     /// Backward compatibility. Used for time of last access.
-    st_atime:    TimeSpec,
+    st_atime: TimeSpec,
     /// Time of last modification.
-    st_mtime:    TimeSpec,
+    st_mtime: TimeSpec,
     /// Time of last status change.
-    st_ctime:    TimeSpec,
-    __unused:    u64,
+    st_ctime: TimeSpec,
+    __unused: u64,
 }
 
 impl Stat {
     /// create a new stat
     pub fn new(
-        st_dev: u64, st_ino: u64, st_mode: u32, st_nlink: u32, st_rdev: u64, st_size: i64,
-        st_atime_sec: i64, st_mtime_sec: i64, st_ctime_sec: i64,
+        st_dev: u64,
+        st_ino: u64,
+        st_mode: u32,
+        st_nlink: u32,
+        st_rdev: u64,
+        st_size: i64,
+        st_atime_sec: i64,
+        st_mtime_sec: i64,
+        st_ctime_sec: i64,
     ) -> Self {
         Self {
             st_dev,
@@ -166,15 +175,15 @@ impl Stat {
             __pad2: 0,
             st_blocks: (st_size as u64 + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64,
             st_atime: TimeSpec {
-                tv_sec:  st_atime_sec as usize,
+                tv_sec: st_atime_sec as usize,
                 tv_nsec: 0,
             },
             st_mtime: TimeSpec {
-                tv_sec:  st_mtime_sec as usize,
+                tv_sec: st_mtime_sec as usize,
                 tv_nsec: 0,
             },
             st_ctime: TimeSpec {
-                tv_sec:  st_ctime_sec as usize,
+                tv_sec: st_ctime_sec as usize,
                 tv_nsec: 0,
             },
             __unused: 0,

@@ -1,4 +1,4 @@
-#![allow(missing_docs)] 
+#![allow(missing_docs)]
 
 //! filesystem chooser
 pub mod pipe;
@@ -11,11 +11,10 @@ pub mod defs;
 pub mod dentry;
 
 pub mod file;
-mod vfs;
 pub mod inode;
 mod path;
+mod vfs;
 // 创建模块别名
-
 
 // pub use easyfs as fs;
 // pub use easyfs::*;
@@ -28,18 +27,18 @@ mod path;
 /// Trait for block devices
 /// which reads and writes data in the unit of blocks
 // pub use easy_fs::BlockDevice as BlockDevice;
-pub use ext4_rs::BlockDevice as BlockDevice;
+pub use ext4_rs::BlockDevice;
 
-pub use defs::OpenFlags as OpenFlags;
+pub use defs::OpenFlags;
 
 use alloc::sync::Arc;
 
 use dentry::Dentry;
 use ext4::fs::Ext4FS;
-use vfs::FileSystemManager;
 use inode::{Inode, InodeType};
 use lazy_static::lazy_static;
 use spin::Mutex;
+use vfs::FileSystemManager;
 
 use crate::drivers::BLOCK_DEVICE;
 
@@ -63,6 +62,8 @@ pub fn init() {
 pub fn open_file(inode: Arc<dyn Inode>, name: &str, flags: OpenFlags) -> Option<Arc<Dentry>> {
     // TODO: read_write
     // let (readable, writable) = flags.read_write();
+    debug!("the inode is: {}", inode.get_inode_num());
+    inode.ls();
     if flags.contains(OpenFlags::O_CREAT) {
         if let Some(dentry) = inode.clone().lookup(name) {
             // clear size
@@ -75,7 +76,8 @@ pub fn open_file(inode: Arc<dyn Inode>, name: &str, flags: OpenFlags) -> Option<
             } else {
                 InodeType::Regular
             };
-            let dentry = inode.create(name, type_)?;
+            let mode: u32 = 0;
+            let dentry = inode.create(name, mode, type_)?;
             Some(dentry)
         }
     } else if let Some(dentry) = inode.lookup(name) {
@@ -90,7 +92,7 @@ pub fn open_file(inode: Arc<dyn Inode>, name: &str, flags: OpenFlags) -> Option<
 
 pub struct Iovec {
     pub iov_base: usize,
-    pub iov_len:  usize,
+    pub iov_len: usize,
 }
 
 // pub use ext4 as fs;
