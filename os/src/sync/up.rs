@@ -4,7 +4,7 @@
 //!
 //! NOTICE: We should only use it in environment with uniprocessor（single cpu core）, and the kernel can not support task preempting in kernel mode （or trap in kernel mode）.
 
-use core::cell::{RefCell, RefMut};
+use core::cell::{RefCell, RefMut, Ref};
 
 /// Wrap a static data structure inside it so that we are
 /// able to access it without any `unsafe`.
@@ -35,35 +35,10 @@ impl<T> UPSafeCell<T> {
     pub fn borrow(&self) -> RefMut<'_, T> {
         self.inner.borrow_mut()
     }
-}
-
-pub struct SyncUnsafeCell<T>(core::cell::SyncUnsafeCell<T>);
-
-impl<T> SyncUnsafeCell<T> {
-    #[inline]
-    pub fn new(value: T) -> Self {
-        Self(core::cell::SyncUnsafeCell::new(value))
-    }
-
-    /// This method is unsafe.
-    /// 绕过所有权检查
-    #[inline]
     pub fn get_unchecked_mut(&self) -> &mut T {
-        unsafe { &mut *self.0.get() }
+        unimplemented!()
     }
-
-    #[inline]
-    pub fn get(&self) -> *mut T {
-        self.0.get()
-    }
-
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.0.get_mut()
-    }
-
     pub fn get_unchecked_ref(&self) -> &T {
-        unsafe { &*self.0.get() }
+        unimplemented!()
     }
 }
-

@@ -4,6 +4,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use crate::{print, println};
+use crate::timer::get_time;
 use core::fmt::{self};
 #[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
@@ -411,16 +413,21 @@ impl<'a> Iterator for IterMut<'a> {
 
 /// An abstraction over a buffer passed from user space to kernel space
 pub struct UserBuffer {
-    /// A list of buffers
+    ///U8 vec
     pub buffers: Vec<&'static mut [u8]>,
 }
 
 impl UserBuffer {
-    /// Constuct UserBuffer
+    ///Create a `UserBuffer` by parameter
     pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
         Self { buffers }
     }
-    /// Get the length of the buffer
+    pub fn new_single(buffer: &'static mut [u8]) -> Self {
+        Self {
+            buffers: vec![buffer],
+        }
+    }
+    ///Length of `UserBuffer`
     pub fn len(&self) -> usize {
         let mut total: usize = 0;
         for b in self.buffers.iter() {
@@ -428,101 +435,143 @@ impl UserBuffer {
         }
         total
     }
-    /// 转换为不可变字节切片 (数据拷贝)
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(self.len());
-        for buffer in &self.buffers {
-            result.extend_from_slice(buffer);
-        }
-        result
-    }
-
-    /// 转换为不可变字节切片引用 (零拷贝)
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            if self.buffers.is_empty() {
-                &[]
-            } else if self.buffers.len() == 1 {
-                &self.buffers[0]
-            } else {
-                core::slice::from_raw_parts(
-                    self.buffers[0].as_ptr(), 
-                    self.len()
-                )
+    /// 将内容数组返回
+    pub fn read(&mut self, len: usize) -> Vec<u8> {
+        let mut bytes = vec![0; len];
+        let mut current = 0;
+        for sub_buff in self.buffers.iter_mut() {
+            let mut sblen = (*sub_buff).len();
+            if current + sblen > len {
+                sblen = len - current;
+            }
+            bytes[current..current + sblen].copy_from_slice(&(*sub_buff)[..sblen]);
+            current += sblen;
+            if current == len {
+                return bytes;
             }
         }
+        bytes
     }
-
-    /// 转换为可变字节切片 (零拷贝)
-    /// 注意：仅在物理内存连续时安全
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            if self.buffers.is_empty() {
-                &mut []
-            } else if self.buffers.len() == 1 {
-                &mut self.buffers[0]
-            } else if self.is_physically_contiguous() {
-                core::slice::from_raw_parts_mut(
-                    self.buffers[0].as_mut_ptr(), 
-                    self.len()
-                )
-            } else {
-                panic!("Buffers are not physically contiguous");
-            }
+    /// 将一个Buffer的数据写入UserBuffer，返回写入长度
+    pub fn write(&mut self, buff: &[u8]) -> usize {
+        let len = self.len().min(buff.len());
+        if len == 0 {
+            return len;
         }
-    }
-
-    /// 检查所有缓冲区是否物理连续
-    fn is_physically_contiguous(&self) -> bool {
-        let mut next_ptr = None;
-        
-        for buffer in &self.buffers {
-            let start_ptr = buffer.as_ptr() as usize;
-            let end_ptr = start_ptr + buffer.len();
-            
-            if let Some(expected_next) = next_ptr {
-                if start_ptr != expected_next {
-                    return false;
+        let mut current = 0;
+        for sub_buff in self.buffers.iter_mut() {
+            let mut sblen = (*sub_buff).len();
+            if buff.len() > 10 {
+                if current + sblen > len {
+                    sblen = len - current;
+                }
+                (*sub_buff)[..sblen].copy_from_slice(&buff[current..current + sblen]);
+                current += sblen;
+                if current == len {
+                    return len;
+                }
+            } else {
+                for j in 0..sblen {
+                    (*sub_buff)[j] = buff[current];
+                    current += 1;
+                    if current == len {
+                        return len;
+                    }
                 }
             }
-            
-            next_ptr = Some(end_ptr);
         }
-        
-        true
+        return len;
     }
-
-    /// 实现读取迭代器
-    pub fn iter(&self) -> Iter<'_> {
-        Iter {
-            buffers: self.buffers.iter(),
-            current: &[],
+    //在指定位置写入数据
+    pub fn write_at(&mut self, offset: usize, buff: &[u8]) -> isize {
+        //未被使用，暂不做优化
+        let len = buff.len();
+        if offset + len > self.len() {
+            return -1;
         }
-    }
+        let mut head = 0; // offset of slice in UBuffer
+        let mut current = 0; // current offset of buff
 
-    /// 实现写入迭代器
-    pub fn iter_mut(&mut self) -> IterMut<'_> {
-        IterMut {
-            buffers: self.buffers.iter_mut(),
-            current: &mut [],
-        }
-    }
-
-    /// 高效复制到连续缓冲区
-    pub fn copy_to_slice(&self, dest: &mut [u8]) -> usize {
-        let mut copied = 0;
-        
-        for buf in &self.buffers {
-            if copied >= dest.len() {
-                break;
+        for sub_buff in self.buffers.iter_mut() {
+            let sblen = (*sub_buff).len();
+            if head + sblen < offset {
+                continue;
+            } else if head < offset {
+                for j in (offset - head)..sblen {
+                    (*sub_buff)[j] = buff[current];
+                    current += 1;
+                    if current == len {
+                        return len as isize;
+                    }
+                }
+            } else {
+                //head + sblen > offset and head > offset
+                for j in 0..sblen {
+                    (*sub_buff)[j] = buff[current];
+                    current += 1;
+                    if current == len {
+                        return len as isize;
+                    }
+                }
             }
-            
-            let to_copy = (buf.len()).min(dest.len() - copied);
-            dest[copied..copied + to_copy].copy_from_slice(&buf[..to_copy]);
-            copied += to_copy;
+            head += sblen;
         }
-        
-        copied
+        0
+    }
+
+    pub fn fill0(&mut self) -> usize {
+        for sub_buff in self.buffers.iter_mut() {
+            let sblen = (*sub_buff).len();
+            for j in 0..sblen {
+                (*sub_buff)[j] = 0;
+            }
+        }
+        self.len()
+    }
+
+    pub fn fillrandom(&mut self) -> usize {
+        //随机数生成方法： 线性计算+噪声+零特殊处理
+        let mut random: u8 = (get_time() % 256) as u8;
+        for sub_buff in self.buffers.iter_mut() {
+            let sblen = (*sub_buff).len();
+            for j in 0..sblen {
+                if random == 0 {
+                    random = (get_time() % 256) as u8;
+                }
+                random = (((random as usize) * (get_time() / 3 % 256) + 37) % 256) as u8; //生成一个字节大小的随机数
+                (*sub_buff)[j] = random;
+            }
+        }
+        self.len()
+    }
+
+    pub fn printbuf(&mut self, size: usize) {
+        if size == 0 {
+            return;
+        }
+        let mut count: usize = 0;
+        for sub_buff in self.buffers.iter_mut() {
+            let sblen = (*sub_buff).len();
+            for j in 0..sblen {
+                print!("{} ", (*sub_buff)[j]);
+                count += 1;
+                if count == size {
+                    println!("");
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn clear(&mut self) -> usize {
+        self.buffers.clear();
+        self.len()
+    }
+
+    pub fn as_bytes_mut(&mut self) -> Vec<&'static mut [u8]> {
+        unimplemented!()
+        // self.buffers.clone()
+        //unimplemented!() wrong implmentation
     }
 }
 
@@ -537,8 +586,7 @@ impl IntoIterator for UserBuffer {
         }
     }
 }
-
-/// An iterator over a UserBuffer
+/// Iterator of `UserBuffer`
 pub struct UserBufferIterator {
     buffers: Vec<&'static mut [u8]>,
     current_buffer: usize,

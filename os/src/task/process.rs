@@ -6,7 +6,7 @@ use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
-use crate::fs::{file::File, Stdin, Stdout};
+use crate::fs::{Stdin, Stdout};
 use crate::mm::{MemorySet, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};
@@ -18,6 +18,7 @@ use alloc::vec::Vec;
 use core::cell::RefMut;
 use core::arch::asm;
 use crate::timer::get_time;
+use crate::fs::File;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 #[cfg(target_arch = "loongarch64")]
@@ -372,89 +373,90 @@ impl ProcessControlBlock {
 
     /// Only support processes with a single thread.
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
-        let user = self.user.clone();
-        let mut parent = self.inner_exclusive_access();
-        assert_eq!(parent.thread_count(), 1);
-        // clone parent's memory_set completely including trampoline/ustacks/trap_cxs
-        let memory_set = MemorySet::from_existed_user(&parent.memory_set);
-        // alloc a pid
-        let pid = pid_alloc();
-        // copy fd table
-        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
-        for fd in parent.fd_table.iter() {
-            if let Some(file) = fd {
-                new_fd_table.push(Some(file.clone()));
-            } else {
-                new_fd_table.push(None);
-            }
-        }
-        // create child process pcb
-        let child = Arc::new(Self {
-            pid,
-            user,
-            inner: unsafe {
-                UPSafeCell::new(ProcessControlBlockInner {
-                    is_zombie: false,
-                    memory_set,
-                    parent: Some(Arc::downgrade(self)),
-                    children: Vec::new(),
-                    exit_code: 0,
-                    fd_table: new_fd_table,
-                    signals: SignalFlags::empty(),
-                    tasks: Vec::new(),
-                    task_res_allocator: RecycleAllocator::new(),
-                    mutex_list: Vec::new(),
-                    semaphore_list: Vec::new(),
-                    condvar_list: Vec::new(),
-                    priority: 16,
-                    stride: Stride::default(),
-                    tms: Tms::new(),
-                })
-            },
-        });
-        // add child
-        parent.children.push(Arc::clone(&child));
-        // create main thread of child process
-        let task = Arc::new(TaskControlBlock::new(
-            Arc::clone(&child),
-            parent
-                .get_task(0)
-                .inner_exclusive_access()
-                .res
-                .as_ref()
-                .unwrap()
-                .ustack_base(),
-            // here we do not allocate trap_cx or ustack again
-            // but mention that we allocate a new kstack here
-            false,
-        ));
-        // attach task to child process
-        let mut child_inner = child.inner_exclusive_access();
-        child_inner.tasks.push(Some(Arc::clone(&task)));
-        drop(child_inner);
-        // modify kstack_top in trap_cx of this thread
-        #[cfg(target_arch = "riscv64")]
-        let task_inner = task.inner_exclusive_access();
-        #[cfg(target_arch = "loongarch64")]
-        let mut task_inner = task.inner_exclusive_access();
-        #[cfg(target_arch = "riscv64")]
-        {
-            let trap_cx = task_inner.get_trap_cx();
-            trap_cx.kernel_sp = task.kstack.get_top();
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            // 修改trap_cx的内容，使其保持与父进程相同
-            // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
-            task_inner
-                .kstack
-                .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
-        }
-        drop(task_inner);
-        insert_into_pid2process(child.getpid(), Arc::clone(&child));
-        // add this thread to scheduler
-        add_task(task);
-        child
+        unimplemented!()
+        // let user = self.user.clone();
+        // let mut parent = self.inner_exclusive_access();
+        // assert_eq!(parent.thread_count(), 1);
+        // // clone parent's memory_set completely including trampoline/ustacks/trap_cxs
+        // let memory_set = MemorySet::from_existed_user(&parent.memory_set);
+        // // alloc a pid
+        // let pid = pid_alloc();
+        // // copy fd table
+        // let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        // for fd in parent.fd_table.iter() {
+        //     if let Some(file) = fd {
+        //         new_fd_table.push(Some(file.clone()));
+        //     } else {
+        //         new_fd_table.push(None);
+        //     }
+        // }
+        // // create child process pcb
+        // let child = Arc::new(Self {
+        //     pid,
+        //     user,
+        //     inner: unsafe {
+        //         UPSafeCell::new(ProcessControlBlockInner {
+        //             is_zombie: false,
+        //             memory_set,
+        //             parent: Some(Arc::downgrade(self)),
+        //             children: Vec::new(),
+        //             exit_code: 0,
+        //             fd_table: new_fd_table,
+        //             signals: SignalFlags::empty(),
+        //             tasks: Vec::new(),
+        //             task_res_allocator: RecycleAllocator::new(),
+        //             mutex_list: Vec::new(),
+        //             semaphore_list: Vec::new(),
+        //             condvar_list: Vec::new(),
+        //             priority: 16,
+        //             stride: Stride::default(),
+        //             tms: Tms::new(),
+        //         })
+        //     },
+        // });
+        // // add child
+        // parent.children.push(Arc::clone(&child));
+        // // create main thread of child process
+        // let task = Arc::new(TaskControlBlock::new(
+        //     Arc::clone(&child),
+        //     parent
+        //         .get_task(0)
+        //         .inner_exclusive_access()
+        //         .res
+        //         .as_ref()
+        //         .unwrap()
+        //         .ustack_base(),
+        //     // here we do not allocate trap_cx or ustack again
+        //     // but mention that we allocate a new kstack here
+        //     false,
+        // ));
+        // // attach task to child process
+        // let mut child_inner = child.inner_exclusive_access();
+        // child_inner.tasks.push(Some(Arc::clone(&task)));
+        // drop(child_inner);
+        // // modify kstack_top in trap_cx of this thread
+        // #[cfg(target_arch = "riscv64")]
+        // let task_inner = task.inner_exclusive_access();
+        // #[cfg(target_arch = "loongarch64")]
+        // let mut task_inner = task.inner_exclusive_access();
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     let trap_cx = task_inner.get_trap_cx();
+        //     trap_cx.kernel_sp = task.kstack.get_top();
+        // }
+        // #[cfg(target_arch = "loongarch64")]
+        // {
+        //     // 修改trap_cx的内容，使其保持与父进程相同
+        //     // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
+        //     task_inner
+        //         .kstack
+        //         .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+        // }
+        // drop(task_inner);
+        // insert_into_pid2process(child.getpid(), Arc::clone(&child));
+        // // add this thread to scheduler
+        // add_task(task);
+        // child
     }
     /// get pid
     pub fn getpid(&self) -> usize {

@@ -13,12 +13,14 @@ bitflags = "1.2.1"
 xmas-elf = "0.7.0"
 # old version: virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
 # virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "61ece50" }
-virtio-drivers = { version = "0.6.0" }
+virtio-drivers = { path = './libs/virtio-drivers' }
 spin = "0.10"
 bit_field = "0.10.1"
 #ext4_rs = { path = "libs/ext4_rs" }
-lwext4_rust= { path = "/home/lc/osrepo/os/libs/lwext4_rsut"}
+lwext4_rust= { path = "./libs/lwext4_rsut"}
 lru = "0.12"
+hashbrown = "0.12.0"
+num_enum = { version = "0.7.2", default-features = false }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }

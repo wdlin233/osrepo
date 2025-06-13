@@ -5,6 +5,7 @@ use super::{KernelStack, ProcessControlBlock, TaskContext};
 use crate::hal::trap::TrapContext;
 use crate::{mm::PhysPageNum, sync::UPSafeCell};
 use alloc::sync::{Arc, Weak};
+use spin::MutexGuard;
 use core::cell::RefMut;
 #[cfg(target_arch = "riscv64")]
 use super::{kstack_alloc};
@@ -108,6 +109,20 @@ impl TaskControlBlock {
                 })
             },
         }
+    }
+    pub fn inner_lock(&self) -> MutexGuard<TaskControlBlockInner> {
+        unimplemented!()
+    }
+    pub fn tid(&self) -> usize {
+        unimplemented!()
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     kstack_alloc().get_tid()
+        // }
+        // #[cfg(target_arch = "loongarch64")]
+        // {
+        //     0 // LoongArch64 does not have a tid in the kernel stack
+        // }
     }
 }
 

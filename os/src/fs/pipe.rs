@@ -7,20 +7,15 @@ use alloc::{
     vec::Vec,
 };
 
-use super::{file::File, inode::Stat};
-use crate::{fs::{Kstat, StMode}, hal::trap, sync::UPSafeCell, task::suspend_current_and_run_next};
+use crate::{fs::{Kstat, StMode}, hal::trap, sync::UPSafeCell};
 
 
-use super::{File, StMode};
-use crate::fs::Kstat;
-use crate::signal::{send_signal_to_thread, SigSet};
+use super::{File};
+use crate::task::signal::{send_signal_to_thread, SignalFlags}; // origin, SigSet
 use crate::task::{current_task, suspend_current_and_run_next};
 use crate::utils::SysErrNo;
 use crate::{mm::UserBuffer, syscall::PollEvents, utils::SyscallRet};
-use alloc::sync::{Arc, Weak};
 use alloc::vec;
-use alloc::vec::Vec;
-use core::cmp::min;
 use spin::{Mutex, MutexGuard};
 /// ### 管道
 /// 由 读 `readable` / 写 `writable` 权限和 缓冲区 `buffer` 组成，用以分别表示管道的写端和读端
@@ -217,102 +212,105 @@ impl File for Pipe {
     fn writable(&self) -> bool {
         self.writable
     }
-    fn read(&self, mut buf: UserBuffer) -> SyscallRet {
-        assert!(self.readable());
-        // let buf_len = buf.len();
-        let mut read_size = 0usize;
-        let mut loop_read;
-        loop {
-            let task = current_task().unwrap();
-            let task_inner = task.inner_lock();
-            let check_sig = task_inner.sig_pending.difference(task_inner.sig_mask);
-            if !check_sig.is_empty() && check_sig != SigSet::SIGCHLD {
-                return Err(SysErrNo::ERESTART);
-            }
-            drop(task_inner);
-            drop(task);
-            let ring_buffer = self.inner_lock();
-            loop_read = ring_buffer.available_read();
-            if loop_read == 0 {
-                if ring_buffer.all_write_ends_closed() {
-                    return Ok(read_size);
-                }
-                drop(ring_buffer);
-                suspend_current_and_run_next();
-                continue;
-            } else {
-                break;
-            }
-        }
-        // read at most loop_read bytes
-        let mut ring_buffer = self.inner_lock();
-        let length = buf.len();
-        if length <= 10 {
-            let mut buf_iter = buf.into_iter();
-            for _ in 0..loop_read {
-                if let Some(byte_ref) = buf_iter.next() {
-                    unsafe {
-                        *byte_ref = ring_buffer.read_byte();
-                    }
-                    read_size += 1;
-                } else {
-                    break;
-                }
-            }
-        } else {
-            read_size = min(loop_read, length);
-            buf.write(&ring_buffer.read_bytes(read_size));
-        }
-        Ok(read_size)
+    fn read(&self, mut _buf: UserBuffer) -> SyscallRet {
+        // assert!(self.readable());
+        // // let buf_len = buf.len();
+        // let mut read_size = 0usize;
+        // let mut loop_read;
+        unimplemented!()
+        // loop {
+        //     let task = current_task().unwrap();
+        //     let task_inner = task.inner_lock();
+        //     let check_sig = task_inner.sig_pending.difference(task_inner.sig_mask);
+        //     if !check_sig.is_empty() && check_sig != SignalFlags:: // origin, SigSetSIGCHLD {
+        //         return Err(SysErrNo::ERESTART);
+        //     }
+        //     drop(task_inner);
+        //     drop(task);
+        //     let ring_buffer = self.inner_lock();
+        //     loop_read = ring_buffer.available_read();
+        //     if loop_read == 0 {
+        //         if ring_buffer.all_write_ends_closed() {
+        //             return Ok(read_size);
+        //         }
+        //         drop(ring_buffer);
+        //         suspend_current_and_run_next();
+        //         continue;
+        //     } else {
+        //         break;
+        //     }
+        // }
+        // // read at most loop_read bytes
+        // let mut ring_buffer = self.inner_lock();
+        // let length = buf.len();
+        // if length <= 10 {
+        //     let mut buf_iter = buf.into_iter();
+        //     for _ in 0..loop_read {
+        //         if let Some(byte_ref) = buf_iter.next() {
+        //             unsafe {
+        //                 *byte_ref = ring_buffer.read_byte();
+        //             }
+        //             read_size += 1;
+        //         } else {
+        //             break;
+        //         }
+        //     }
+        // } else {
+        //     read_size = min(loop_read, length);
+        //     buf.write(&ring_buffer.read_bytes(read_size));
+        // }
+        // Ok(read_size)
     }
-    fn write(&self, mut buf: UserBuffer) -> SyscallRet {
-        assert!(self.writable());
-        let mut write_size = 0usize;
-        let mut loop_write;
-        loop {
-            let task = current_task().unwrap();
-            let task_inner = task.inner_lock();
-            let check_sig = task_inner.sig_pending.difference(task_inner.sig_mask);
-            if !check_sig.is_empty() && check_sig != SigSet::SIGCHLD {
-                return Err(SysErrNo::ERESTART);
-            }
-            drop(task_inner);
-            drop(task);
-            let ring_buffer = self.inner_lock();
-            loop_write = ring_buffer.available_write();
-            if loop_write == 0 {
-                drop(ring_buffer);
-                suspend_current_and_run_next();
-                continue;
-            } else {
-                break;
-            }
-        }
-        // write at most loop_write bytes
-        let mut ring_buffer = self.inner_lock();
-        if ring_buffer.all_read_ends_closed() {
-            //发送断开的管道错误信号
-            // log::warn!("send SIGPIPE signal!");
-            let tid = current_task().unwrap().tid();
-            send_signal_to_thread(tid, SigSet::SIGPIPE);
-            return Err(SysErrNo::EPIPE);
-        }
-        let length = buf.len();
-        if length <= 10 {
-            let mut buf_iter = buf.into_iter();
-            for _ in 0..loop_write {
-                if let Some(byte_ref) = buf_iter.next() {
-                    ring_buffer.write_byte(unsafe { *byte_ref });
-                    write_size += 1;
-                } else {
-                    break;
-                }
-            }
-        } else {
-            write_size = min(loop_write, length);
-            ring_buffer.write_bytes(&buf.read(write_size), write_size);
-        }
-        Ok(write_size)
+    fn write(&self, mut _buf: UserBuffer) -> SyscallRet {
+        // assert!(self.writable());
+        // let mut write_size = 0usize;
+        // let mut loop_write;
+        unimplemented!()
+        // 暂时先过编译
+        // loop {
+        //     let task = current_task().unwrap();
+        //     let task_inner = task.inner_lock();
+        //     let check_sig = task_inner.sig_pending.difference(task_inner.sig_mask);
+        //     if !check_sig.is_empty() && check_sig != SignalFlags:: // origin, SigSetSIGCHLD {
+        //         return Err(SysErrNo::ERESTART);
+        //     }
+        //     drop(task_inner);
+        //     drop(task);
+        //     let ring_buffer = self.inner_lock();
+        //     loop_write = ring_buffer.available_write();
+        //     if loop_write == 0 {
+        //         drop(ring_buffer);
+        //         suspend_current_and_run_next();
+        //         continue;
+        //     } else {
+        //         break;
+        //     }
+        // }
+        // // write at most loop_write bytes
+        // let mut ring_buffer = self.inner_lock();
+        // if ring_buffer.all_read_ends_closed() {
+        //     //发送断开的管道错误信号
+        //     // log::warn!("send SIGPIPE signal!");
+        //     let tid = current_task().unwrap().tid();
+        //     send_signal_to_thread(tid, SignalFlags:: // origin, SigSetSIGPIPE);
+        //     return Err(SysErrNo::EPIPE);
+        // }
+        // let length = buf.len();
+        // if length <= 10 {
+        //     let mut buf_iter = buf.into_iter();
+        //     for _ in 0..loop_write {
+        //         if let Some(byte_ref) = buf_iter.next() {
+        //             ring_buffer.write_byte(unsafe { *byte_ref });
+        //             write_size += 1;
+        //         } else {
+        //             break;
+        //         }
+        //     }
+        // } else {
+        //     write_size = min(loop_write, length);
+        //     ring_buffer.write_bytes(&buf.read(write_size), write_size);
+        // }
+        // Ok(write_size)
     }
     fn fstat(&self) -> Kstat {
         Kstat {

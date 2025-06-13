@@ -1,20 +1,14 @@
-use super::file;
+use super::{File, Kstat, StMode};
 use crate::mm::UserBuffer;
 use crate::hal::utils::console_getchar;
 use crate::task::suspend_current_and_run_next;
 use crate::print;
+use crate::syscall::{PollEvents};
 
-use super::{File, Kstat, StMode};
 use crate::utils::{SysErrNo, SyscallRet};
-use crate::{
-    mm::UserBuffer, sbi::console_getchar, syscall::PollEvents, task::suspend_current_and_run_next,
-};
 use alloc::vec::Vec;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::sstatus;
-
-use super::{file::File, inode::Stat};
-use crate::fs::{Kstat, PollEvents, StMode};
 
 /// stdin file for getting chars from console
 pub struct Stdin;
@@ -120,15 +114,16 @@ impl File for Stdout {
         }
         Ok(user_buf.len())
     }
-    fn poll(&self, events: PollEvents) -> PollEvents {
-        let mut revents = PollEvents::empty();
-        if events.contains(PollEvents::OUT) {
-            revents |= PollEvents::OUT;
-        }
-        revents
+    fn poll(&self, _events: PollEvents) -> PollEvents {
+        unimplemented!()
+        // let mut revents = PollEvents::empty();
+        // if events.contains(PollEvents::OUT) {
+        //     revents |= PollEvents::OUT;
+        // }
+        // revents
     }
     fn fstat(&self) -> Kstat {
-        KStat {
+        Kstat {
             st_mode: StMode::FCHR.bits(),
             st_nlink: 1,
             ..Kstat::default()

@@ -1,5 +1,5 @@
 use crate::{
-    sync::SyncUnsafeCell,
+    sync::UPSafeCell,
     utils::{GeneralRet, SysErrNo, SyscallRet},
 };
 use alloc::{
@@ -12,7 +12,7 @@ use hashbrown::HashMap;
 
 use super::{File, FileClass, OSInode, OpenFlags, Stdin, Stdout};
 pub struct FdTable {
-    inner: SyncUnsafeCell<FdTableInner>,
+    inner: UPSafeCell<FdTableInner>,
 }
 
 #[derive(Clone)]
@@ -86,8 +86,10 @@ impl FdTableInner {
 
 impl FdTable {
     pub fn new(fd_table: FdTableInner) -> Self {
-        Self {
-            inner: SyncUnsafeCell::new(fd_table),
+        unsafe {
+            Self {
+                inner: UPSafeCell::new(fd_table),
+            }
         }
     }
     pub fn new_with_stdio() -> Self {
@@ -103,12 +105,14 @@ impl FdTable {
     }
     pub fn from_another(another: &Arc<FdTable>) -> Self {
         let other = another.get_ref();
-        Self {
-            inner: SyncUnsafeCell::new(FdTableInner {
-                soft_limit: other.soft_limit,
-                hard_limit: other.hard_limit,
-                files: other.files.clone(),
-            }),
+        unsafe {
+            Self {
+                inner: UPSafeCell::new(FdTableInner {
+                    soft_limit: other.soft_limit,
+                    hard_limit: other.hard_limit,
+                    files: other.files.clone(),
+                }),
+            }
         }
     }
     pub fn clear(&self) {
@@ -214,11 +218,13 @@ impl FdTable {
     }
 
     fn get_mut(&self) -> &mut FdTableInner {
-        self.inner.get_unchecked_mut()
+        unimplemented!()
+        //self.inner.get_unchecked_mut()
     }
 
     fn get_ref(&self) -> &FdTableInner {
-        self.inner.get_unchecked_ref()
+        unimplemented!()
+        //self.inner.get_unchecked_ref()
     }
 }
 
@@ -233,7 +239,7 @@ pub struct FsInfoInner {
 }
 
 pub struct FsInfo {
-    inner: SyncUnsafeCell<FsInfoInner>,
+    inner: UPSafeCell<FsInfoInner>,
 }
 
 impl FsInfo {
@@ -243,22 +249,27 @@ impl FsInfo {
         fd2path.insert(0, "stdin".to_string());
         fd2path.insert(1, "stdout".to_string());
         fd2path.insert(2, "stderr".to_string());
-        Self {
-            inner: SyncUnsafeCell::new(FsInfoInner {
-                cwd,
-                fd2path,
-                exe: String::from("/initproc"),
-            }),
+        unsafe {
+            Self {
+                inner: UPSafeCell::new(FsInfoInner {
+                    cwd,
+                    fd2path,
+                    exe: String::from("/initproc"),
+                }),
+            }
         }
     }
-    pub fn from_another(another: &Arc<FsInfo>) -> Self {
-        Self {
-            inner: SyncUnsafeCell::new(FsInfoInner {
-                cwd: another.get_cwd(),
-                exe: another.get_exe(),
-                fd2path: another.inner.get_unchecked_ref().fd2path.clone(),
-            }),
-        }
+    pub fn from_another(_another: &Arc<FsInfo>) -> Self {
+        unimplemented!()
+        // unsafe {
+        //     Self {
+        //         inner: UPSafeCell::new(FsInfoInner {
+        //             cwd: another.get_cwd(),
+        //             exe: another.get_exe(),
+        //             fd2path: another.inner.get_unchecked_ref().fd2path.clone(),
+        //         }),
+        //     }
+        // }
     }
     pub fn clear(&self) {
         let inner = self.get_mut();
@@ -311,9 +322,11 @@ impl FsInfo {
     }
 
     fn get_mut(&self) -> &mut FsInfoInner {
-        self.inner.get_unchecked_mut()
+        unimplemented!()
+        //self.inner.get_unchecked_mut()
     }
     fn get_ref(&self) -> &FsInfoInner {
-        self.inner.get_unchecked_ref()
+        unimplemented!()
+        //self.inner.get_unchecked_ref()
     }
 }

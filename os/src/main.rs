@@ -19,7 +19,7 @@
 //! userspace.
 
 #![allow(missing_docs)]
-#![deny(warnings)]
+//#![deny(warnings)]
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
@@ -51,6 +51,7 @@ pub mod task;
 pub mod timer;
 pub mod hal;
 pub mod boot; // used to set up the initial environment
+pub mod utils;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::{

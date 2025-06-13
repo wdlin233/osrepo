@@ -1,5 +1,5 @@
 use crate::{
-    fs::{open_file, OpenFlags},
+    fs::{OpenFlags},
     mm::{copy_to_virt, translated_ref, translated_refmut, translated_str},
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
@@ -69,40 +69,41 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 /// exec syscall
-pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
+pub fn sys_exec(_path: *const u8, mut _args: *const usize) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_exec(path: 0x{:x?}, args: 0x{:x?})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(),
     //     path,
     //     args
     // );
-    let token = current_user_token();
-    let path = translated_str(token, path);
-    let mut args_vec: Vec<String> = Vec::new();
-    loop {
-        let arg_str_ptr = *translated_ref(token, args);
-        if arg_str_ptr == 0 {
-            break;
-        }
-        args_vec.push(translated_str(token, arg_str_ptr as *const u8));
-        unsafe {
-            args = args.add(1);
-        }
-    }
-    use crate::fs::ROOT_INODE;
-    let root_ino = ROOT_INODE.clone();
-    if let Some(app_inode_entry) = open_file(root_ino, path.as_str(), OpenFlags::O_RDONLY) {
-        let all_data = app_inode_entry.inode().read_all();
-        let process = current_process();
-        let argc = args_vec.len();
-        //trace!("argc in syscall {}", argc);
-        //trace!("args_vec {:?}", args_vec);
-        process.exec(all_data.as_slice(), args_vec);
-        // return argc because cx.x[10] will be covered with it later
-        argc as isize
-    } else {
-        -1
-    }
+    unimplemented!()
+    // let token = current_user_token();
+    // let path = translated_str(token, path);
+    // let mut args_vec: Vec<String> = Vec::new();
+    // loop {
+    //     let arg_str_ptr = *translated_ref(token, args);
+    //     if arg_str_ptr == 0 {
+    //         break;
+    //     }
+    //     args_vec.push(translated_str(token, arg_str_ptr as *const u8));
+    //     unsafe {
+    //         args = args.add(1);
+    //     }
+    // }
+    // use crate::fs::ROOT_INODE;
+    // let root_ino = ROOT_INODE.clone();
+    // if let Some(app_inode_entry) = open_file(root_ino, path.as_str(), OpenFlags::O_RDONLY) {
+    //     let all_data = app_inode_entry.inode().read_all();
+    //     let process = current_process();
+    //     let argc = args_vec.len();
+    //     //trace!("argc in syscall {}", argc);
+    //     //trace!("args_vec {:?}", args_vec);
+    //     process.exec(all_data.as_slice(), args_vec);
+    //     // return argc because cx.x[10] will be covered with it later
+    //     argc as isize
+    // } else {
+    //     -1
+    // }
 }
 
 /// waitpid syscall

@@ -67,3 +67,11 @@ impl SignalFlags {
         }
     }
 }
+
+pub fn send_signal_to_thread(_tid: usize, _sig: SignalFlags) {
+    // let tid2task = TID_TO_TASK.lock();
+    // if let Some(task) = tid2task.get(&tid) {
+    //     add_signal(Arc::clone(task), sig);
+    // }
+    unimplemented!()
+}

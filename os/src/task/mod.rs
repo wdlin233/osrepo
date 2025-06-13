@@ -14,20 +14,19 @@ mod id;
 mod manager;
 mod process;
 mod processor;
-mod signal;
+pub mod signal;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 mod stride;
 
 use self::id::TaskUserRes;
-use crate::drivers::BLOCK_DEVICE;
+//use crate::drivers::BLOCK_DEVICE;
 //use crate::fs::ext4::ROOT_INO;
-use crate::fs::{open, open_file, OpenFlags, NONE_MODE, ROOT_INODE};
+use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
-use ext4_rs::Ext4;
 use lazy_static::*;
 use manager::fetch_task;
 use process::ProcessControlBlock;
@@ -195,19 +194,18 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
-    Arc::new({
-        let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
-            .expect("open initproc error!")
-            .file()
-            .expect("initproc can not be abs file!");
-        let elf_data = initproc.inode.read_all().unwrap();
-        let res = ProcessControlBlock::new(&elf_data);
-        res
-    })
+    let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+        .expect("open initproc error!")
+        .file()
+        .expect("initproc can not be abs file!");
+    let elf_data = initproc.inode.read_all().unwrap();
+    let res = ProcessControlBlock::new(&elf_data);
+    res
 });
 ///Add init process to the manager
 pub fn add_initproc() {
-    add_task(INITPROC.clone());
+    unimplemented!()
+    //add_task(INITPROC.clone());
 }
 
 /// Check if the current task has any signal to handle
@@ -231,4 +229,15 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_timer(Arc::clone(&task));
     //add_task(INITPROC.clone());
     //将主线程退出的那些处于等待的子线程也删除掉
+}
+
+pub fn current_uid() -> u32 {
+    //CUR_UID.load(core::sync::atomic::Ordering::SeqCst)
+    unimplemented!()
+}
+
+pub fn current_token() -> usize {
+    // get_proc_by_hartid(hart_id()).token()
+    #[cfg(target_arch = "riscv64")]
+    riscv::register::satp::read().bits()
 }

@@ -120,7 +120,7 @@ mod fs;
 mod process;
 mod sync;
 mod thread;
-mod tid;
+//mod tid;
 mod uname;
 pub mod sys_result;
 
@@ -128,12 +128,11 @@ use fs::*;
 use process::*;
 use sync::*;
 use thread::*;
-use tid::*;
+//use tid::*;
 use uname::*;
 
 use crate::task::TmsInner;
 use crate::system::UTSname;
-use crate::fs::inode::Stat;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
@@ -157,7 +156,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
         SYSCALL_PIPE => sys_pipe(args[0] as *mut usize),
         SYSCALL_READ => sys_read(args[0], args[1] as *const u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
-        SYSCALL_FSTAT => sys_fstat(args[0], args[1] as *mut Stat),
+        SYSCALL_FSTAT => sys_fstat(args[0], args[1]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_GETTID => sys_gettid(),
@@ -181,8 +180,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
         SYSCALL_CONDVAR_WAIT => sys_condvar_wait(args[0], args[1]),
         SYSCALL_KILL => sys_kill(args[0], args[1] as u32),
         SYSCALL_TID_ADDRESS => sys_getpid(),
-        SYSCALL_IOCTL => sys_ioctl(),
-        SYSCALL_WRITEV => sys_writev(args[0], args[1] as *const IoVec, args[2]),
+        //SYSCALL_IOCTL => sys_ioctl(),
+        //SYSCALL_WRITEV => sys_writev(args[0], args[1] as *const IoVec, args[2]),
         SYSCALL_EXIT_GROUP => sys_exit(0),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }

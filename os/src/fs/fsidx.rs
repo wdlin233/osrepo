@@ -7,6 +7,7 @@ use hashbrown::HashMap;
 use spin::{Lazy, RwLock};
 
 use super::Inode;
+use crate::println;
 
 pub static FSIDX: Lazy<RwLock<HashMap<String, Arc<dyn Inode>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
