@@ -9,6 +9,9 @@ mod address;
 mod memory_set;
 mod page_table;
 mod frame_allocator; // frame allocator
+mod page_fault_handler;
+mod map_area;
+mod group;
 
 #[cfg(target_arch = "riscv64")]
 mod heap_allocator;
@@ -17,14 +20,15 @@ pub mod system_allocator; // heap allocator
 
 
 use address::VPNRange;
-pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
+pub use address::{insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker, frame_alloc_contiguous};
-pub use memory_set::{MapPermission, MemorySet};
+pub use memory_set::MemorySet;
 use page_table::PTEFlags;
 pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
-    PageTableEntry, UserBuffer, UserBufferIterator,
+    PageTableEntry, UserBuffer, UserBufferIterator, safe_translated_byte_buffer,
 };
+pub use map_area::{MapArea, MapType, MapAreaType, MapPermission, MmapFile};
 #[cfg(target_arch = "riscv64")]
 pub use memory_set::{KERNEL_SPACE, kernel_token, remap_test};
 

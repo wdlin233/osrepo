@@ -6,7 +6,7 @@ use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
-use crate::fs::{Stdin, Stdout};
+use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::mm::{MemorySet, translated_refmut};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};
@@ -49,7 +49,9 @@ pub struct ProcessControlBlockInner {
     /// exit code
     pub exit_code: i32,
     /// file descriptor table
-    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    pub fd_table: Arc<FdTable>,
+    /// 
+    pub fs_info: Arc<FsInfo>,
     /// signal flags
     pub signals: SignalFlags,
     /// tasks(also known as threads)
@@ -148,15 +150,12 @@ impl ProcessControlBlockInner {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    /// allocate a new file descriptor
-    pub fn alloc_fd(&mut self) -> usize {
-        if let Some(fd) = (0..self.fd_table.len()).find(|fd| self.fd_table[*fd].is_none()) {
-            fd
-        } else {
-            self.fd_table.push(None);
-            self.fd_table.len() - 1
-        }
-    }
+    // /// allocate a new file descriptor
+    // pub fn alloc_fd(&mut self) -> usize {
+    //     let fd_table = &mut self
+    //         .fd_table
+    //         .get().files;
+    // } use fstruct.rs instead
     /// allocate a new task id
     pub fn alloc_tid(&mut self) -> usize {
         self.task_res_allocator.alloc()
@@ -185,6 +184,8 @@ impl ProcessControlBlock {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
+        info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
+            elf_data.len(), ustack_base, entry_point);
         // allocate a pid
         let user = current_user().unwrap();
         let pid_handle = pid_alloc();
@@ -198,14 +199,8 @@ impl ProcessControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
-                    fd_table: vec![
-                        // 0 -> stdin
-                        Some(Arc::new(Stdin)),
-                        // 1 -> stdout
-                        Some(Arc::new(Stdout)),
-                        // 2 -> stderr
-                        Some(Arc::new(Stdout)),
-                    ],
+                    fd_table: Arc::new(FdTable::new_with_stdio()),
+                    fs_info: Arc::new(FsInfo::new(String::from("/"))),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),
@@ -232,6 +227,7 @@ impl ProcessControlBlock {
         #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
+        info!("ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
 
         // debug!("kernel: create main thread, pid = {}", process.getpid());
         // la 在内核栈上压入trap上下文，与rcore实现不同
@@ -282,7 +278,7 @@ impl ProcessControlBlock {
         // push arguments on user stack
         //trace!("kernel: exec .. push arguments on user stack");
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
-        //trace!("initial user_sp = {}", user_sp);
+        info!("initial user_sp = {}", user_sp);
         //      00000000000100b0 <main>:
 //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
 //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra

@@ -218,13 +218,11 @@ impl FdTable {
     }
 
     fn get_mut(&self) -> &mut FdTableInner {
-        unimplemented!()
-        //self.inner.get_unchecked_mut()
+        self.inner.get_unchecked_mut()
     }
 
     fn get_ref(&self) -> &FdTableInner {
-        unimplemented!()
-        //self.inner.get_unchecked_ref()
+        self.inner.get_unchecked_ref()
     }
 }
 

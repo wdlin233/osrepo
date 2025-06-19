@@ -15,6 +15,7 @@ pub struct OSInode {
     pub inode: Arc<dyn Inode>,
     pub(crate) inner: Mutex<OSInodeInner>,
 }
+#[derive(Debug)]
 pub struct OSInodeInner {
     pub(crate) offset: usize, // 偏移量
 }

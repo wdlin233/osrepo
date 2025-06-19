@@ -136,6 +136,43 @@ process_inner.memory_set.insert_framed_area(
 
 的错误 
 
+
+## 2025.6.13
+
+考虑分别对文件系统进行实现，在此我使用了 `lwext4_rust` 库，并参考了去年队伍的实现。第一步是更改 `VIRTIO0` 的值，然后就可以顺利读取磁盘了. 解决了
+
+```shell
+[kernel] Panicked at src/hal/trap/mod.rs:344 a trap Exception(StorePageFault) from kernel!
+```
+
+的问题. 调好之后就可以读取文件并执行程序了，但是又遇到了
+
+```shell
+[ERROR] [kernel] trap_handler: Exception(LoadPageFault) in application, bad addr = 0x6000, bad instruction = 0x10be, kernel killed it.
+```
+
+这应该是内核的问题，在先前的 `ext4_rs` 中也遇到了. 在 `run_tasks()` 执行了一段时间都没什么问题，会是 `__switch(idle_task_cx_ptr, next_task_cx_ptr);` 的问题吗？
+
+猜测是用户栈的问题
+
+```shell
+[ INFO] user stack base: 0x3000
+[DEBUG] in drop for gid
+[DEBUG] kernel: add main thread to scheduler, pid = 0
+[ INFO] get_idle_task_cx_ptr: idle task cx ptr: 0x8026f080
+[DEBUG] run_tasks: pid: 0, tid: 0
+[ INFO] get_idle_task_cx_ptr: idle task cx ptr: 0x8026f080
+[DEBUG] in schedule, to switch
+[ INFO] get_idle_task_cx_ptr: idle task cx ptr: 0x8026f080
+[DEBUG] run_tasks: pid: 0, tid: 0
+[ERROR] [kernel] trap_handler: Exception(LoadPageFault) in application, bad addr = 0x6000, bad instruction = 0x10be, kernel killed it.
+[kernel] Idle process exit with exit_code -11 ...
+```
+
+会在 `user_stack_base` 往上的 `3 * PAGE_SIZE` 的地址段进行访问. 经过在 `ProcessControlBlock::new()` 中各地址段的调试，应该是 `sp` 值的设置有误，在 `set_sp` 中进行更改 `self.x[2] = sp - 8`，因为栈指针要设置在栈顶下方.
+
+然后就开始迁移 `sys_open`，涉及到的 `fd_table` 的结构很不一样.
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.

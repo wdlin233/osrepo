@@ -474,17 +474,20 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
         abs_path = map_dynamic_link_file(abs_path);
         // log::info!("dynamic path={}", abs_path);
     }
-
+    // debug!("open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {
         inode = find_inode_idx(abs_path);
     } else {
         let found_res = root_inode().find(abs_path, flags, 0);
+        debug!("find file successfully: {},", abs_path);
         if found_res.clone().err() == Some(SysErrNo::ENOTDIR) {
+            info!("open file: {}, but not a directory", abs_path);
             return Err(SysErrNo::ENOTDIR);
         }
         if found_res.clone().err() == Some(SysErrNo::ELOOP) {
+            info!("open file: {}, but too many symbolic links", abs_path);
             return Err(SysErrNo::ELOOP);
         }
         if let Ok(t) = found_res {
@@ -492,9 +495,11 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
                 //符号链接文件不加入idx
                 insert_inode_idx(abs_path, t.clone());
             }
+        info!("open file: {}, found successfully", abs_path);
             inode = Some(t);
         }
     }
+    debug!("open file: {}, flags: {:?}", abs_path, flags);
     if let Some(inode) = inode {
         if flags.contains(OpenFlags::O_DIRECTORY) && !inode.is_dir() {
             return Err(SysErrNo::ENOTDIR);

@@ -2,7 +2,7 @@
 
 use super::ProcessControlBlock;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
-use crate::mm::{MapPermission, PhysPageNum, VirtAddr};
+use crate::mm::{MapPermission, PhysPageNum, VirtAddr, MapAreaType};
 use crate::sync::UPSafeCell;
 use crate::hal::trap::TrapContext;
 use alloc::{
@@ -106,6 +106,7 @@ pub fn kstack_alloc() -> KernelStack {
         kstack_bottom.into(),
         kstack_top.into(),
         MapPermission::R | MapPermission::W,
+        MapAreaType::Physical,
     );
     KernelStack(kstack_id)
 }
@@ -245,6 +246,7 @@ impl TaskUserRes {
             ustack_bottom.into(),
             ustack_top.into(),
             MapPermission::default() | MapPermission::W,
+            MapAreaType::Stack,
         );
 
         // alloc user heap
@@ -253,6 +255,7 @@ impl TaskUserRes {
             self.heap_bottom.into(),
             self.program_brk.into(),
             MapPermission::default() | MapPermission::W,
+            MapAreaType::Brk,
         );
 
         // alloc trap_cx
@@ -264,6 +267,7 @@ impl TaskUserRes {
                 trap_cx_bottom.into(),
                 trap_cx_top.into(),
                 MapPermission::R | MapPermission::W,
+                MapAreaType::Trap,
             );
         }
     }

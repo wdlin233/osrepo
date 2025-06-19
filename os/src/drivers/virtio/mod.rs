@@ -43,9 +43,8 @@ impl Hal for VirtIoHalImpl {
         0
     }
 
-    fn phys_to_virt(_addr: usize) -> usize {
-        unimplemented!()
-        //KernelAddr::from(PhysAddr::from(addr)).0
+    fn phys_to_virt(addr: usize) -> usize {
+        PhysAddr::from(addr).0 | 0x80200000
     }
 
     fn virt_to_phys(vaddr: usize) -> usize {

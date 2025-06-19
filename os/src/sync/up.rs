@@ -36,9 +36,9 @@ impl<T> UPSafeCell<T> {
         self.inner.borrow_mut()
     }
     pub fn get_unchecked_mut(&self) -> &mut T {
-        unimplemented!()
+        unsafe { &mut *self.inner.as_ptr() }
     }
     pub fn get_unchecked_ref(&self) -> &T {
-        unimplemented!()
+        unsafe { &*self.inner.as_ptr() }
     }
 }

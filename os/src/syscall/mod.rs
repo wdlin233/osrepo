@@ -120,6 +120,7 @@ mod fs;
 mod process;
 mod sync;
 mod thread;
+mod options;
 //mod tid;
 mod uname;
 pub mod sys_result;
@@ -130,6 +131,7 @@ use sync::*;
 use thread::*;
 //use tid::*;
 use uname::*;
+pub use options::*;
 
 use crate::task::TmsInner;
 use crate::system::UTSname;

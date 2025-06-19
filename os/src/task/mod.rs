@@ -194,18 +194,20 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
-    let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+    debug!("kernel: INITPROC is being initialized");
+    let initproc = open("/uname", OpenFlags::O_RDONLY, NONE_MODE)
         .expect("open initproc error!")
         .file()
         .expect("initproc can not be abs file!");
+    debug!("kernel: INITPROC opened successfully");
     let elf_data = initproc.inode.read_all().unwrap();
     let res = ProcessControlBlock::new(&elf_data);
     res
 });
+
 ///Add init process to the manager
 pub fn add_initproc() {
-    unimplemented!()
-    //add_task(INITPROC.clone());
+    let _initproc = INITPROC.clone();
 }
 
 /// Check if the current task has any signal to handle

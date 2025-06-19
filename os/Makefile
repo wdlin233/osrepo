@@ -112,7 +112,7 @@ clean:
 
 ifeq ($(ARCH),riscv64)
 disasm: kernel
-	riscv64-linux-musl-objdump $(DISASM) $(KERNEL_ELF) > disasm_rv.s
+	rust-objdump --arch-name=riscv64 $(DISASM) $(KERNEL_ELF) > disasm_rv.s
 else ifeq ($(ARCH),loongarch64)
 disasm: kernel	
 	loongarch64-unknown-linux-gnu-objdump $(DISASM) $(KERNEL_ELF) > disasm_la.s

@@ -254,6 +254,16 @@ impl PhysPageNum {
         let pa: PhysAddr = (*self).into();
         pa.get_mut()
     }
+    ///
+    pub fn bytes_array_mut(&self) -> &'static mut [u8] {
+        let pa: PhysAddr = (*self).into();
+        //let kernel_va = KernelAddr::from(pa).0;
+        debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
+        //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
+        //debug!("Kernel virtual address: {:#x}", kernel_va);
+        // No kernel address translation.
+        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
+    }
 }
 
 #[cfg(target_arch = "loongarch64")]
@@ -314,6 +324,9 @@ where
     pub fn get_end(&self) -> T {
         self.r
     }
+    pub fn range(&self) -> (T, T) {
+        (self.l, self.r)
+    }
 }
 impl<T> IntoIterator for SimpleRange<T>
 where
@@ -373,4 +386,22 @@ pub fn copy_to_virt<T>(src: &T, dst: *mut T) {
         );
         offset += dst_frame.len();
     }
+}
+
+use hashbrown::HashSet;
+use spin::{lazy::Lazy, Mutex};
+
+//坏地址表，mmap映射坏地址时加入此表
+static BAD_ADDRESS: Lazy<Mutex<HashSet<usize>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+pub fn insert_bad_address(va: usize) {
+    BAD_ADDRESS.lock().insert(va);
+}
+
+pub fn is_bad_address(va: usize) -> bool {
+    BAD_ADDRESS.lock().contains(&va)
+}
+
+pub fn remove_bad_address(va: usize) {
+    BAD_ADDRESS.lock().remove(&va);
 }

@@ -7,10 +7,27 @@ use bitflags::*;
 use crate::{print, println};
 use crate::timer::get_time;
 use core::fmt::{self};
+use crate::mm::MemorySet;
+use alloc::sync::Arc;
+#[cfg(target_arch = "riscv64")]
+use riscv::register::scause::{Exception, Trap};
 #[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
+
+use core::arch::asm;
+pub fn flush_tlb() {
+    #[cfg(target_arch = "riscv64")]
+    unsafe {
+        asm!("sfence.vma");
+    }
+    // im not sure
+    #[cfg(target_arch = "loongarch64")]
+    unsafe {
+        asm!("tlbflush");
+    }
+}
 
 #[cfg(target_arch = "riscv64")]
 bitflags! {
@@ -155,6 +172,22 @@ impl PageTableEntry {
     #[cfg(target_arch = "loongarch64")]
     pub fn is_zero(&self) -> bool {
         self.bits == 0
+    }
+    /// 因为flags只给了8位，改成16位的话又要改一堆接口，于是就不用flags了
+    pub fn is_cow(&self) -> bool {
+        self.bits & (1 << 9) != 0
+    }
+    pub fn set_cow(&mut self) {
+        (*self).bits = self.bits | (1 << 9);
+    }
+    pub fn reset_cow(&mut self) {
+        (*self).bits = self.bits & !(1 << 9);
+    }
+    pub fn set_map_flags(&mut self, _flags: PTEFlags) {
+        //? 这个地址对不对啊，这个映射有点怪吧
+        //let new_flags: u8 = (self.bits & 0xFF) as u8 | flags.bits().clone();
+        //self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
+        unimplemented!();
     }
 }
 
@@ -306,6 +339,14 @@ impl PageTable {
         #[cfg(target_arch = "riscv64")] return 8usize << 60 | self.root_ppn.0;
         #[cfg(target_arch = "loongarch64")] return self.root_ppn.0;
     }
+    pub fn set_map_flags(&mut self, vpn: VirtPageNum, flags: PTEFlags) {
+        self.find_pte_create(vpn)
+            .unwrap()
+            .set_map_flags(flags | PTEFlags::V);
+    }
+    pub fn set_cow(&mut self, vpn: VirtPageNum) {
+        self.find_pte_create(vpn).unwrap().set_cow();
+    }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
@@ -357,6 +398,52 @@ pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
         .translate_va(VirtAddr::from(ptr as usize))
         .unwrap()
         .get_ref()
+}
+
+pub fn safe_translated_byte_buffer(
+    memory_set: &mut MemorySet,
+    ptr: *const u8,
+    len: usize,
+) -> Option<Vec<&'static mut [u8]>> {
+    let page_table = PageTable::from_token(memory_set.token());
+    let mut start = ptr as usize;
+    let end = start + len;
+    let mut v = Vec::new();
+    while start < end {
+        let start_va = VirtAddr::from(start);
+        let mut vpn = start_va.floor();
+        match page_table.translate(vpn) {
+            None => {
+                memory_set.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
+            }
+            Some(ref pte) => {
+                if !pte.is_valid() {
+                    memory_set.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
+                }
+            }
+        }
+        let ppn = match page_table.translate(vpn) {
+            None => {
+                return None;
+            }
+            Some(ref pte) => {
+                if !pte.is_valid() {
+                    return None;
+                }
+                pte.ppn()
+            }
+        };
+        vpn.step();
+        let mut end_va: VirtAddr = vpn.into();
+        end_va = end_va.min(VirtAddr::from(end));
+        if end_va.page_offset() == 0 {
+            v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..]);
+        } else {
+            v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..end_va.page_offset()]);
+        }
+        start = end_va.into();
+    }
+    Some(v)
 }
 
 /// translate a pointer `ptr` in other address space to a mutable u8 slice in kernel address space. NOTICE: the content pointed to by the pointer `ptr` cannot cross physical pages, otherwise translated_byte_buffer should be used.

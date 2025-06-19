@@ -3,7 +3,12 @@ use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE};//,USER_STACK_SIZE};
+use crate::config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE};
+use crate::mm::map_area::MapArea;
+#[cfg(target_arch = "riscv64")]
+use crate::mm::map_area::{self, MapAreaType, MapPermission, MapType};
+use crate::mm::page_fault_handler::{lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault};
+//,USER_STACK_SIZE};
 use crate::sync::UPSafeCell;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -12,7 +17,10 @@ use core::arch::asm;
 use core::error;
 use lazy_static::*;
 #[cfg(target_arch = "riscv64")]
-use riscv::register::satp;
+use riscv::register::{
+    satp,
+    scause::{Exception, Trap},
+};
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
 #[cfg(target_arch = "riscv64")]
@@ -58,15 +66,16 @@ impl MemorySet {
         start_va: VirtAddr,
         end_va: VirtAddr,
         permission: MapPermission,
+        area_type: MapAreaType,
     ) {
         #[cfg(target_arch = "riscv64")]
         self.push(
-            MapArea::new(start_va, end_va, MapType::Framed, permission),
+            MapArea::new(start_va, end_va, MapType::Framed, permission, area_type),
             None,
         );
         #[cfg(target_arch = "loongarch64")]
         self.push(
-            MapArea::new(start_va, end_va, permission), 
+            MapArea::new(start_va, end_va, permission, area_type), 
             None
         );
     
@@ -110,6 +119,10 @@ impl MemorySet {
     #[cfg(target_arch = "riscv64")]
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
+        use core::iter::Map;
+
+        use crate::mm::map_area::MapAreaType;
+
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
@@ -128,6 +141,7 @@ impl MemorySet {
                 (etext as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::X,
+                MapAreaType::Elf,
             ),
             None,
         );
@@ -138,6 +152,7 @@ impl MemorySet {
                 (erodata as usize).into(),
                 MapType::Identical,
                 MapPermission::R,
+                MapAreaType::Elf,
             ),
             None,
         );
@@ -148,6 +163,7 @@ impl MemorySet {
                 (edata as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::W,
+                MapAreaType::Elf,
             ),
             None,
         );
@@ -158,6 +174,7 @@ impl MemorySet {
                 (ebss as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::W,
+                MapAreaType::Elf,
             ),
             None,
         );
@@ -168,17 +185,21 @@ impl MemorySet {
                 MEMORY_END.into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::W,
+                MapAreaType::Physical,
             ),
             None,
         );
         info!("mapping memory-mapped registers");
         for pair in MMIO {
+            use crate::mm::map_area::MapAreaType;
+
             memory_set.push(
                 MapArea::new(
                     (*pair).0.into(),
                     ((*pair).0 + (*pair).1).into(),
                     MapType::Identical,
                     MapPermission::R | MapPermission::W,
+                    MapAreaType::MMIO,
                 ),
                 None,
             );
@@ -206,7 +227,7 @@ impl MemorySet {
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                //debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
+                debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
 
                 #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
@@ -243,7 +264,7 @@ impl MemorySet {
                     start_va, end_va, map_perm
                 );
                 #[cfg(target_arch = "riscv64")]
-                let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
+                let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm, MapAreaType::Brk);
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm);
                 //debug!("map_area: {:?}", map_area);
@@ -269,9 +290,9 @@ impl MemorySet {
             }
         }
         // map user stack with U flags
-        //debug!("to map user stack,max end vpn : {}",max_end_vpn.0);
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_stack_base: usize = max_end_va.into(); // user_stack_bottom
+        info!("user stack base: {:#x}", user_stack_base);
         // guard page，用户栈
         user_stack_base += PAGE_SIZE;
         // 返回 address空间,用户栈顶,入口地址
@@ -353,169 +374,55 @@ impl MemorySet {
             false
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct MapArea {
-    pub vpn_range: VPNRange,
-    pub data_frames: BTreeMap<VirtPageNum, FrameTracker>,
-    #[cfg(target_arch = "riscv64")] pub map_type: MapType,
-    pub map_perm: MapPermission,
-}
-
-impl MapArea {
-    pub fn new(
-        start_va: VirtAddr,
-        end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
-        map_perm: MapPermission,
-    ) -> Self {
-        //info!("MapArea::new: {:#x} - {:#x}", start_va.0, end_va.0);
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
-        //info!("MapArea::new start floor = {}, end ceil = {}",start_va.floor().0, end_va.ceil().0);
-        Self {
-            vpn_range: VPNRange::new(start_vpn, end_vpn),
-            data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")] map_type,
-            map_perm,
+    pub fn lazy_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
+        let pte = self.page_table.translate(vpn);
+        //println!("vpn={:#X},enter lazy", vpn.0);
+        if pte.is_some() && pte.unwrap().is_valid() {
+            return false;
         }
-    }
-    pub fn from_another(another: &Self) -> Self {
-        Self {
-            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
-            data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")] map_type: another.map_type,
-            map_perm: another.map_perm,
-        }
-    }
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        // only Framed type in LA64
-        let ppn: PhysPageNum;
-        #[cfg(target_arch = "riscv64")]
-        match self.map_type {
-            MapType::Identical => {
-                ppn = PhysPageNum(vpn.0);
-            }
-            MapType::Framed => {
-                let frame = frame_alloc().unwrap();
-                ppn = frame.ppn;
-                self.data_frames.insert(vpn, frame);
-            }
-        }
-        #[cfg(target_arch = "loongarch64")]
+        //println!("vpn={:#X},enter lazy2", vpn.0);
+        //mmap
+        if let Some(area) = self
+            .areas
+            .iter_mut()
+            .filter(|area| area.area_type == MapAreaType::Mmap)
+            .find(|area| {
+                let (start, end) = area.vpn_range.range();
+                start <= vpn && vpn < end
+            })
         {
-            let frame = frame_alloc().unwrap();
-            ppn = frame.ppn;
-            self.data_frames.insert(vpn, frame); //虚拟页号与物理页帧的对应关系
-        }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
-        page_table.map(vpn, ppn, pte_flags);
-    }
-    pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        #[cfg(target_arch = "riscv64")]
-        if self.map_type == MapType::Framed {
-            self.data_frames.remove(&vpn);
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            self.data_frames.remove(&vpn);
-        }
-        page_table.unmap(vpn);
-    }
-    pub fn map(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
-        }
-    }
-    pub fn unmap(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            self.unmap_one(page_table, vpn);
-        }
-    }
-    /// Used in RV64
-    pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
-        for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
-            self.unmap_one(page_table, vpn)
-        }
-        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
-    }
-    /// Used in RV64
-    pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
-        for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
-            self.map_one(page_table, vpn)
-        }
-        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
-    }
-    /// data: start-aligned but maybe with shorter length
-    /// assume that all frames were cleared before
-    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
-        #[cfg(target_arch = "riscv64")] assert_eq!(self.map_type, MapType::Framed);
-        let mut start: usize = 0;
-        let mut current_vpn = self.vpn_range.get_start();
-        let len = data.len();
-        loop {
-            let src = &data[start..len.min(start + PAGE_SIZE)];
-            let dst = &mut page_table
-                .translate(current_vpn)
-                .unwrap()
-                .ppn()
-                .get_bytes_array()[..src.len()];
-            dst.copy_from_slice(src);
-            start += PAGE_SIZE;
-            if start >= len {
-                break;
+            // println!("vpn={:#X},enter lazy3", vpn.0);
+            if scause == Trap::Exception(Exception::LoadPageFault)
+                || scause == Trap::Exception(Exception::InstructionPageFault)
+            {
+                mmap_read_page_fault(vpn.into(), &mut self.page_table, area);
+            } else {
+                mmap_write_page_fault(vpn.into(), &mut self.page_table, area);
             }
-            current_vpn.step();
+            return true;
         }
+        //brk or stack
+        if let Some(area) = self
+            .areas
+            .iter_mut()
+            .filter(|area| {
+                area.area_type == MapAreaType::Brk || area.area_type == MapAreaType::Stack
+            })
+            .find(|area| {
+                let (start, end) = area.vpn_range.range();
+                start <= vpn && vpn < end
+            })
+        {
+            //println!("vpn={:#X},enter lazy4", vpn.0);
+            lazy_page_fault(vpn.into(), &mut self.page_table, area);
+            return true;
+        }
+        false
     }
-}
-
-#[cfg(target_arch = "riscv64")]
-#[derive(Copy, Clone, PartialEq, Debug)]
-/// map type for memory set: identical or framed
-/// Only framed type in LA64
-pub enum MapType {
-    Identical,
-    Framed,
-}
-
-#[cfg(target_arch = "riscv64")]
-bitflags! {
-    /// map permission corresponding to that in pte: `R W X U`
-    pub struct MapPermission: u8 {
-        ///Readable
-        const R = 1 << 1;
-        ///Writable
-        const W = 1 << 2;
-        ///Excutable
-        const X = 1 << 3;
-        ///Accessible in U mode
-        const U = 1 << 4;
-    }
-}
-
-//  PTEFlags 的一个子集
-// 主要含有几个读写标志位和存在位，对于其它控制位
-// 在后面的映射中将会固定为同一种
-#[cfg(target_arch = "loongarch64")]
-bitflags! {
-    pub struct MapPermission: usize {
-        const NX = 1 << 62;
-        const NR = 1 << 61;
-        const W = 1 << 8;
-        const PLVL = 1 << 2;
-        const PLVH = 1 << 3;
-        const RPLV = 1 << 63;
-    }
-}
-
-impl Default for MapPermission {
-    // alloc_user_res
-    fn default() -> Self {
-        #[cfg(target_arch = "riscv64")] return MapPermission::R | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")] return MapPermission::PLVL | MapPermission::PLVH;
-    }
+    // #[inline(always)] for multiThread, use lazy_page_fault simply
+    // pub fn lazy_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
+    //     self.inner.get_unchecked_mut().lazy_page_fault(vpn, scause)
+    // }
 }
 
 /// remap test in kernel space
@@ -544,33 +451,6 @@ pub fn remap_test() {
         .executable(),);
     use crate::println;
     println!("remap_test passed!");
-}
-
-// RV passed, compatible with LA
-impl MapPermission {
-    /// Convert from port to MapPermission
-    pub fn from_port(port: usize) -> Self {
-        #[cfg(target_arch = "riscv64")]
-        let bits = (port as u8) << 1;
-        #[cfg(target_arch = "loongarch64")]
-        let bits = port << 1;
-        MapPermission::from_bits(bits).unwrap() 
-    }
-
-    
-    /// Add user permission for MapPermission
-    /// LA, 保留现有权限，添加用户模式所需的 PLV3 组合位
-    pub fn with_user(self) -> Self {
-        #[cfg(target_arch = "riscv64")] return self | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")] return self | MapPermission::PLVL | MapPermission::PLVH;
-    }
-
-    #[allow(unused)]
-    #[cfg(target_arch = "loongarch64")]
-    pub fn without_user(self) -> Self {
-        // 清除用户模式位，设置为内核模式 (PLV0)
-        self & !(MapPermission::PLVL | MapPermission::PLVH)
-    }
 }
 
 // RV passed, compatible with LA
@@ -608,7 +488,7 @@ impl MemorySet {
             //debug!("mmap: invalid range");
             return -1;
         }
-        self.insert_framed_area(start_va, end_va, permission);
+        self.insert_framed_area(start_va, end_va, permission, MapAreaType::Elf);
         //debug!("mmap succeed");
         assert!(self.all_valid(start_va, end_va));
         0

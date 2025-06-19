@@ -30,13 +30,12 @@ pub use disk::*;
 mod virtio;
 use virtio_drivers::VirtIOHeader;
 use virtio::*;
-pub const KERNEL_ADDR_OFFSET: usize = 0xffff_ffc0_0000_0000;
+pub const VIRTIO0: usize = 0x1000_1000; // rvv64 virtio base address
 
 pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl>;
 
 impl BlockDeviceImpl {
     pub fn new_device() -> Self {
-        const VIRTIO0: usize = 0x10001000 + KERNEL_ADDR_OFFSET;
         unsafe { VirtIoBlkDev::new(&mut *(VIRTIO0 as *mut VirtIOHeader)) }
     }
 }
