@@ -58,7 +58,7 @@ endif
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
 ifeq ($(ARCH),riscv64)
-build: env fs-img kernel
+build: env fs-img kernel config
 else ifeq ($(ARCH),loongarch64)
 build:env fs-img kernel
 else
@@ -103,11 +103,15 @@ endif
 
 # cargo build $(MODE_ARG) --target $(TARGET)
 kernel:
-	cargo build --$(MODE) -p os --target ${TARGET}
+	cargo build --$(MODE) -p os --target ${TARGET} --offline
+
+config:
+	@rm -rf .cargo
+	@cp -r cargo .cargo
 
 clean:
 	@cargo clean
-	@tmux kill-server
+	-tmux kill-server
 	@sudo umount /mnt/image_part
 
 ifeq ($(ARCH),riscv64)
@@ -166,4 +170,4 @@ gdbserver: build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient
+.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config

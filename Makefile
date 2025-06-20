@@ -1,12 +1,18 @@
-DOCKER_NAME ?= rcore-tutorial-v3
-.PHONY: docker build_docker
+ARCH ?= riscv64
+DOCKER_NAME ?= docker.educg.net/cg/os-contest:20250516
+.PHONY: docker build_docker all
 	
 docker:
-	docker run -it -v .:/code --entrypoint bash -w /code --privileged docker.educg.net/cg/os-contest:20250516
+	docker run -it -v .:/code --entrypoint bash -w /code --privileged ${DOCKER_NAME}
 
 build_docker: 
 	docker build -t ${DOCKER_NAME} .
 
-fmt:
-	cd easy-fs; cargo fmt; cd ../easy-fs-fuse cargo fmt; cd ../os ; cargo fmt; cd ../user; cargo fmt; cd ..
+all: clean
+	@cd os && make run ARCH=$(ARCH)
+
+clean:
+	@cd ./os && make clean
+	@cd ./user && make clean
+	@cd ./user_la && make clean
 
