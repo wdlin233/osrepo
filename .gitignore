@@ -11,16 +11,10 @@ os/.gdb_history
 user/target/*
 user/.idea/*
 user/Cargo.lock
-easy-fs/Cargo.lock
-easy-fs/target/*
-easy-fs-fuse/Cargo.lock
-easy-fs-fuse/target/*
 tools/
 pushall.sh
 .vscode/*.log
 *.bak
-ci-user/
-os/vendor/
 testcases/build
 **/target/*
 **/*.map
