@@ -227,7 +227,7 @@ impl ProcessControlBlock {
         #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
-        info!("ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
+        //info!("ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
 
         // debug!("kernel: create main thread, pid = {}", process.getpid());
         // la 在内核栈上压入trap上下文，与rcore实现不同

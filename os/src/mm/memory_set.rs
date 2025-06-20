@@ -4,9 +4,9 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE};
-use crate::mm::map_area::MapArea;
+use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
 #[cfg(target_arch = "riscv64")]
-use crate::mm::map_area::{self, MapAreaType, MapPermission, MapType};
+use crate::mm::map_area::MapType;
 use crate::mm::page_fault_handler::{lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault};
 //,USER_STACK_SIZE};
 use crate::sync::UPSafeCell;
@@ -20,6 +20,10 @@ use lazy_static::*;
 use riscv::register::{
     satp,
     scause::{Exception, Trap},
+};
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::register::{
+    estat::*,
 };
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
@@ -266,7 +270,7 @@ impl MemorySet {
                 #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm, MapAreaType::Brk);
                 #[cfg(target_arch = "loongarch64")]
-                let map_area = MapArea::new(start_va, end_va, map_perm);
+                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Brk);
                 //debug!("map_area: {:?}", map_area);
                 
                 max_end_vpn = map_area.vpn_range.get_end();
@@ -392,12 +396,29 @@ impl MemorySet {
             })
         {
             // println!("vpn={:#X},enter lazy3", vpn.0);
+            #[cfg(target_arch = "riscv64")]
             if scause == Trap::Exception(Exception::LoadPageFault)
                 || scause == Trap::Exception(Exception::InstructionPageFault)
             {
                 mmap_read_page_fault(vpn.into(), &mut self.page_table, area);
             } else {
                 mmap_write_page_fault(vpn.into(), &mut self.page_table, area);
+            }
+            #[cfg(target_arch = "loongarch64")]
+            {
+                use loongarch64::register::estat;
+                let cause = estat::read().cause();
+                
+                // 使用 FetchPageFault 代替 InstructionPageFault
+                match cause {
+                    Trap::Exception(Exception::LoadPageFault) |
+                    Trap::Exception(Exception::FetchPageFault) => {
+                        mmap_read_page_fault(vpn.into(), &mut self.page_table, area);
+                    }
+                    _ => {
+                        mmap_write_page_fault(vpn.into(), &mut self.page_table, area);
+                }
+    }
             }
             return true;
         }

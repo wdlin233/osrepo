@@ -241,5 +241,7 @@ pub fn current_uid() -> u32 {
 pub fn current_token() -> usize {
     // get_proc_by_hartid(hart_id()).token()
     #[cfg(target_arch = "riscv64")]
-    riscv::register::satp::read().bits()
+    return riscv::register::satp::read().bits();
+
+    unimplemented!()
 }

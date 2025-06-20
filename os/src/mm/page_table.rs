@@ -12,6 +12,8 @@ use alloc::sync::Arc;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::scause::{Exception, Trap};
 #[cfg(target_arch = "loongarch64")]
+use loongarch64::register::estat::{Exception, Trap};
+#[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};

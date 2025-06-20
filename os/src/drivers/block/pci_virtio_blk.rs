@@ -18,7 +18,8 @@ use virtio_drivers::{BufferDirection, Hal};
 
 //#[allow(unused)]
 //#[cfg(target_arch = "loongarch64")]
-const VIRTIO0: usize = 0x2000_0000 | 0x9000000000000000;
+//const VIRTIO0: usize = 0x2000_0000 | 0x9000000000000000;
+const VIRTIO0: usize = 0x2000_0000;
 const VIRT_PCI_BASE: usize = 0x4000_0000;
 const VIRT_PCI_SIZE: usize = 0x0002_0000;
 
@@ -91,6 +92,7 @@ impl PciRangeAllocator {
         }
     }
     pub fn alloc_pci(&mut self,size: usize) -> Option<usize> {
+        debug!("alloc_pci: size = {:#x}", size);
         if !size.is_power_of_two() {
             return None;
         }
@@ -204,7 +206,7 @@ unsafe impl Hal for VirtioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
-        //debug!("Converting physical address {:#x} to virtual address", paddr);
+        debug!("Converting physical address {:#x} to virtual address", paddr);
         NonNull::new((paddr | 0x9000000000000000) as *mut u8).unwrap()
     }
 

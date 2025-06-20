@@ -173,6 +173,16 @@ process_inner.memory_set.insert_framed_area(
 
 然后就开始迁移 `sys_open`，涉及到的 `fd_table` 的结构很不一样.
 
+## 2025.6.20
+
+考完期末周，回来实现了 `sys_open()`，然后开始做 EXT4 对 la 的适配，修改 `VIRTIO0` 后遇到的 
+
+```shell
+[kernel] Panicked at src/drivers/virtio/blk.rs:16 VirtIOBlk create failed: InvalidParam
+```
+
+问题，做 pci 与 mmio 的兼容.
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
