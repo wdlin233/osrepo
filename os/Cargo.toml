@@ -13,7 +13,7 @@ bitflags = "1.2.1"
 xmas-elf = "0.7.0"
 # old version: virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
 # virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "61ece50" }
-virtio-drivers = { path = './libs/virtio-drivers' }
+virtio-drivers = "0.6.0"
 spin = "0.10"
 bit_field = "0.10.1"
 #ext4_rs = { path = "libs/ext4_rs" }
