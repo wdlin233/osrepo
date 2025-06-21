@@ -35,7 +35,7 @@ impl Ext4Inode {
         } else {
             false
         };
-        unsafe{
+        unsafe {
             Ext4Inode {
                 inner: UPSafeCell::new(Ext4InodeInner {
                     f: Ext4File::new(path, types),
@@ -271,38 +271,38 @@ impl Inode for Ext4Inode {
         Ok((de, f_off as isize))
     }
 
-    fn read_link(&self, _buf: &mut [u8], _bufsize: usize) -> SyscallRet {
-        unimplemented!()
-        // let file = &mut self.inner.get_unchecked_mut().f;
-        // file.file_readlink(buf, bufsize)
-        //     .map_err(|e| SysErrNo::from(e))
+    fn read_link(&self, buf: &mut [u8], bufsize: usize) -> SyscallRet {
+        //unimplemented!()
+        let file = &mut self.inner.get_unchecked_mut().f;
+        file.file_readlink(buf, bufsize)
+            .map_err(|e| SysErrNo::from(e))
     }
 
-    fn sym_link(&self, _target: &str, _path: &str) -> SyscallRet {
-        unimplemented!()
-        // let file = &mut self.inner.get_unchecked_mut().f;
-        // file.file_fsymlink(target, path)
-        //     .map_err(|e| SysErrNo::from(e))
+    fn sym_link(&self, target: &str, path: &str) -> SyscallRet {
+        //unimplemented!()
+        let file = &mut self.inner.get_unchecked_mut().f;
+        file.file_fsymlink(target, path)
+            .map_err(|e| SysErrNo::from(e))
     }
 
     fn link_cnt(&self) -> SyscallRet {
-        unimplemented!()
-        // let file = &mut self.inner.get_unchecked_mut().f;
-        // let r = file.links_cnt();
-        // if let Err(e) = r {
-        //     if e == 2 {
-        //         return Ok(0);
-        //     } else {
-        //         return Err(SysErrNo::from(e));
-        //     }
-        // }
-        // Ok(r.unwrap() as usize)
+        //unimplemented!()
+        let file = &mut self.inner.get_unchecked_mut().f;
+        let r = file.links_cnt();
+        if let Err(e) = r {
+            if e == 2 {
+                return Ok(0);
+            } else {
+                return Err(SysErrNo::from(e));
+            }
+        }
+        Ok(r.unwrap() as usize)
     }
 
-    fn unlink(&self, _path: &str) -> SyscallRet {
-        unimplemented!()
-        // let file = &mut self.inner.get_unchecked_mut().f;
-        // file.file_remove(path).map_err(|e| SysErrNo::from(e))
+    fn unlink(&self, path: &str) -> SyscallRet {
+        //unimplemented!()
+        let file = &mut self.inner.get_unchecked_mut().f;
+        file.file_remove(path).map_err(|e| SysErrNo::from(e))
     }
 
     fn path(&self) -> String {
@@ -326,10 +326,10 @@ impl Inode for Ext4Inode {
         // file.file_mode().map_err(|e| SysErrNo::from(e))
         unimplemented!()
     }
-    fn fmode_set(&self, _mode: u32) -> SyscallRet {
-        // let file = &mut self.inner.get_unchecked_mut().f;
-        // file.file_mode_set(mode).map_err(|e| SysErrNo::from(e))
-        unimplemented!()
+    fn fmode_set(&self, mode: u32) -> SyscallRet {
+        let file = &mut self.inner.get_unchecked_mut().f;
+        file.file_mode_set(mode).map_err(|e| SysErrNo::from(e))
+        //unimplemented!()
     }
     fn fowner_set(&self, _owner: u32, _group: u32) -> SyscallRet {
         unimplemented!()

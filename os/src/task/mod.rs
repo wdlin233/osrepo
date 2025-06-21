@@ -15,15 +15,16 @@ mod manager;
 mod process;
 mod processor;
 pub mod signal;
+mod stride;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-mod stride;
 
 use self::id::TaskUserRes;
 //use crate::drivers::BLOCK_DEVICE;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::{open, OpenFlags, NONE_MODE};
+use crate::println;
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
@@ -32,25 +33,24 @@ use manager::fetch_task;
 use process::ProcessControlBlock;
 use spin::Lazy;
 use switch::__switch;
-use crate::println;
 
 pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
-    add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,add_block_task,
+    add_block_task, add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,
     wakeup_task_by_pid,
 };
-pub use processor::{
-    current_process, current_task, current_trap_cx, 
-    current_user_token, run_tasks, schedule, take_current_task, mmap, munmap,
-};
-#[cfg(target_arch = "riscv64")]
-pub use processor::{current_kstack_top, current_trap_cx_user_va};
+pub use process::{Tms, TmsInner};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
+#[cfg(target_arch = "riscv64")]
+pub use processor::{current_kstack_top, current_trap_cx_user_va};
+pub use processor::{
+    current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
+    schedule, take_current_task,
+};
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
-pub use process::{Tms,TmsInner};
 
 #[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;
@@ -69,7 +69,7 @@ pub fn suspend_current_and_run_next() {
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
     // ---- release current TCB
-    
+
     // push back to ready queue.
     add_task(task);
     // jump to scheduling cycle
@@ -145,7 +145,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // wakeup his parent
         let parent = process_inner.parent.clone().unwrap();
         wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
-        
+
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
         // otherwise they will be deallocated twice
@@ -176,11 +176,13 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // deallocate other data in user space i.e. program code/data section
         process_inner.memory_set.recycle_data_pages();
         // drop file descriptors
-        process_inner.fd_table.clear();
+        if let Some(fd_table) = Arc::get_mut(&mut process_inner.fd_table) {
+            fd_table.clear();
+        }
         // remove all tasks, release all threads
         process_inner.tasks.clear();
         //debug!("all clear ok");
-
+        //debug!("after clear, the parent fd table len is :{}",)
         #[cfg(target_arch = "loongarch64")]
         // 使得原来的TLB表项无效掉，否则下一个进程与当前退出的进程号相同会导致
         // 无法正确进行地址转换
@@ -195,7 +197,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
-    let initproc = open("/uname", OpenFlags::O_RDONLY, NONE_MODE)
+    let initproc = open("/usertest.elf", OpenFlags::O_RDONLY, NONE_MODE)
         .expect("open initproc error!")
         .file()
         .expect("initproc can not be abs file!");
@@ -235,7 +237,9 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
 
 pub fn current_uid() -> u32 {
     //CUR_UID.load(core::sync::atomic::Ordering::SeqCst)
-    unimplemented!()
+    //unimplemented!()
+    let current = current_task().unwrap();
+    current.process.upgrade().unwrap().getuid() as u32
 }
 
 pub fn current_token() -> usize {

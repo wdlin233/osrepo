@@ -9,6 +9,12 @@ use crate::mm::map_area::MapArea;
 use crate::mm::map_area::{self, MapAreaType, MapPermission, MapType};
 use crate::mm::page_fault_handler::{lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault};
 //,USER_STACK_SIZE};
+#[cfg(target_arch = "loongarch64")]
+use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
+#[cfg(target_arch = "riscv64")]
+use crate::hal::{
+    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
+};
 use crate::sync::UPSafeCell;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -21,10 +27,6 @@ use riscv::register::{
     satp,
     scause::{Exception, Trap},
 };
-#[cfg(target_arch = "loongarch64")]
-use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
-#[cfg(target_arch = "riscv64")]
-use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss_with_stack, ebss, ekernel, strampoline};
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
@@ -74,11 +76,7 @@ impl MemorySet {
             None,
         );
         #[cfg(target_arch = "loongarch64")]
-        self.push(
-            MapArea::new(start_va, end_va, permission, area_type), 
-            None
-        );
-    
+        self.push(MapArea::new(start_va, end_va, permission, area_type), None);
     }
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -233,7 +231,7 @@ impl MemorySet {
                 let mut map_perm = MapPermission::U;
                 #[cfg(target_arch = "loongarch64")]
                 let mut map_perm = MapPermission::default();
-                
+
                 let ph_flags = ph.flags();
                 #[cfg(target_arch = "riscv64")]
                 {
@@ -264,28 +262,36 @@ impl MemorySet {
                     start_va, end_va, map_perm
                 );
                 #[cfg(target_arch = "riscv64")]
-                let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm, MapAreaType::Brk);
+                let map_area = MapArea::new(
+                    start_va,
+                    end_va,
+                    MapType::Framed,
+                    map_perm,
+                    MapAreaType::Brk,
+                );
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm);
                 //debug!("map_area: {:?}", map_area);
-                
+
                 max_end_vpn = map_area.vpn_range.get_end();
                 // A optimization for mapping data, keep aligned
                 if start_va.page_offset() == 0 {
                     memory_set.push(
                         map_area,
-                        Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
+                        Some(
+                            &elf.input
+                                [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
+                        ),
                     );
                 } else {
                     //error!("start_va page offset is not zero, start_va: {:?}", start_va);
                     let data_len = start_va.page_offset() + ph.file_size() as usize;
                     let mut data: Vec<u8> = Vec::with_capacity(data_len);
                     data.resize(data_len, 0);
-                    data[start_va.page_offset()..].copy_from_slice(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]);
-                    memory_set.push(
-                        map_area,
-                        Some(data.as_slice()),
+                    data[start_va.page_offset()..].copy_from_slice(
+                        &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
                     );
+                    memory_set.push(map_area, Some(data.as_slice()));
                 }
             }
         }
@@ -361,7 +367,11 @@ impl MemorySet {
     /// append the area to new_end
     /// Used in TaskUserRes, RV
     pub fn append_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
-        debug!("in memory set to append,start = {},start floor = {}",start.0,start.floor().0);
+        debug!(
+            "in memory set to append,start = {},start floor = {}",
+            start.0,
+            start.floor().0
+        );
         if let Some(area) = self
             .areas
             .iter_mut()
@@ -461,9 +471,7 @@ impl MemorySet {
         let end_vpn = end.ceil();
         VPNRange::new(start_vpn, end_vpn)
             .into_iter()
-            .all(|vpn| 
-                self.translate(vpn).map_or(false, |pte| pte.is_valid())
-            )
+            .all(|vpn| self.translate(vpn).map_or(false, |pte| pte.is_valid()))
     }
 
     /// Check if all pages in the range are unmapped.
@@ -472,22 +480,27 @@ impl MemorySet {
         let end_vpn = end.ceil();
         VPNRange::new(start_vpn, end_vpn)
             .into_iter()
-            .all(|vpn| 
-                self.translate(vpn).map_or(true, |pte| !pte.is_valid())
-            )
+            .all(|vpn| self.translate(vpn).map_or(true, |pte| !pte.is_valid()))
     }
 
     /// Create a new memory area with the given start address, length, and protection flags.
     pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        debug!("in memory set, mmap");
         let start_va = VirtAddr::from(start);
         let end_va = VirtAddr::from(start + len);
         let permission = MapPermission::from_port(port).with_user();
 
-        //debug!("mmap: start_va: {:#x}, end_va: {:#x}, permission: {:?}", start, start + len, permission);
+        debug!(
+            "mmap: start_va: {:#x}, end_va: {:#x}, permission: {:?}",
+            start,
+            start + len,
+            permission
+        );
         if !self.all_invalid(start_va, end_va) {
             //debug!("mmap: invalid range");
             return -1;
         }
+        debug!("to insert");
         self.insert_framed_area(start_va, end_va, permission, MapAreaType::Elf);
         //debug!("mmap succeed");
         assert!(self.all_valid(start_va, end_va));
@@ -496,9 +509,10 @@ impl MemorySet {
 
     /// Unmap a memory area with the given start address and length.
     pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        debug!("in memory set, munmap");
         let start_va = VirtAddr::from(start);
         let end_va = VirtAddr::from(start + len);
-        //debug!("munmap: start_va: {:#x}, end_va: {:#x}", start, start + len);
+        debug!("munmap: start_va: {:#x}, end_va: {:#x}", start, start + len);
         if !self.all_valid(start_va, end_va) {
             return -1;
         }
@@ -507,6 +521,7 @@ impl MemorySet {
             .iter_mut()
             .find(|area| area.vpn_range.get_start() == start_va.floor())
             .unwrap();
+        debug!("to unmap");
         area.unmap(&mut self.page_table);
         //self.areas.retain(|area| area.vpn_range.get_start() != start_va.floor());
         assert!(self.all_invalid(start_va, end_va));

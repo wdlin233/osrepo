@@ -110,6 +110,10 @@ clean:
 	@tmux kill-server
 	@sudo umount /mnt/image_part
 
+modify:
+	@rm -rf sdcard-rv.img
+	@cp /home/molinwu/sdcard-rv.img  /home/molinwu/osrepo/os/
+
 ifeq ($(ARCH),riscv64)
 disasm: kernel
 	rust-objdump --arch-name=riscv64 $(DISASM) $(KERNEL_ELF) > disasm_rv.s
