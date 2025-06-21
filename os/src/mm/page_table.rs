@@ -414,6 +414,7 @@ pub fn safe_translated_byte_buffer(
     while start < end {
         let start_va = VirtAddr::from(start);
         let mut vpn = start_va.floor();
+        #[cfg(target_arch = "riscv64")]
         match page_table.translate(vpn) {
             None => {
                 memory_set.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
@@ -424,26 +425,61 @@ pub fn safe_translated_byte_buffer(
                 }
             }
         }
-        let ppn = match page_table.translate(vpn) {
-            None => {
+        #[cfg(target_arch = "loongarch64")]
+        if !page_table.translate(vpn).map_or(false, |pte| pte.is_valid()) {
+            memory_set.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
+            // 重新检查
+            if !page_table.translate(vpn).map_or(false, |pte| pte.is_valid()) {
                 return None;
             }
-            Some(ref pte) => {
-                if !pte.is_valid() {
-                    return None;
-                }
-                pte.ppn()
-            }
-        };
-        vpn.step();
-        let mut end_va: VirtAddr = vpn.into();
-        end_va = end_va.min(VirtAddr::from(end));
-        if end_va.page_offset() == 0 {
-            v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..]);
-        } else {
-            v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..end_va.page_offset()]);
         }
-        start = end_va.into();
+
+        let ppn = match page_table.translate(vpn) {
+            Some(pte) if pte.is_valid() => pte.ppn(),
+            _ => return None,
+        };
+
+        #[cfg(target_arch = "riscv64")]
+        {
+            vpn.step();
+            let mut end_va: VirtAddr = vpn.into();
+            end_va = end_va.min(VirtAddr::from(end));
+            if end_va.page_offset() == 0 {
+                v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..]);
+            } else {
+                v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..end_va.page_offset()]);
+            }
+            info!(
+                "safe_translated_byte_buffer: start_va: {:?}, end_va: {:?}, ppn: {:?}",
+                start_va, end_va, ppn
+            );
+            start = end_va.into();
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            use crate::config::PAGE_SIZE;
+            let phys_addr: PhysAddr = ppn.into();
+            let kernel_va = phys_addr.0 | 0x9000_0000_0000_0000;
+            
+            // debug!(
+            //     "safe_translated_byte_buffer: start_va: {:?}, ppn: {:?}, kernel_va: {:?}",
+            //     start_va, ppn, kernel_va
+            // );
+            // 计算当前页内可访问的字节数
+            let page_offset = start_va.page_offset();
+            let page_remaining = PAGE_SIZE - page_offset;
+            let bytes_in_page = usize::min(page_remaining, end - start);
+            // 获取内核虚拟地址的切片
+            let slice_start = kernel_va + page_offset;
+            let slice = unsafe {
+                core::slice::from_raw_parts_mut(
+                    slice_start as *mut u8,
+                    bytes_in_page
+                )
+            };
+            v.push(slice);
+            start += bytes_in_page;
+        }
     }
     Some(v)
 }

@@ -183,6 +183,48 @@ process_inner.memory_set.insert_framed_area(
 
 问题，做 pci 与 mmio 的兼容.
 
+## 2025.6.21
+
+做好总线驱动，遇到
+
+```rust
+impl File for Stdout {
+    fn write(&self, user_buf: UserBuffer) -> SyscallRet {
+        info!("kernel: write to stdout");
+        info!("kernel: write to stdout buffer len: {:?}", user_buf.buffers.len());
+        for buffer in user_buf.buffers.iter() {
+            info!("kernel: write to stdout buffer: {:?}", *buffer);
+            print!("{}", core::str::from_utf8(*buffer).unwrap());
+        }
+        info!("kernel: write to stdout done");
+        Ok(user_buf.len())
+    }
+}
+```
+
+中不能访问 `*buffer` 的问题，具体表现在会出现 `LoadPageFault` 报错和 `[ INFO] kernel: write to stdout buffer: [` 日志.
+
+反汇编
+
+```asm
+90000000002641ec:	00150007 	move        	$a3, $zero
+90000000002641f0:	00150009 	move        	$a5, $zero
+90000000002641f4:	50002000 	b           	32(0x20)	# 9000000000264214 <_ZN40_$LT$str$u20$as$u20$core..fmt..Debug$GT$3fmt17h91ad8e2e5f5954c0E+0x374>
+90000000002641f8:	00150009 	move        	$a5, $zero
+90000000002641fc:	47ffdcff 	bnez        	$a3, -36(0x7fffdc)	# 90000000002641d8 <_ZN40_$LT$str$u20$as$u20$core..fmt..Debug$GT$3fmt17h91ad8e2e5f5954c0E+0x338>
+9000000000264200:	00150007 	move        	$a3, $zero
+9000000000264204:	50001000 	b           	16(0x10)	# 9000000000264214 <_ZN40_$LT$str$u20$as$u20$core..fmt..Debug$GT$3fmt17h91ad8e2e5f5954c0E+0x374>
+9000000000264208:	5bffcd25 	beq         	$a5, $a1, -52(0x3ffcc)	# 90000000002641d4 <_ZN40_$LT$str$u20$as$u20$core..fmt..Debug$GT$3fmt17h91ad8e2e5f5954c0E+0x334>
+900000000026420c:	50007800 	b           	120(0x78)	# 9000000000264284 <_ZN40_$LT$str$u20$as$u20$core..fmt..Debug$GT$3fmt17h91ad8e2e5f5954c0E+0x3e4>
+9000000000264210:	5c0074e5 	bne         	$a3, $a1, 116(0x74)	# 9000000000264284 <_ZN40_$LT$str$u20$as$u20$core..fmt..Debug$GT$3fmt17h91ad8e2e5f5954c0E+0x3e4>
+9000000000264214:	28c06328 	ld.d        	$a4, $s2, 24(0x18)
+9000000000264218:	0011a4e6 	sub.d       	$a2, $a3, $a5
+```
+
+在 `9000000000264218:	0011a4e6 	sub.d       	$a2, $a3, $a5` 出错. 
+
+涉及的是关于物理内存到内核虚拟地址的映射问题，于是重新设计了一个 `safe_translated_byte_buffer` 让其传给 `File::write` 的是被处理过后的内核虚地址.
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
