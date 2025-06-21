@@ -46,11 +46,12 @@ impl Debug for TrapContext {
 impl TrapContext {
     /// put the sp(stack pointer) into TrapContext
     pub fn set_sp(&mut self, sp: usize) {
+        //info!("set sp to {:#x}", sp);
         #[cfg(target_arch = "riscv64")] {
             self.x[2] = sp - 8; // riscv64 uses x2 as stack pointer
         }
         #[cfg(target_arch = "loongarch64")] {
-            self.x[3] = sp; // loongarch64 uses x3 as stack pointer
+            self.x[3] = sp - 8; // loongarch64 uses x3 as stack pointer
         }
     }
     

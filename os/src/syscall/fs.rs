@@ -48,16 +48,23 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         }
         let file = file.clone();
         // release current task TCB manually to avoid multi-borrow
+        info!(
+            "kernel:pid[{}] sys_write .. file.write",
+            process.getpid()
+        );
         let ret = match file.write(UserBuffer::new(
             safe_translated_byte_buffer(&mut inner.memory_set, buf, len).unwrap(),
         )) {
             Ok(n) => n as isize,
             Err(e) => {
-                // trace!("kernel: sys_write .. file.write error: {:?}", e);
+                info!("kernel: sys_write .. file.write error: {:?}", e);
                 // return Err(SysErrNo::from(e));
                 return -1
             }
         };
+        info!(
+            "kernel:pid ok"
+        );
         drop(inner);
         drop(process);
         return ret    

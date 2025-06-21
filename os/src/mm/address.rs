@@ -283,7 +283,8 @@ impl PhysPageNum {
         //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
         //debug!("Kernel virtual address: {:#x}", kernel_va);
         // No kernel address translation.
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
+        use crate::config::PAGE_SIZE;
+        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, PAGE_SIZE) }
     }
 }
 

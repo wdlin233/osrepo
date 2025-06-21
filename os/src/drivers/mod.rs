@@ -30,19 +30,30 @@ pub use disk::*;
 mod virtio;
 use virtio_drivers::transport::mmio::VirtIOHeader;
 use virtio_drivers::transport::mmio::MmioTransport;
+use virtio_drivers::transport::pci::PciTransport;
 use virtio::*;
 #[cfg(target_arch = "riscv64")]
 pub const VIRTIO0: usize = 0x1000_1000; // rvv64 virtio base address
 #[cfg(target_arch = "loongarch64")]
-const VIRTIO0: usize = 0x2000_0000;
+const VIRTIO0: usize = 0x2000_0000 | 0x9000000000000000;
 
+#[cfg(target_arch = "riscv64")]
 pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, MmioTransport>;
+#[cfg(target_arch = "loongarch64")]
+pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, PciTransport>;
 
 impl BlockDeviceImpl {
     pub fn new_device() -> Self {
+        #[cfg(target_arch = "riscv64")]
         unsafe { 
             VirtIoBlkDev::<VirtIoHalImpl, MmioTransport>::new(
                 &mut *(VIRTIO0 as *mut VirtIOHeader)
+            ) 
+        }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe { 
+            VirtIoBlkDev::<VirtIoHalImpl, PciTransport>::new(
+                &mut *(VIRTIO0 as *mut u8)
             ) 
         }
     }

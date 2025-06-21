@@ -261,12 +261,10 @@ impl File for Pipe {
         // }
         // Ok(read_size)
     }
-    fn write(&self, mut _buf: UserBuffer) -> SyscallRet {
-        // assert!(self.writable());
-        // let mut write_size = 0usize;
-        // let mut loop_write;
-        unimplemented!()
-        // 暂时先过编译
+    fn write(&self, mut buf: UserBuffer) -> SyscallRet {
+        assert!(self.writable());
+        let mut write_size = 0usize;
+        let mut loop_write;
         // loop {
         //     let task = current_task().unwrap();
         //     let task_inner = task.inner_lock();
