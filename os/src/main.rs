@@ -51,6 +51,7 @@ pub mod timer;
 pub mod hal;
 pub mod boot; // used to set up the initial environment
 pub mod utils;
+pub mod signal;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::{

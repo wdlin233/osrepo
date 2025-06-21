@@ -52,9 +52,11 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
             "kernel:pid[{}] sys_write .. file.write",
             process.getpid()
         );
-        let ret = match file.write(UserBuffer::new(
-            safe_translated_byte_buffer(&mut inner.memory_set, buf, len).unwrap(),
-        )) {
+        let ret = match file.write(
+            UserBuffer::new(
+                safe_translated_byte_buffer(&mut inner.memory_set, buf, len).unwrap(),
+            )
+        ) {
             Ok(n) => n as isize,
             Err(e) => {
                 info!("kernel: sys_write .. file.write error: {:?}", e);

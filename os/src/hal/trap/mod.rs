@@ -18,12 +18,13 @@ mod context;
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_trap_cx,
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,
+    current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
     current_process,
 };
 use crate::println;
 use crate::config::{TICKS_PER_SEC, MSEC_PER_SEC};
 use crate::timer::{check_timer};
+pub use crate::signal::SignalFlags;
 
 #[cfg(target_arch = "riscv64")] 
 use crate::{

@@ -3,9 +3,10 @@ use crate::{
     mm::{copy_to_virt, translated_ref, translated_refmut, translated_str},
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
-        suspend_current_and_run_next, SignalFlags, mmap, munmap,block_current_and_run_next,
+        suspend_current_and_run_next, mmap, munmap,block_current_and_run_next,
         TmsInner,
     }, 
+    signal::SignalFlags,
     config::PAGE_SIZE,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
@@ -192,7 +193,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
     if let Some(process) = pid2process(pid) {
-        if let Some(flag) = SignalFlags::from_bits(signal) {
+        if let Some(flag) = SignalFlags::from_bits(signal as usize) {
             process.inner_exclusive_access().signals |= flag;
             0
         } else {

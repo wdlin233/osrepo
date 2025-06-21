@@ -14,7 +14,6 @@ mod id;
 mod manager;
 mod process;
 mod processor;
-pub mod signal;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
@@ -48,9 +47,10 @@ pub use processor::{
 pub use processor::{current_kstack_top, current_trap_cx_user_va};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
-pub use signal::SignalFlags;
+use crate::signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
 pub use process::{Tms,TmsInner};
+
 
 #[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;

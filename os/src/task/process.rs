@@ -3,7 +3,7 @@
 use super::id::RecycleAllocator;
 use super::manager::insert_into_pid2process;
 use super::TaskControlBlock;
-use super::{add_task, SignalFlags};
+use super::{add_task};
 use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
@@ -19,6 +19,7 @@ use core::cell::RefMut;
 use core::arch::asm;
 use crate::timer::get_time;
 use crate::fs::File;
+use crate::signal::{SignalFlags, SigTable};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 #[cfg(target_arch = "loongarch64")]
@@ -70,6 +71,12 @@ pub struct ProcessControlBlockInner {
     pub stride: Stride,
     /// process tms
     pub tms: Tms,
+    /// signal table
+    pub sig_table: Arc<SigTable>,
+    /// signal mask
+    pub sig_mask: SignalFlags,
+    /// signal pending
+    pub sig_pending: SignalFlags,
 }
 
 ///record process times
@@ -210,6 +217,9 @@ impl ProcessControlBlock {
                     priority: 16,
                     stride: Stride::default(),
                     tms: Tms::new(),
+                    sig_table: Arc::new(SigTable::new()),
+                    sig_mask: SignalFlags::empty(),
+                    sig_pending: SignalFlags::empty(),
                 })
             },
         });
