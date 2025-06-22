@@ -5,8 +5,10 @@ use crate::fs::{
     MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
 
+use crate::data_flow;
 use crate::mm::{
-    copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer, translated_refmut, translated_str, PhysAddr, UserBuffer
+    copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
+    translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
 use crate::syscall::process;
 use crate::task::{current_process, current_user_token};
@@ -16,26 +18,29 @@ use crate::utils::{get_abs_path, SysErrNo};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
-use crate::data_flow;
 
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     debug!("in sys write");
     let process = current_process();
+    debug!("current pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.clone();
     if (fd as isize) < 0 || fd >= inner.fd_table.len() {
         //return Err(SysErrNo::EBADF);
+        debug!("fd len error");
         return -1;
     }
     //debug!("to check buf");
     if (buf as isize) < 0 || is_bad_address(buf as usize) || ((buf as usize) == 0 && len != 0) {
         //return Err(SysErrNo::EFAULT);
+        debug!("buf error");
         return -1;
     }
     //debug!("to check len, len :{}", len);
     if (len as isize) < 0 {
         //return Err(SysErrNo::EINVAL);
+        debug!("len < 0");
         return -1;
     }
     //debug!("to try get");
@@ -43,22 +48,22 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         if let Ok(readfile) = file.file() {
             if readfile.inode.is_dir() {
                 //return Err(SysErrNo::EISDIR);
+                debug!("si dir");
                 return -1;
             }
         }
         let file: Arc<dyn File> = file.any();
         if !file.writable() {
             //return Err(SysErrNo::EBADF);
+            debug!("not writable");
             return -1;
         }
         drop(inner);
         drop(process);
-        
+
         // release current task TCB manually to avoid multi-borrow
-        //debug!("to translated byte buffer");
-        let buf = UserBuffer::new(
-            safe_translated_byte_buffer(memory_set, buf, len).unwrap(),
-        );
+        debug!("in write,to translated byte buffer");
+        let buf = UserBuffer::new(safe_translated_byte_buffer(memory_set, buf, len).unwrap());
         //debug!("to write file");
         let ret = match file.write(buf) {
             Ok(n) => n as isize,
@@ -68,6 +73,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
                 return -1;
             }
         };
+        debug!("in write, to return , ret is :{}", ret);
         return ret;
     } else {
         //Err(SysErrNo::EBADF)
@@ -79,12 +85,14 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     debug!("in sys read");
     // let token = current_user_token();
     let process = current_process();
+    debug!("current pid is :{}", process.getpid());
     let mut inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.clone();
     if fd >= inner.fd_table.len() || (fd as isize) < 0 || (buf as isize) <= 0 {
         return -1;
     }
     if let Some(file) = &inner.fd_table.try_get(fd) {
+        debug!("in read try get ok");
         if let Ok(readfile) = file.file() {
             if readfile.inode.is_dir() {
                 //return Err(SysErrNo::EISDIR);
@@ -99,13 +107,14 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         drop(inner);
         drop(process);
 
-        //debug!("to translated byte buffer");
+        debug!("in read, to translated byte buffer");
         // release current task TCB manually to avoid multi-borrow
         let ret = file
             .read(UserBuffer::new(
                 safe_translated_byte_buffer(memory_set, buf, len).unwrap(),
             ))
             .unwrap();
+        debug!("in read ,to return, the ret is :{}", ret);
         ret as isize
     } else {
         //Err(SysErrNo::EBADF)
@@ -156,6 +165,7 @@ pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
 pub fn sys_close(fd: usize) -> isize {
     debug!("in sys close");
     let process = current_process();
+    debug!("in close, pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
@@ -163,7 +173,9 @@ pub fn sys_close(fd: usize) -> isize {
     if inner.fd_table.try_get(fd).is_none() {
         return -1;
     }
-    inner.fd_table.try_get(fd).take();
+    inner.fd_table.take(fd);
+    //inner.fs_info.remove(fd);
+    debug!("sys close ok");
     0
 }
 /// pipe syscall
@@ -199,21 +211,24 @@ pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
     );
     inner.fs_info.insert("pipe".to_string(), read_fd);
     inner.fs_info.insert("pipe".to_string(), write_fd);
-    
+
     use crate::mm::{PageTable, VirtAddr};
-    #[cfg(target_arch = "riscv64")]
-    use riscv::register::scause::{Exception, Trap};
     #[cfg(target_arch = "loongarch64")]
     use loongarch64::register::estat::{Exception, Trap};
+    #[cfg(target_arch = "riscv64")]
+    use riscv::register::scause::{Exception, Trap};
     let memory_set = &mut inner.memory_set.clone();
     let page_table = PageTable::from_token(memory_set.token());
-    
+
     // 写入第一个 u32 (read_fd)
     let fd_ptr1 = fd as usize;
     let va1 = VirtAddr::from(fd_ptr1);
     let vpn1 = va1.floor();
     // 确保页面有效且可写
-    if !page_table.translate(vpn1).map_or(false, |pte| pte.is_valid() && pte.writable()) {
+    if !page_table
+        .translate(vpn1)
+        .map_or(false, |pte| pte.is_valid() && pte.writable())
+    {
         memory_set.lazy_page_fault(vpn1, Trap::Exception(Exception::StorePageFault));
     }
     // 获取物理地址并写入
@@ -236,12 +251,15 @@ pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
     let fd_ptr2 = unsafe { fd.add(1) } as usize;
     let va2 = VirtAddr::from(fd_ptr2);
     let vpn2 = va2.floor();
-    
+
     // 确保页面有效且可写
-    if !page_table.translate(vpn2).map_or(false, |pte| pte.is_valid() && pte.writable()) {
+    if !page_table
+        .translate(vpn2)
+        .map_or(false, |pte| pte.is_valid() && pte.writable())
+    {
         memory_set.lazy_page_fault(vpn2, Trap::Exception(Exception::StorePageFault));
     }
-    
+
     // 获取物理地址并写入
     if let Some(pte) = page_table.translate(vpn2) {
         if pte.is_valid() && pte.writable() {
@@ -258,7 +276,7 @@ pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
             }
         }
     }
-    0 
+    0
 }
 /// dup syscall
 pub fn sys_dup(fd: usize) -> isize {

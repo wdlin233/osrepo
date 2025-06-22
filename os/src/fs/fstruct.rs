@@ -240,6 +240,12 @@ pub struct FsInfo {
     inner: UPSafeCell<FsInfoInner>,
 }
 
+impl Drop for FsInfo {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
 impl FsInfo {
     /// 只有initproc会调用
     pub fn new(cwd: String) -> Self {
@@ -257,17 +263,17 @@ impl FsInfo {
             }
         }
     }
-    pub fn from_another(_another: &Arc<FsInfo>) -> Self {
-        unimplemented!()
-        // unsafe {
-        //     Self {
-        //         inner: UPSafeCell::new(FsInfoInner {
-        //             cwd: another.get_cwd(),
-        //             exe: another.get_exe(),
-        //             fd2path: another.inner.get_unchecked_ref().fd2path.clone(),
-        //         }),
-        //     }
-        // }
+    pub fn from_another(another: &Arc<FsInfo>) -> Self {
+        //unimplemented!()
+        unsafe {
+            Self {
+                inner: UPSafeCell::new(FsInfoInner {
+                    cwd: another.get_cwd(),
+                    exe: another.get_exe(),
+                    fd2path: another.inner.get_unchecked_ref().fd2path.clone(),
+                }),
+            }
+        }
     }
     pub fn clear(&self) {
         let inner = self.get_mut();

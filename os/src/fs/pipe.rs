@@ -1,17 +1,20 @@
- use core::cmp::min;
+use core::cmp::min;
 
 #[allow(dead_code)]
-
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
 
-use crate::{fs::{Kstat, StMode}, hal::trap, sync::UPSafeCell, task::current_process};
+use crate::{
+    fs::{Kstat, StMode},
+    hal::trap,
+    sync::UPSafeCell,
+    task::current_process,
+};
 
-
-use super::{File};
-use crate::signal::{send_signal_to_thread, SignalFlags}; 
+use super::File;
+use crate::signal::{send_signal_to_thread, SignalFlags};
 use crate::task::{current_task, suspend_current_and_run_next};
 use crate::utils::SysErrNo;
 use crate::{mm::UserBuffer, syscall::PollEvents, utils::SyscallRet};
@@ -213,6 +216,7 @@ impl File for Pipe {
         self.writable
     }
     fn read(&self, mut buf: UserBuffer) -> SyscallRet {
+        //debug!("in pipe read");
         assert!(self.readable());
         let buf_len = buf.len();
         let mut read_size = 0usize;
@@ -233,6 +237,7 @@ impl File for Pipe {
                     return Ok(read_size);
                 }
                 drop(ring_buffer);
+                //debug!("loop read = 0 ,to suspend");
                 suspend_current_and_run_next();
                 continue;
             } else {

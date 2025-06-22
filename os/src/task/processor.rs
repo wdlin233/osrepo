@@ -37,10 +37,10 @@ impl Processor {
 
     ///Get mutable reference to `idle_task_cx`
     fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
-        info!(
-            "get_idle_task_cx_ptr: idle task cx ptr: {:p}",
-            &self.idle_task_cx
-        );
+        // info!(
+        //     "get_idle_task_cx_ptr: idle task cx ptr: {:p}",
+        //     &self.idle_task_cx
+        // );
         &mut self.idle_task_cx as *mut _
     }
 
@@ -83,11 +83,11 @@ pub fn run_tasks() {
                 pgdl::set_base(pgd); //设置根页表基地址
                 asid::set_asid(pid); //设置ASID
             }
-            debug!(
-                "run_tasks: pid: {}, tid: {}",
-                task.process.upgrade().unwrap().getpid(),
-                task.inner_exclusive_access().res.as_ref().unwrap().tid
-            );
+            // debug!(
+            //     "run_tasks: pid: {}, tid: {}",
+            //     task.process.upgrade().unwrap().getpid(),
+            //     task.inner_exclusive_access().res.as_ref().unwrap().tid
+            // );
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
@@ -176,7 +176,7 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.exclusive_access();
     let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);
-    debug!("in schedule, to switch");
+    //debug!("in schedule, to switch");
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }

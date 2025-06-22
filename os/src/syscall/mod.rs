@@ -174,7 +174,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID => sys_getppid(),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32, args[2]),
-        SYSCALL_FORK => sys_fork(),
+        SYSCALL_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
         SYSCALL_YIELD => sys_yield(),
 
         SYSCALL_LINKAT => sys_linkat(args[1] as *const u8, args[3] as *const u8),
@@ -193,7 +193,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_EXIT => sys_exit(args[0] as i32),
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_GETTID => sys_gettid(),
-        SYSCALL_EXEC => sys_exec(args[0] as *const u8, args[1] as *const usize),
+        SYSCALL_EXEC => sys_exec(
+            args[0] as *const u8,
+            args[1] as *const usize,
+            args[2] as *const usize,
+        ),
         SYSCALL_GETTIMEOFDAY => sys_get_time(args[0] as *mut TimeVal, args[1]),
         SYSCALL_MMAP => sys_mmap(
             args[0],

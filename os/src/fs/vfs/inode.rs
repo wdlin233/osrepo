@@ -63,7 +63,9 @@ impl File for OSInode {
     }
 
     fn write(&self, buf: UserBuffer) -> SyscallRet {
+        //debug!("in inode write ok");
         let mut inner = self.inner.lock();
+        //debug!("in inode write,get inner ok");
         let mut total_write_size = 0usize;
         for slice in buf.buffers.iter() {
             let write_size = self.inode.write_at(inner.offset, *slice)?;
