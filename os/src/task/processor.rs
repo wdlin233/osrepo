@@ -11,10 +11,12 @@ use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
 use crate::config::PAGE_SIZE_BITS;
 use crate::hal::trap::TrapContext;
 use crate::sync::UPSafeCell;
+use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
 use core::arch::asm;
 use lazy_static::*;
+use crate::mm::MapPermission;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::{asid, pgdl};
 
@@ -183,15 +185,14 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
 }
 
 /// Create a MapArea for the current task
-pub fn mmap(addr: usize, len: usize, port: usize) -> isize {
-    current_task()
-        .unwrap()
-        .process
-        .upgrade()
-        .unwrap()
+pub fn mmap(
+        addr: usize, len: usize, port: MapPermission, 
+        flags: MmapFlags, fd: Option<Arc<crate::fs::OSInode>>, off: usize
+    ) -> usize {
+    current_process()
         .inner_exclusive_access()
         .memory_set
-        .mmap(addr, len, port)
+        .mmap(addr, len, port, flags, fd, off)
 }
 
 /// Unmap the MapArea for the current task

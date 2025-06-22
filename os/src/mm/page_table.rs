@@ -316,11 +316,13 @@ impl PageTable {
         }
     }
     /// remove the map between virtual page number and physical page number
-    #[allow(unused)]
     pub fn unmap(&mut self, vpn: VirtPageNum) {
-        let pte = self.find_pte(vpn).unwrap();
-        assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
-        *pte = PageTableEntry::empty();
+        // 如果不存在,即lazy allocation,跳过即可
+        if let Some(pte) = self.find_pte(vpn) {
+            if pte.is_valid() {
+                *pte = PageTableEntry::empty();
+            }
+        }
     }
     /// get the page table entry from the virtual page number
     /// *pte is equirvalent to pte.clone()

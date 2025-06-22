@@ -64,3 +64,11 @@ pub const YIELD_CHECK: usize = 90;
 pub const BLOCK_SIZE: usize = 4096;
 /// The io block size of the disk layer
 pub const IO_BLOCK_SIZE: usize = 512;
+
+pub const THREAD_MAX_NUM: usize = 3000;
+pub const USER_SPACE_SIZE: usize = 0x30_0000_0000;
+pub const USER_TRAP_CONTEXT_TOP: usize = USER_SPACE_SIZE;
+pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
+    - PAGE_SIZE * THREAD_MAX_NUM
+    - USER_STACK_SIZE * THREAD_MAX_NUM
+    - PAGE_SIZE;

@@ -1,15 +1,15 @@
 use crate::{
     config::PAGE_SIZE,
-    fs::{open, OpenFlags, NONE_MODE},
-    mm::{copy_to_virt, translated_ref, translated_refmut, translated_str},
+    fs::{open, vfs::File, OpenFlags, NONE_MODE},
+    mm::{copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref, translated_refmut, translated_str, MapPermission},
     signal::SignalFlags,
-    syscall::process,
+    syscall::{process, MmapFlags, MmapProt},
     task::{
         block_current_and_run_next, current_process, current_task, current_user_token,
         exit_current_and_run_next, mmap, munmap, pid2process, suspend_current_and_run_next,
         TmsInner,
     },
-    utils::{c_ptr_to_string, get_abs_path, trim_start_slash, SysErrNo, SyscallRet},
+    utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
@@ -294,38 +294,92 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
     0
 }
 
-/// YOUR JOB: Implement mmap.
-pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: usize) -> isize {
+/// mmap syscall ref: https://man7.org/linux/man-pages/man2/mmap.2.html
+/// `flags` determins whether updates mapping,
+/// `fd` as file descriptor, `off` as offset in file
+pub fn sys_mmap(
+    addr: usize, len: usize, port: u32, 
+    flags: u32, fd: usize, off: usize
+) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_mmap)(start: 0x{start:x}, len: 0x{len:x}, port: 0x{port:x})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    const PORT_MASK: usize = 0b111;
-
-    let aligned_start = addr % PAGE_SIZE == 0;
-    let port_valid = (port as usize & !PORT_MASK) == 0;
-    let port_not_none = (port as usize & PORT_MASK) != 0;
-
-    //trace!("each condition: aligned_start={}, port_valid={}, port_not_none={}", aligned_start, port_valid, port_not_none);
-    if aligned_start && port_valid && port_not_none {
-        debug!("to mmap");
-        return mmap(addr, len, port as usize);
+    if flags == 0 {
+        return SysErrNo::EINVAL as isize;
     }
-    -1
+    let flags = MmapFlags::from_bits(flags).unwrap();
+    if fd == usize::MAX && !flags.contains(MmapFlags::MAP_ANONYMOUS) {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if len == 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    let mmap_prot = MmapProt::from_bits(port).unwrap();
+    let permission: MapPermission = mmap_prot.into();
+    if flags.contains(MmapFlags::MAP_FIXED) && addr == 0 {
+        return SysErrNo::EPERM as isize;
+    }
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let len = page_round_up(len);
+    if fd == usize::MAX {
+        let ret = inner.memory_set.mmap(
+            addr, len, permission, 
+            flags, None, usize::MAX
+        );
+        return ret as isize;
+    }
+    if flags.contains(MmapFlags::MAP_ANONYMOUS) {
+        // anonymous mapping
+        let ret = inner.memory_set.mmap(
+            0, 1, MapPermission::empty(), 
+            flags, None, usize::MAX
+        );
+        insert_bad_address(ret);
+        debug!("bad address is {:x}", ret);
+        return ret as isize;
+    }
+    // file mapping
+    let inode = inner.fd_table.get(fd);
+    let file = match inode.file() {
+        Ok(n) => n,
+        Err(_) => return SysErrNo::EBADF as isize, //?
+    };
+    #[cfg(target_arch = "riscv64")]
+    if (permission.contains(MapPermission::R) && !file.readable())
+        || (permission.contains(MapPermission::W) && !file.writable())
+        || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
+    {
+        //如果需要读/写/执行方式映射，必须要求文件可读
+        return SysErrNo::EACCES as isize;
+    }
+    #[cfg(target_arch = "loongarch64")]
+    if (permission.contains(MapPermission::NR) && file.readable())
+        || (permission.contains(MapPermission::W) && !file.writable())
+        || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
+    {
+        //如果需要读/写/执行方式映射，必须要求文件可读
+        return SysErrNo::EACCES as isize;
+    }
+    let ret = inner
+        .memory_set
+        .mmap(addr, len, permission, flags, Some(file), off);
+    debug!("[sys_mmap] alloc addr={:#x}", ret);
+    return ret as isize;
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(start: usize, len: usize) -> isize {
-    // trace!(
-    //     "kernel:pid[{}] sys_munmap(start: 0x{start:x}, len: 0x{len:x})",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
-    let aligned_start = start % PAGE_SIZE == 0;
-    if aligned_start {
-        debug!("to munmap");
-        return munmap(start, len);
+pub fn sys_munmap(addr: usize, len: usize) -> isize {
+    debug!("[sys_munmap] addr={:#x}, len={:#x}", addr, len);
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let len = page_round_up(len);
+    if is_bad_address(addr) {
+        remove_bad_address(addr);
     }
-    -1
+    inner.memory_set.munmap(addr, len)
 }
 
 // change data segment size

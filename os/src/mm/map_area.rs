@@ -1,11 +1,8 @@
 use crate::{
     config::PAGE_SIZE,
-    fs::{OSInode},
+    fs::OSInode,
     mm::{
-        PTEFlags, PageTable, VPNRange,
-        VirtPageNum, PhysPageNum, VirtAddr, PhysAddr, FrameTracker, 
-        frame_alloc,
-        address::StepByOne,
+        address::StepByOne, frame_alloc, group::GROUP_SHARE, FrameTracker, PTEFlags, PageTable, PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum
     },
     syscall::MmapFlags,
 };
@@ -141,6 +138,36 @@ impl MapArea {
     }
     pub fn flags(&self) -> PTEFlags {
         PTEFlags::from_bits(self.map_perm.bits).unwrap()
+    }
+    pub fn new_mmap(
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_perm: MapPermission,
+        area_type: MapAreaType,
+        file: Option<Arc<OSInode>>,
+        offset: usize,
+        mmap_flags: MmapFlags,
+    ) -> Self {
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        let groupid;
+        if mmap_flags.contains(MmapFlags::MAP_SHARED) {
+            groupid = 0;
+        } else {
+            groupid = GROUP_SHARE.lock().alloc_id();
+            GROUP_SHARE.lock().add_area(groupid);
+        }
+        Self {
+            vpn_range: VPNRange::new(start_vpn, end_vpn),
+            data_frames: BTreeMap::new(),
+            #[cfg(target_arch = "riscv64")] map_type,
+            map_perm,
+            area_type,
+            mmap_file: MmapFile::new(file, offset),
+            mmap_flags,
+            groupid,
+        }
     }
 }
 

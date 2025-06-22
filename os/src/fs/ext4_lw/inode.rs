@@ -340,14 +340,13 @@ impl Inode for Ext4Inode {
 
 impl Drop for Ext4Inode {
     fn drop(&mut self) {
-        let _path = self.path();
-        unimplemented!()
-        // let inner = self.inner.get_unchecked_mut();
-        // if inner.delay {
-        //     debug!("Ext4Inode delays unlink {:?}", path);
-        //     inner.f.file_remove(&path);
-        // }
-        // inner.f.file_close().expect("failed to close fd");
+        let path = self.path();
+        let inner = self.inner.get_unchecked_mut();
+        if inner.delay {
+            debug!("Ext4Inode delays unlink {:?}", path);
+            inner.f.file_remove(&path);
+        }
+        inner.f.file_close().expect("failed to close fd");
     }
 }
 
