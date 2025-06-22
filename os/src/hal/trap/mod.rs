@@ -243,7 +243,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             //系统调用
             cx.sepc += 4;
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
-            let result = syscall(cx.x[11], [cx.x[4], cx.x[5], cx.x[6], cx.x[7]]) as usize;
+            let result = syscall(cx.x[11], [cx.x[4], cx.x[5], cx.x[6], cx.x[7], cx.x[8], cx.x[9]]) as usize;
             cx = current_trap_cx();
             cx.x[4] = result;
         }

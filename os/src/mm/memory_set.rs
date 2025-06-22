@@ -11,8 +11,6 @@ use crate::mm::page_fault_handler::{lazy_page_fault, mmap_read_page_fault, mmap_
 //,USER_STACK_SIZE};
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
-#[cfg(target_arch = "loongarch64")]
-use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
 #[cfg(target_arch = "riscv64")]
 use crate::hal::{
     ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
@@ -46,15 +44,126 @@ pub fn kernel_token() -> usize {
     KERNEL_SPACE.exclusive_access().token()
 }
 
-/// address space
 pub struct MemorySet {
+    /// inner data
+    pub inner: UPSafeCell<MemorySetInner>,
+}
+
+impl MemorySet {
+    pub fn new(memory_set: MemorySetInner) -> Self {
+        unsafe {
+            Self {
+                inner: UPSafeCell::new(memory_set),
+            }
+        }
+    }
+    pub fn get_mut(&self) -> &mut MemorySetInner {
+        self.inner.get_unchecked_mut()
+    }
+    pub fn get_ref(&self) -> &MemorySetInner {
+        self.inner.get_unchecked_ref()
+    }
+    // 对MemorySetInner封装
+    #[inline(always)]
+    pub fn token(&self) -> usize {
+        self.inner.get_unchecked_mut().token()
+    }
+    #[inline(always)]
+    pub fn insert_framed_area(
+        &self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+        area_type: MapAreaType,
+    ) {
+        self.inner.get_unchecked_mut().insert_framed_area(
+            start_va,
+            end_va,
+            permission,
+            area_type,
+        );
+    }
+    #[inline(always)]
+    pub fn remove_area_with_start_vpn(&self, start_vpn: VirtPageNum) {
+        self.inner.get_unchecked_mut().remove_area_with_start_vpn(start_vpn);
+    }
+    #[inline(always)]
+    pub fn push(&self, map_area: MapArea, data: Option<&[u8]>) {
+        self.inner.get_unchecked_mut().push(map_area, data);
+    }
+    #[cfg(target_arch = "riscv64")]
+    #[inline(always)]
+    pub fn map_trampoline(&self) {
+        self.inner.get_unchecked_mut().map_trampoline();
+    }
+    #[cfg(target_arch = "riscv64")]
+    #[inline(always)]
+    pub fn new_kernel() -> Self {
+        Self::new(MemorySetInner::new_kernel())
+    }
+    #[inline(always)]
+    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
+        let (memory_set, user_sp_base, entry_point) = MemorySetInner::from_elf(elf_data);
+        (Self::new(memory_set), user_sp_base, entry_point)
+    }
+    #[inline(always)]
+    pub fn from_existed_user(user_space: &MemorySet) -> Self {
+        Self::new(MemorySetInner::from_existed_user(
+            user_space.inner.get_unchecked_mut()
+        ))
+    }
+    #[cfg(target_arch = "riscv64")]
+    #[inline(always)]
+    pub fn activate(&self) {
+        self.inner.get_unchecked_ref().activate();
+    }
+    #[inline(always)]
+    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry>
+    {
+        self.inner.get_unchecked_ref().translate(vpn)
+    }
+    #[inline(always)]
+    pub fn recycle_data_pages(&self) {
+        self.inner.get_unchecked_mut().recycle_data_pages();
+    }
+    #[inline(always)]
+    pub fn shrink_to(&self, start: VirtAddr, new_end: VirtAddr) -> bool {
+        self.inner.get_unchecked_mut().shrink_to(start, new_end)
+    }
+    #[inline(always)]
+    pub fn append_to(&self, start: VirtAddr, new_end: VirtAddr) -> bool {
+        self.inner.get_unchecked_mut().append_to(start, new_end)
+    }
+    #[inline(always)]
+    pub fn lazy_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
+        self.inner.get_unchecked_mut().lazy_page_fault(vpn, scause)
+    }    
+    #[inline(always)]
+    pub fn all_valid(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        self.inner.get_unchecked_mut().all_invalid(start, end)
+    }
+    #[inline(always)]
+    pub fn all_invalid(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        self.inner.get_unchecked_mut().all_invalid(start, end)
+    }
+    #[inline(always)]
+    pub fn mmap(&self, start: usize, len: usize, port: usize) -> isize {
+        self.inner.get_unchecked_mut().mmap(start, len, port)
+    }
+    pub fn munmap(&self, start: usize, len: usize) -> isize {
+        self.inner.get_unchecked_mut().munmap(start, len)
+    }
+}
+
+/// address space
+pub struct MemorySetInner {
     /// page table
     pub page_table: PageTable,
     /// areas
     pub areas: Vec<MapArea>,
 }
 
-impl MemorySet {
+impl MemorySetInner {
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
         Self {
@@ -461,7 +570,8 @@ impl MemorySet {
 #[cfg(target_arch = "riscv64")]
 #[allow(unused)]
 pub fn remap_test() {
-    let mut kernel_space = KERNEL_SPACE.exclusive_access();
+    let space = KERNEL_SPACE.exclusive_access();
+    let mut kernel_space = space.inner.exclusive_access();
     let mid_text: VirtAddr = ((stext as usize + etext as usize) / 2).into();
     let mid_rodata: VirtAddr = ((srodata as usize + erodata as usize) / 2).into();
     let mid_data: VirtAddr = ((sdata as usize + edata as usize) / 2).into();
@@ -485,7 +595,7 @@ pub fn remap_test() {
 }
 
 // RV passed, compatible with LA
-impl MemorySet {
+impl MemorySetInner {
     /// Check if all pages in the range are mapped.
     fn all_valid(&self, start: VirtAddr, end: VirtAddr) -> bool {
         let start_vpn = start.floor();

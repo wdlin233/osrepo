@@ -43,7 +43,7 @@ pub struct ProcessControlBlockInner {
     /// is zombie?
     pub is_zombie: bool,
     /// memory set(address space)
-    pub memory_set: MemorySet,
+    pub memory_set: Arc<MemorySet>,
     /// parent process
     pub parent: Option<Weak<ProcessControlBlock>>,
     /// children process
@@ -231,7 +231,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
-                    memory_set,
+                    memory_set: Arc::new(memory_set),
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
@@ -306,7 +306,7 @@ impl ProcessControlBlock {
         let args_len = args.len();
         // substitute memory_set
         //trace!("kernel: exec .. substitute memory_set");
-        self.inner_exclusive_access().memory_set = memory_set;
+        self.inner_exclusive_access().memory_set = Arc::new(memory_set);
         // then we alloc user resource for main thread again
         // since memory_set has been changed
         //trace!("kernel: exec .. alloc user resource for main thread again");
@@ -451,7 +451,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
-                    memory_set,
+                    memory_set: Arc::new(memory_set),
                     fs_info,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),

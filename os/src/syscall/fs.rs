@@ -6,8 +6,7 @@ use crate::fs::{
 }; //::{link, unlink}
 
 use crate::mm::{
-    copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
-    translated_refmut, translated_str, UserBuffer,
+    copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer, translated_refmut, translated_str, PhysAddr, UserBuffer
 };
 use crate::syscall::process;
 use crate::task::{current_process, current_user_token};
@@ -17,12 +16,14 @@ use crate::utils::{get_abs_path, SysErrNo};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use crate::data_flow;
+
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     debug!("in sys write");
-    let token = current_user_token();
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
+    let memory_set = inner.memory_set.clone();
     if (fd as isize) < 0 || fd >= inner.fd_table.len() {
         //return Err(SysErrNo::EBADF);
         return -1;
@@ -50,12 +51,16 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
             //return Err(SysErrNo::EBADF);
             return -1;
         }
-        let file = file.clone();
+        drop(inner);
+        drop(process);
+        
         // release current task TCB manually to avoid multi-borrow
         //debug!("to translated byte buffer");
-        let ret = match file.write(UserBuffer::new(
-            safe_translated_byte_buffer(&mut inner.memory_set, buf, len).unwrap(),
-        )) {
+        let buf = UserBuffer::new(
+            safe_translated_byte_buffer(memory_set, buf, len).unwrap(),
+        );
+        //debug!("to write file");
+        let ret = match file.write(buf) {
             Ok(n) => n as isize,
             Err(e) => {
                 info!("kernel: sys_write .. file.write error: {:?}", e);
@@ -63,9 +68,6 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
                 return -1;
             }
         };
-        //debug!("write ok");
-        drop(inner);
-        drop(process);
         return ret;
     } else {
         //Err(SysErrNo::EBADF)
@@ -78,6 +80,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     // let token = current_user_token();
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
+    let memory_set = inner.memory_set.clone();
     if fd >= inner.fd_table.len() || (fd as isize) < 0 || (buf as isize) <= 0 {
         return -1;
     }
@@ -93,31 +96,21 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
             //return Err(SysErrNo::EBADF);
             return -1;
         }
+        drop(inner);
+        drop(process);
+
+        //debug!("to translated byte buffer");
         // release current task TCB manually to avoid multi-borrow
         let ret = file
             .read(UserBuffer::new(
-                safe_translated_byte_buffer(&mut inner.memory_set, buf, len).unwrap(),
+                safe_translated_byte_buffer(memory_set, buf, len).unwrap(),
             ))
             .unwrap();
-        drop(inner);
-        drop(process);
         ret as isize
     } else {
         //Err(SysErrNo::EBADF)
         -1
     }
-    // if let Some(file) = &inner.fd_table.try_get(fd) {
-    //     let file = file.clone();
-    //     if !file.readable() {
-    //         return -1;
-    //     }
-    //     // release current task TCB manually to avoid multi-borrow
-    //     drop(inner);
-    //     //trace!("kernel: sys_read .. file.read");
-    //     file.read(UserBuffer::new(translated_byte_buffer(token, buf, len)).as_bytes_mut()) as isize
-    // } else {
-    //     -1
-    // }
 }
 /// open sys
 pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
@@ -177,38 +170,95 @@ pub fn sys_close(fd: usize) -> isize {
 pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
-    let token = inner.get_user_token();
+    //debug!("[sys_pipe2] fd is {:x},flags is {}", fd as usize, flags);
+
     let mut pipe_flags = OpenFlags::empty();
     if flags == 0x80000 {
+        //设置O_CLOEXEC
         pipe_flags |= OpenFlags::O_CLOEXEC;
     }
 
     let (read_pipe, write_pipe) = make_pipe();
-    let read_fd = inner.fd_table.alloc_fd().unwrap();
+    let read_fd = match inner.fd_table.alloc_fd() {
+        Ok(fd) => fd,
+        Err(_) => return -1,
+    };
     inner.fd_table.set(
         read_fd,
         FileDescriptor::new(pipe_flags, FileClass::Abs(read_pipe)),
     );
-    let write_fd = inner.fd_table.alloc_fd().unwrap();
+    let write_fd = match inner.fd_table.alloc_fd() {
+        Ok(fd) => fd,
+        Err(_) => {
+            return -1;
+        }
+    };
     inner.fd_table.set(
         write_fd,
         FileDescriptor::new(pipe_flags, FileClass::Abs(write_pipe)),
     );
     inner.fs_info.insert("pipe".to_string(), read_fd);
     inner.fs_info.insert("pipe".to_string(), write_fd);
-    debug!("to copy to virt");
-    drop(inner);
-    copy_to_virt(&(read_fd as u32), fd);
-    copy_to_virt(&(write_fd as u32), unsafe { fd.add(1) });
-    0
+    
+    use crate::mm::{PageTable, VirtAddr};
+    #[cfg(target_arch = "riscv64")]
+    use riscv::register::scause::{Exception, Trap};
+    #[cfg(target_arch = "loongarch64")]
+    use loongarch64::register::estat::{Exception, Trap};
+    let memory_set = &mut inner.memory_set.clone();
+    let page_table = PageTable::from_token(memory_set.token());
+    
+    // 写入第一个 u32 (read_fd)
+    let fd_ptr1 = fd as usize;
+    let va1 = VirtAddr::from(fd_ptr1);
+    let vpn1 = va1.floor();
+    // 确保页面有效且可写
+    if !page_table.translate(vpn1).map_or(false, |pte| pte.is_valid() && pte.writable()) {
+        memory_set.lazy_page_fault(vpn1, Trap::Exception(Exception::StorePageFault));
+    }
+    // 获取物理地址并写入
+    if let Some(pte) = page_table.translate(vpn1) {
+        if pte.is_valid() && pte.writable() {
+            let ppn = pte.ppn();
+            let phys_addr: PhysAddr = ppn.into();
+            #[cfg(target_arch = "riscv64")]
+            let kernel_va = phys_addr.0 | 0x8020_0000;
+            #[cfg(target_arch = "loongarch64")]
+            let kernel_va = phys_addr.0 | 0x9000_0000_0000_0000;
 
-    // inner.fd_table.try_get(read_fd) = Some(pipe_read);
-    // let write_fd = inner.alloc_fd();
+            let read_addr = kernel_va + va1.page_offset();
+            unsafe {
+                *(read_addr as *mut u32) = read_fd as u32;
+            }
+        }
+    }
+    // 写入第二个 u32 (write_fd)
+    let fd_ptr2 = unsafe { fd.add(1) } as usize;
+    let va2 = VirtAddr::from(fd_ptr2);
+    let vpn2 = va2.floor();
+    
+    // 确保页面有效且可写
+    if !page_table.translate(vpn2).map_or(false, |pte| pte.is_valid() && pte.writable()) {
+        memory_set.lazy_page_fault(vpn2, Trap::Exception(Exception::StorePageFault));
+    }
+    
+    // 获取物理地址并写入
+    if let Some(pte) = page_table.translate(vpn2) {
+        if pte.is_valid() && pte.writable() {
+            let ppn = pte.ppn();
+            let phys_addr: PhysAddr = ppn.into();
+            #[cfg(target_arch = "riscv64")]
+            let kernel_va = phys_addr.0 | 0x8020_0000;
+            #[cfg(target_arch = "loongarch64")]
+            let kernel_va = phys_addr.0 | 0x9000_0000_0000_0000;
 
-    //inner.fd_table.try_get(write_fd) = Some(pipe_write);
-    //*translated_refmut(token, pipe) = read_fd;
-    //*translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
-    //0
+            let write_addr = kernel_va + va2.page_offset();
+            unsafe {
+                *(write_addr as *mut u32) = write_fd as u32;
+            }
+        }
+    }
+    0 
 }
 /// dup syscall
 pub fn sys_dup(fd: usize) -> isize {
@@ -299,7 +349,7 @@ pub fn sys_getcwd(buf: *const u8, size: usize) -> isize {
         return -1;
     }
     let mut buffer =
-        UserBuffer::new(safe_translated_byte_buffer(&mut inner.memory_set, buf, size).unwrap());
+        UserBuffer::new(safe_translated_byte_buffer(inner.memory_set.clone(), buf, size).unwrap());
     buffer.write(inner.fs_info.cwd_as_bytes());
     buf as isize
 }
@@ -407,7 +457,7 @@ pub fn sys_getdents64(fd: usize, buf: *const u8, len: usize) -> isize {
         return -1;
     }
     let mut buffer =
-        UserBuffer::new(safe_translated_byte_buffer(&mut inner.memory_set, buf, len).unwrap());
+        UserBuffer::new(safe_translated_byte_buffer(inner.memory_set.clone(), buf, len).unwrap());
     let file = inner.fd_table.get(fd).file().unwrap();
     let off;
     let check_off = file.lseek(0, SEEK_CUR);

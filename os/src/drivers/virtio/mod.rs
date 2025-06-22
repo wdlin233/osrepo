@@ -68,6 +68,8 @@ unsafe impl Hal for VirtIoHalImpl {
         #[cfg(target_arch = "riscv64")]
         return KERNEL_SPACE
             .exclusive_access()
+            .inner
+            .exclusive_access()
             .page_table
             .translate_va(VirtAddr::from(buffer.as_ptr() as *const usize as usize))
             .unwrap()

@@ -403,7 +403,7 @@ pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
 }
 
 pub fn safe_translated_byte_buffer(
-    memory_set: &mut MemorySet,
+    memory_set: Arc<MemorySet>,
     ptr: *const u8,
     len: usize,
 ) -> Option<Vec<&'static mut [u8]>> {
@@ -545,6 +545,7 @@ pub struct UserBuffer {
 impl UserBuffer {
     ///Create a `UserBuffer` by parameter
     pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
+        debug!("UserBuffer::new: buffers: {:?}", buffers);
         Self { buffers }
     }
     pub fn new_single(buffer: &'static mut [u8]) -> Self {
