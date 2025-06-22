@@ -13,20 +13,20 @@
 //! to [`syscall()`].
 
 mod context;
-#[cfg(target_arch = "loongarch64")] mod trap;
+#[cfg(target_arch = "loongarch64")]
+mod trap;
 
+use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+use crate::println;
+pub use crate::signal::SignalFlags;
 use crate::syscall::syscall;
 use crate::task::{
-    check_signals_of_current, current_add_signal, current_trap_cx,
+    check_signals_of_current, current_add_signal, current_process, current_trap_cx,
     current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
-    current_process,
 };
-use crate::println;
-use crate::config::{TICKS_PER_SEC, MSEC_PER_SEC};
-use crate::timer::{check_timer};
-pub use crate::signal::SignalFlags;
+use crate::timer::check_timer;
 
-#[cfg(target_arch = "riscv64")] 
+#[cfg(target_arch = "riscv64")]
 use crate::{
     config::TRAMPOLINE,
     task::current_trap_cx_user_va,
@@ -41,12 +41,6 @@ use crate::{
 
 use core::arch::{asm, global_asm};
 
-#[cfg(target_arch = "riscv64")]
-use riscv::register::{
-    mtvec::TrapMode,
-    scause::{self, Exception, Interrupt, Trap},
-    sie, stval, stvec, satp,
-};
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::{
     register::{
@@ -56,6 +50,13 @@ use loongarch64::{
     },
     time::get_timer_freq,
 };
+#[cfg(target_arch = "riscv64")]
+use riscv::register::{
+    mtvec::TrapMode,
+    satp,
+    scause::{self, Exception, Interrupt, Trap},
+    sie, stval, stvec,
+};
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("trap_rv.s"));
@@ -64,7 +65,7 @@ global_asm!(include_str!("trap_la.s"));
 
 /// Initialize trap handling
 pub fn init() {
-    #[cfg(target_arch = "riscv64")] 
+    #[cfg(target_arch = "riscv64")]
     set_kernel_trap_entry();
     #[cfg(target_arch = "loongarch64")]
     {
@@ -111,10 +112,7 @@ fn set_kernel_trap_entry() {
     }
     #[cfg(target_arch = "riscv64")]
     unsafe {
-        stvec::write(
-            __trap_from_kernel as usize, 
-            TrapMode::Direct
-        );
+        stvec::write(__trap_from_kernel as usize, TrapMode::Direct);
     }
 
     #[cfg(target_arch = "loongarch64")]
@@ -125,10 +123,7 @@ fn set_kernel_trap_entry() {
 fn set_user_trap_entry() {
     #[cfg(target_arch = "riscv64")]
     unsafe {
-        stvec::write(
-            TRAMPOLINE as usize, 
-            TrapMode::Direct
-        );
+        stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
     }
 
     #[cfg(target_arch = "loongarch64")]
@@ -141,7 +136,7 @@ pub fn enable_timer_interrupt() {
     unsafe {
         sie::set_stimer();
     }
-    #[cfg(target_arch = "loongarch64")] 
+    #[cfg(target_arch = "loongarch64")]
     {
         let timer_freq = get_timer_freq();
         ticlr::clear_timer_interrupt();
@@ -169,14 +164,19 @@ pub fn trap_handler() -> ! {
     // trace!("into {:?}", scause.cause());
     // to get kernel time
     let in_kernel_time = get_time();
-    current_process().inner_exclusive_access().set_utime(in_kernel_time);
+    current_process()
+        .inner_exclusive_access()
+        .set_utime(in_kernel_time);
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway
             let mut cx = current_trap_cx();
             cx.sepc += 4;
             // get system call return value
-            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12], cx.x[13]]);
+            let result = syscall(
+                cx.x[17],
+                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
+            );
             // cx is changed during sys_exec, so we have to call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize;
@@ -217,7 +217,9 @@ pub fn trap_handler() -> ! {
         exit_current_and_run_next(errno);
     }
     let out_kernel_time = get_time();
-    current_process().inner_exclusive_access().set_stime(in_kernel_time,out_kernel_time);
+    current_process()
+        .inner_exclusive_access()
+        .set_stime(in_kernel_time, out_kernel_time);
     trap_return();
 }
 
@@ -233,7 +235,9 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
     }
     // to get kernel time
     let in_kernel_time = get_time();
-    current_process().inner_exclusive_access().set_utime(in_kernel_time);
+    current_process()
+        .inner_exclusive_access()
+        .set_utime(in_kernel_time);
     match estat.cause() {
         Trap::Exception(Exception::Syscall) => {
             //系统调用

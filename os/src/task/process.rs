@@ -1,31 +1,32 @@
 //! Implementation of  [`ProcessControlBlock`]
 
+use super::add_task;
 use super::id::RecycleAllocator;
 use super::manager::insert_into_pid2process;
-use super::TaskControlBlock;
-use super::{add_task};
-use super::{pid_alloc, PidHandle};
 use super::stride::Stride;
+use super::TaskControlBlock;
+use super::{pid_alloc, PidHandle};
+#[cfg(target_arch = "loongarch64")]
+use crate::config::PAGE_SIZE_BITS;
+use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
-use crate::mm::{MemorySet, translated_refmut};
-use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::hal::trap::{trap_handler, TrapContext};
-use crate::users::{User,current_user};
+#[cfg(target_arch = "riscv64")]
+use crate::mm::KERNEL_SPACE;
+use crate::mm::{translated_refmut, MemorySet};
+use crate::signal::{SigTable, SignalFlags};
+use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::timer::get_time;
+use crate::users::{current_user, User};
+use crate::utils::{get_abs_path, is_abs_path};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::cell::RefMut;
 use core::arch::asm;
-use crate::timer::get_time;
-use crate::fs::File;
-use crate::signal::{SignalFlags, SigTable};
-#[cfg(target_arch = "riscv64")]
-use crate::mm::KERNEL_SPACE;
+use core::cell::RefMut;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::pgdl;
-#[cfg(target_arch = "loongarch64")]
-use crate::config::PAGE_SIZE_BITS;
 
 /// Process Control Block
 pub struct ProcessControlBlock {
@@ -51,7 +52,7 @@ pub struct ProcessControlBlockInner {
     pub exit_code: i32,
     /// file descriptor table
     pub fd_table: Arc<FdTable>,
-    /// 
+    ///
     pub fs_info: Arc<FsInfo>,
     /// signal flags
     pub signals: SignalFlags,
@@ -80,7 +81,7 @@ pub struct ProcessControlBlockInner {
 }
 
 ///record process times
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Tms {
     /// when a process run in user
     pub begin_urun_time: usize,
@@ -91,13 +92,13 @@ pub struct Tms {
 }
 
 /// tms interface
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct TmsInner {
     /// this process user time
     pub tms_utime: usize,
     /// this process syscall time
     pub tms_stime: usize,
-    /// this process child user time 
+    /// this process child user time
     pub tms_cutime: usize,
     /// this process child user time
     pub tms_cstime: usize,
@@ -105,47 +106,55 @@ pub struct TmsInner {
 
 impl Tms {
     /// new a Tms
-    pub fn new()->Self {
+    pub fn new() -> Self {
         Tms {
-            begin_urun_time:0,
-            one_stime:0,
+            begin_urun_time: 0,
+            one_stime: 0,
             inner: TmsInner {
-                tms_utime:0,
-                tms_stime:0,
-                tms_cutime:0,
-                tms_cstime:0,
+                tms_utime: 0,
+                tms_stime: 0,
+                tms_cutime: 0,
+                tms_cstime: 0,
             },
         }
     }
     /// when a process was scheduled,record the time
-    pub fn set_begin(&mut self){
+    pub fn set_begin(&mut self) {
         self.begin_urun_time = get_time();
     }
-    /// cutime 
-    pub fn set_cutime(&mut self,cutime: usize){
+    /// cutime
+    pub fn set_cutime(&mut self, cutime: usize) {
         self.inner.tms_cutime += cutime;
     }
     /// cstime
-    pub fn set_cstime(&mut self,cstime: usize){
-        self.inner.tms_cstime +=cstime;
+    pub fn set_cstime(&mut self, cstime: usize) {
+        self.inner.tms_cstime += cstime;
     }
-    
 }
-
 
 impl ProcessControlBlockInner {
     /// set utime
-    pub fn set_utime(&mut self,in_kernel_time: usize){
+    pub fn set_utime(&mut self, in_kernel_time: usize) {
         self.tms.inner.tms_utime = in_kernel_time - self.tms.begin_urun_time;
         if let Some(parent) = self.parent.as_mut() {
-            parent.upgrade().unwrap().inner_exclusive_access().tms.set_cutime(self.tms.inner.tms_utime);
-            parent.upgrade().unwrap().inner_exclusive_access().tms.set_cstime(self.tms.one_stime);
+            parent
+                .upgrade()
+                .unwrap()
+                .inner_exclusive_access()
+                .tms
+                .set_cutime(self.tms.inner.tms_utime);
+            parent
+                .upgrade()
+                .unwrap()
+                .inner_exclusive_access()
+                .tms
+                .set_cstime(self.tms.one_stime);
         }
         self.tms.one_stime = 0;
     }
-    
+
     /// stime is this out_kernel_time - this in_kernel_time
-    pub fn set_stime(&mut self,in_kernel_time: usize,out_kernel_time: usize){
+    pub fn set_stime(&mut self, in_kernel_time: usize, out_kernel_time: usize) {
         self.tms.inner.tms_stime += out_kernel_time - in_kernel_time;
         self.tms.begin_urun_time = out_kernel_time;
         //debug!("in pcb,tms_stime is :{}",tms.inner.tms_stime);
@@ -178,6 +187,26 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+    ///get abs path
+    pub fn get_abs_path(&self, dirfd: isize, path: &str) -> String {
+        if is_abs_path(path) {
+            get_abs_path("/", path)
+        } else if dirfd != -100 {
+            let dirfd = dirfd as usize;
+            if let Some(file) = self.fd_table.try_get(dirfd) {
+                let base_path = file.file().unwrap().inode.path();
+                if path.is_empty() {
+                    base_path
+                } else {
+                    get_abs_path(&base_path, path)
+                }
+            } else {
+                String::from("")
+            }
+        } else {
+            get_abs_path(self.fs_info.cwd(), path)
+        }
     }
 }
 
@@ -244,9 +273,12 @@ impl ProcessControlBlock {
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             ustack_top,
-            #[cfg(target_arch = "riscv64")] KERNEL_SPACE.exclusive_access().token(),
-            #[cfg(target_arch = "riscv64")] kstack_top,
-            #[cfg(target_arch = "riscv64")] (trap_handler as usize),
+            #[cfg(target_arch = "riscv64")]
+            KERNEL_SPACE.exclusive_access().token(),
+            #[cfg(target_arch = "riscv64")]
+            kstack_top,
+            #[cfg(target_arch = "riscv64")]
+            (trap_handler as usize),
         );
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
@@ -254,7 +286,10 @@ impl ProcessControlBlock {
         drop(process_inner);
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
         // add main thread to scheduler
-        debug!("kernel: add main thread to scheduler, pid = {}", process.getpid());
+        debug!(
+            "kernel: add main thread to scheduler, pid = {}",
+            process.getpid()
+        );
         add_task(task);
         process
     }
@@ -279,7 +314,10 @@ impl ProcessControlBlock {
         let mut task_inner = task.inner_exclusive_access();
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
-        debug!("kernel: exec .. alloc user resource for main thread again, pid = {}", self.getpid());
+        debug!(
+            "kernel: exec .. alloc user resource for main thread again, pid = {}",
+            self.getpid()
+        );
         #[cfg(target_arch = "riscv64")]
         {
             task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
@@ -290,13 +328,13 @@ impl ProcessControlBlock {
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
         info!("initial user_sp = {}", user_sp);
         //      00000000000100b0 <main>:
-//          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
-//          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
-//          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
-//          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
-//          100b8: aa 87        	mv	a5, a0          ; a5 = argc
-//          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
-//          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
+        //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
+        //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
+        //          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
+        //          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
+        //          100b8: aa 87        	mv	a5, a0          ; a5 = argc
+        //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
+        //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
 
         // Reserve memory space for the stack
         for i in 0..args.len() {
@@ -330,7 +368,7 @@ impl ProcessControlBlock {
             }
             *translated_refmut(new_token, p as *mut u8) = 0;
             user_sp += args[i].len() + 1;
-        }        
+        }
         *argv[args.len()] = 0;
 
         // argc
@@ -339,17 +377,20 @@ impl ProcessControlBlock {
             new_token,
             (user_sp - core::mem::size_of::<usize>()) as *mut usize,
         ) = args.len().into();
-        user_sp -= core::mem::size_of::<usize>(); 
+        user_sp -= core::mem::size_of::<usize>();
 
         // initialize trap_cx
         //trace!("kernel: exec .. initialize trap_cx");
         let mut trap_cx = TrapContext::app_init_context(
-                entry_point,
-                user_sp,
-                #[cfg(target_arch = "riscv64")] KERNEL_SPACE.exclusive_access().token(),
-                #[cfg(target_arch = "riscv64")] task.kstack.get_top(),
-                #[cfg(target_arch = "riscv64")] (trap_handler as usize),
-            );
+            entry_point,
+            user_sp,
+            #[cfg(target_arch = "riscv64")]
+            KERNEL_SPACE.exclusive_access().token(),
+            #[cfg(target_arch = "riscv64")]
+            task.kstack.get_top(),
+            #[cfg(target_arch = "riscv64")]
+            (trap_handler as usize),
+        );
         #[cfg(target_arch = "riscv64")]
         {
             trap_cx.x[10] = args_len; // a0, the same with previous stack frame
@@ -361,7 +402,7 @@ impl ProcessControlBlock {
             trap_cx.x[5] = argv_base; // maybe, or user_sp + 8
         }
         *task_inner.get_trap_cx() = trap_cx;
-        
+
         #[cfg(target_arch = "loongarch64")]
         {
             //由于切换了地址空间，因此之前的ASID对应的地址空间将不会再有用，
@@ -373,21 +414,21 @@ impl ProcessControlBlock {
             // 设置新的pgdl
             let pgd = new_token << PAGE_SIZE_BITS;
             // Pgdl::read().set_val(pgd).write(); //设置新的页基址
-            pgdl::set_base(pgd); //设置新的页基址    
+            pgdl::set_base(pgd); //设置新的页基址
         }
     }
 
     /// Only support processes with a single thread.
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
-        unimplemented!()
-        // let user = self.user.clone();
-        // let mut parent = self.inner_exclusive_access();
-        // assert_eq!(parent.thread_count(), 1);
-        // // clone parent's memory_set completely including trampoline/ustacks/trap_cxs
-        // let memory_set = MemorySet::from_existed_user(&parent.memory_set);
-        // // alloc a pid
-        // let pid = pid_alloc();
-        // // copy fd table
+        //unimplemented!()
+        let user = self.user.clone();
+        let mut parent = self.inner_exclusive_access();
+        assert_eq!(parent.thread_count(), 1);
+        // clone parent's memory_set completely including trampoline/ustacks/trap_cxs
+        let memory_set = MemorySet::from_existed_user(&parent.memory_set);
+        // alloc a pid
+        let pid = pid_alloc();
+        // copy fd table
         // let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
         // for fd in parent.fd_table.iter() {
         //     if let Some(file) = fd {
@@ -396,90 +437,101 @@ impl ProcessControlBlock {
         //         new_fd_table.push(None);
         //     }
         // }
-        // // create child process pcb
-        // let child = Arc::new(Self {
-        //     pid,
-        //     user,
-        //     inner: unsafe {
-        //         UPSafeCell::new(ProcessControlBlockInner {
-        //             is_zombie: false,
-        //             memory_set,
-        //             parent: Some(Arc::downgrade(self)),
-        //             children: Vec::new(),
-        //             exit_code: 0,
-        //             fd_table: new_fd_table,
-        //             signals: SignalFlags::empty(),
-        //             tasks: Vec::new(),
-        //             task_res_allocator: RecycleAllocator::new(),
-        //             mutex_list: Vec::new(),
-        //             semaphore_list: Vec::new(),
-        //             condvar_list: Vec::new(),
-        //             priority: 16,
-        //             stride: Stride::default(),
-        //             tms: Tms::new(),
-        //         })
-        //     },
-        // });
-        // // add child
-        // parent.children.push(Arc::clone(&child));
-        // // create main thread of child process
-        // let task = Arc::new(TaskControlBlock::new(
-        //     Arc::clone(&child),
-        //     parent
-        //         .get_task(0)
-        //         .inner_exclusive_access()
-        //         .res
-        //         .as_ref()
-        //         .unwrap()
-        //         .ustack_base(),
-        //     // here we do not allocate trap_cx or ustack again
-        //     // but mention that we allocate a new kstack here
-        //     false,
-        // ));
-        // // attach task to child process
-        // let mut child_inner = child.inner_exclusive_access();
-        // child_inner.tasks.push(Some(Arc::clone(&task)));
-        // drop(child_inner);
-        // // modify kstack_top in trap_cx of this thread
-        // #[cfg(target_arch = "riscv64")]
-        // let task_inner = task.inner_exclusive_access();
-        // #[cfg(target_arch = "loongarch64")]
-        // let mut task_inner = task.inner_exclusive_access();
-        // #[cfg(target_arch = "riscv64")]
-        // {
-        //     let trap_cx = task_inner.get_trap_cx();
-        //     trap_cx.kernel_sp = task.kstack.get_top();
-        // }
-        // #[cfg(target_arch = "loongarch64")]
-        // {
-        //     // 修改trap_cx的内容，使其保持与父进程相同
-        //     // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
-        //     task_inner
-        //         .kstack
-        //         .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
-        // }
-        // drop(task_inner);
-        // insert_into_pid2process(child.getpid(), Arc::clone(&child));
-        // // add this thread to scheduler
-        // add_task(task);
-        // child
+        //debug!("parent fd table is :{}", parent.fd_table.len());
+        let new_fd_table = Arc::clone(&parent.fd_table);
+        //debug!("the new fd table len :{}", new_fd_table.len());
+        let fs_info = Arc::clone(&parent.fs_info);
+        // create child process pcb
+        let sig_mask = parent.sig_mask.clone();
+        let sig_table = Arc::clone(&parent.sig_table);
+        let sig_pending = SignalFlags::empty();
+        let child = Arc::new(Self {
+            pid,
+            user,
+            inner: unsafe {
+                UPSafeCell::new(ProcessControlBlockInner {
+                    is_zombie: false,
+                    memory_set,
+                    fs_info,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                    fd_table: new_fd_table,
+                    signals: SignalFlags::empty(),
+                    tasks: Vec::new(),
+                    task_res_allocator: RecycleAllocator::new(),
+                    mutex_list: Vec::new(),
+                    semaphore_list: Vec::new(),
+                    condvar_list: Vec::new(),
+                    priority: 16,
+                    stride: Stride::default(),
+                    tms: Tms::new(),
+                    sig_mask,
+                    sig_pending,
+                    sig_table,
+                })
+            },
+        });
+        // add child
+        parent.children.push(Arc::clone(&child));
+        // create main thread of child process
+        let task = Arc::new(TaskControlBlock::new(
+            Arc::clone(&child),
+            parent
+                .get_task(0)
+                .inner_exclusive_access()
+                .res
+                .as_ref()
+                .unwrap()
+                .ustack_base(),
+            // here we do not allocate trap_cx or ustack again
+            // but mention that we allocate a new kstack here
+            false,
+        ));
+        // attach task to child process
+        let mut child_inner = child.inner_exclusive_access();
+        child_inner.tasks.push(Some(Arc::clone(&task)));
+        drop(child_inner);
+        // modify kstack_top in trap_cx of this thread
+        #[cfg(target_arch = "riscv64")]
+        let task_inner = task.inner_exclusive_access();
+        #[cfg(target_arch = "loongarch64")]
+        let mut task_inner = task.inner_exclusive_access();
+        #[cfg(target_arch = "riscv64")]
+        {
+            let trap_cx = task_inner.get_trap_cx();
+            trap_cx.kernel_sp = task.kstack.get_top();
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // 修改trap_cx的内容，使其保持与父进程相同
+            // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
+            task_inner
+                .kstack
+                .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+        }
+        drop(task_inner);
+        insert_into_pid2process(child.getpid(), Arc::clone(&child));
+        // add this thread to scheduler
+        add_task(task);
+        child
     }
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
     }
     /// get parent pid
-    pub fn getppid(&self)->usize {
+    pub fn getppid(&self) -> usize {
         let inner = self.inner_exclusive_access();
         let parent = inner.parent.clone().unwrap();
-        parent.upgrade().unwrap().getpid()
+        parent.upgrade().unwrap().getpid() + 1
     }
     /// get default uid
-    pub fn getuid(&self)->usize {
+    pub fn getuid(&self) -> usize {
         self.user.getuid()
     }
     /// get default gid
-    pub fn getgid(&self)->usize{
+    pub fn getgid(&self) -> usize {
         self.user.getgid()
     }
 }
@@ -488,11 +540,11 @@ impl ProcessControlBlock {
 //     /// Create a new child process directly from the parent process
 //     pub fn spwan(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
 //         let child = Arc::new(Self::new(elf_data));
-        
+
 //         child.inner_exclusive_access().parent = Some(Arc::downgrade(self));
 //         self.inner_exclusive_access().children.push(Arc::clone(&child));
-        
+
 //         child
 //     }
-//     // seems a unnecessary syscall, tempolarily remove it 
+//     // seems a unnecessary syscall, tempolarily remove it
 // }

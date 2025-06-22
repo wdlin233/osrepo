@@ -10,22 +10,48 @@
 //! `sys_` then the name of the syscall. You can find functions like this in
 //! submodules, and you should also implement syscalls this way.
 
-/// openat syscall
-pub const SYSCALL_OPENAT: usize = 56;
-/// close syscall
-pub const SYSCALL_CLOSE: usize = 57;
-/// read syscall
-pub const SYSCALL_READ: usize = 63;
-/// write syscall
-pub const SYSCALL_WRITE: usize = 64;
+/// getcwd syscall
+pub const SYSCALL_GETCWD: usize = 17;
+/// dup syscall
+pub const SYSCALL_DUP: usize = 23;
+/// dup3 syscall
+pub const SYSCALL_DUP3: usize = 24;
+/// ioctl syscall
+pub const SYSCALL_IOCTL: usize = 29;
+/// mkdirat syscall
+pub const SYSCALL_MKDIRAT: usize = 34;
 /// unlinkat syscall
 pub const SYSCALL_UNLINKAT: usize = 35;
 /// linkat syscall
 pub const SYSCALL_LINKAT: usize = 37;
+/// unmount syscall
+pub const SYSCALL_UNMOUNT2: usize = 39;
+/// mount syscall
+pub const SYSCALL_MOUNT: usize = 40;
+/// chdir syscall
+pub const SYSCALL_CHDIR: usize = 49;
+/// openat syscall
+pub const SYSCALL_OPENAT: usize = 56;
+/// close syscall
+pub const SYSCALL_CLOSE: usize = 57;
+/// pipe syscall
+pub const SYSCALL_PIPE: usize = 59;
+/// getdents syscall
+pub const SYSCALL_GETDENTS64: usize = 61;
+/// read syscall
+pub const SYSCALL_READ: usize = 63;
+/// write syscall
+pub const SYSCALL_WRITE: usize = 64;
+/// writev syscall
+pub const SYSCALL_WRITEV: usize = 66;
 /// fstat syscall
 pub const SYSCALL_FSTAT: usize = 80;
 /// exit syscall
 pub const SYSCALL_EXIT: usize = 93;
+/// exit_group
+pub const SYSCALL_EXIT_GROUP: usize = 94;
+/// set_tid_address syscall
+pub const SYSCALL_TID_ADDRESS: usize = 96;
 /// sleep syscall
 pub const SYSCALL_SLEEP: usize = 101;
 /// yield syscall
@@ -78,10 +104,7 @@ pub const SYSCALL_MAIL_READ: usize = 401;
 /// mail write syscall
 pub const SYSCALL_MAIL_WRITE: usize = 402;
 */
-/// dup syscall
-pub const SYSCALL_DUP: usize = 24;
-/// pipe syscall
-pub const SYSCALL_PIPE: usize = 59;
+
 /// thread_create syscall
 pub const SYSCALL_THREAD_CREATE: usize = 460;
 /// waittid syscall
@@ -107,64 +130,79 @@ pub const SYSCALL_CONDVAR_SIGNAL: usize = 472;
 /// condvar_wait syscallca
 pub const SYSCALL_CONDVAR_WAIT: usize = 473;
 
-/// ioctl syscall
-pub const  SYSCALL_IOCTL: usize = 29;
-/// writev syscall
-pub const SYSCALL_WRITEV: usize = 66;
-/// exit_group
-pub const SYSCALL_EXIT_GROUP: usize = 94;
-/// set_tid_address syscall
-pub const  SYSCALL_TID_ADDRESS: usize = 96;
-
 mod fs;
+mod options;
 mod process;
 mod sync;
 mod thread;
-mod options;
 //mod tid;
-mod uname;
 pub mod sys_result;
+mod uname;
 
 use fs::*;
 use process::*;
 use sync::*;
 use thread::*;
 //use tid::*;
-use uname::*;
 pub use options::*;
+use uname::*;
 
-use crate::task::TmsInner;
-use crate::system::UTSname;
+use crate::{fs::Kstat, system::UTSname, task::TmsInner};
 
 /// handle syscall exception with `syscall_id` and other arguments
-pub fn syscall(syscall_id: usize, args: [usize; 4]) -> isize {
+pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
-        SYSCALL_GETGID=>sys_getgid(),
-        SYSCALL_GETUID=>sys_getuid(),
-        SYSCALL_UNAME=>sys_uname(args[0] as *mut UTSname),
-        SYSCALL_TIMES=>sys_tms(args[0] as *mut TmsInner),
-        SYSCALL_BRK=>sys_brk(args[0] as i32),
+        SYSCALL_MOUNT => sys_mount(
+            args[0] as *const u8,
+            args[1] as *const u8,
+            args[2] as *const u8,
+            args[3] as u32,
+            args[4] as *const u8,
+        ),
+        SYSCALL_UNMOUNT2 => sys_unmount2(args[0] as *const u8, args[1] as u32),
+        SYSCALL_MKDIRAT => sys_mkdirat(args[0] as isize, args[1] as *const u8, args[2] as u32),
+        SYSCALL_GETDENTS64 => sys_getdents64(args[0], args[1] as *const u8, args[2]),
+        SYSCALL_CHDIR => sys_chdir(args[0] as *const u8),
+        SYSCALL_GETCWD => sys_getcwd(args[0] as *const u8, args[1]),
+        SYSCALL_DUP3 => sys_dup3(args[0], args[1], args[2] as u32),
+        SYSCALL_DUP => sys_dup(args[0]),
+        SYSCALL_GETGID => sys_getgid(),
+        SYSCALL_GETUID => sys_getuid(),
+        SYSCALL_UNAME => sys_uname(args[0] as *mut UTSname),
+        SYSCALL_TIMES => sys_tms(args[0] as *mut TmsInner),
+        SYSCALL_BRK => sys_brk(args[0] as i32),
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
-        SYSCALL_GETPPID=>sys_getppid(),
-        SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32,args[2]), 
-
+        SYSCALL_GETPPID => sys_getppid(),
+        SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32, args[2]),
         SYSCALL_FORK => sys_fork(),
         SYSCALL_YIELD => sys_yield(),
-        SYSCALL_DUP => sys_dup(args[0]),
+
         SYSCALL_LINKAT => sys_linkat(args[1] as *const u8, args[3] as *const u8),
-        SYSCALL_UNLINKAT => sys_unlinkat(args[1] as *const u8),
-        SYSCALL_OPENAT => sys_open(args[1] as *const u8, args[2] as u32),
+        SYSCALL_UNLINKAT => sys_unlinkat(args[0] as isize, args[1] as *const u8, args[2] as u32),
+        SYSCALL_OPENAT => sys_open(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as u32,
+            args[3] as u32,
+        ),
         SYSCALL_CLOSE => sys_close(args[0]),
-        SYSCALL_PIPE => sys_pipe(args[0] as *mut usize),
+        SYSCALL_PIPE => sys_pipe(args[0] as *mut u32, args[1] as u32),
         SYSCALL_READ => sys_read(args[0], args[1] as *const u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
-        SYSCALL_FSTAT => sys_fstat(args[0], args[1]),
+        SYSCALL_FSTAT => sys_fstat(args[0], args[1] as *mut Kstat),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_GETTID => sys_gettid(),
         SYSCALL_EXEC => sys_exec(args[0] as *const u8, args[1] as *const usize),
         SYSCALL_GETTIMEOFDAY => sys_get_time(args[0] as *mut TimeVal, args[1]),
-        SYSCALL_MMAP => sys_mmap(args[0], args[1], args[2]),
+        SYSCALL_MMAP => sys_mmap(
+            args[0],
+            args[1],
+            args[2] as u32,
+            args[3] as u32,
+            args[4],
+            args[5],
+        ),
         SYSCALL_MUNMAP => sys_munmap(args[0], args[1]),
         SYSCALL_SET_PRIORITY => sys_set_priority(args[0] as isize),
         SYSCALL_SPAWN => sys_spawn(args[0] as *const u8),

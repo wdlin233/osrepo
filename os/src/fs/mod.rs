@@ -11,7 +11,9 @@ pub mod stdio;
 pub mod vfs;
 
 use crate::mm::UserBuffer;
+use crate::println;
 use crate::task::current_uid;
+use crate::timer::get_time;
 use crate::timer::get_time_ms;
 use crate::utils::{GeneralRet, SysErrNo};
 use alloc::format;
@@ -32,8 +34,6 @@ use spin::Lazy;
 pub use stat::*;
 pub use stdio::{Stdin, Stdout};
 pub use vfs::*;
-use crate::timer::get_time;
-use crate::println;
 
 // 定义一份打开文件的标志
 bitflags! {
@@ -431,6 +431,7 @@ pub fn create_init_files() -> GeneralRet {
 }
 
 fn create_file(abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass, SysErrNo> {
+    //debug!("to creat file, the file is :{}", abs_path);
     // 一定能找到,因为除了RootInode外都有父结点
     let parent_dir = root_inode();
     let (readable, writable) = flags.read_write();
@@ -478,6 +479,7 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {
+        debug!("the abs_path already has inode");
         inode = find_inode_idx(abs_path);
     } else {
         let found_res = root_inode().find(abs_path, flags, 0);
@@ -495,12 +497,13 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
                 //符号链接文件不加入idx
                 insert_inode_idx(abs_path, t.clone());
             }
-        info!("open file: {}, found successfully", abs_path);
+            debug!("open file: {}, found successfully", abs_path);
             inode = Some(t);
         }
     }
     debug!("open file: {}, flags: {:?}", abs_path, flags);
     if let Some(inode) = inode {
+        debug!("in some inode");
         if flags.contains(OpenFlags::O_DIRECTORY) && !inode.is_dir() {
             return Err(SysErrNo::ENOTDIR);
         }

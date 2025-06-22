@@ -1,8 +1,11 @@
-use crate::sync::{dealloc, disable_banker_algo, enable_banker_algo, init_available_resource, request, alloc, Condvar, Mutex, MutexBlocking, MutexSpin, RequestResult, Semaphore};
-use crate::task::{block_current_and_run_next, current_process, current_task,current_user_token};
-use crate::timer::{add_timer, get_time_ms};
-use crate::mm::translated_ref;
 use super::process::TimeVal;
+use crate::mm::translated_ref;
+use crate::sync::{
+    alloc, dealloc, disable_banker_algo, enable_banker_algo, init_available_resource, request,
+    Condvar, Mutex, MutexBlocking, MutexSpin, RequestResult, Semaphore,
+};
+use crate::task::{block_current_and_run_next, current_process, current_task, current_user_token};
+use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
 pub fn sys_sleep(req: *const TimeVal) -> isize {
@@ -19,9 +22,9 @@ pub fn sys_sleep(req: *const TimeVal) -> isize {
     // );
     let re: TimeVal;
     let token = current_user_token();
-    re = *translated_ref(token,req);
+    re = *translated_ref(token, req);
     //debug!("the expected sec is:{}",re.sec);
-    let expire_ms = get_time_ms() + re.sec*1000;
+    let expire_ms = get_time_ms() + re.sec * 1000;
     let task = current_task().unwrap();
     add_timer(expire_ms, task);
     block_current_and_run_next();
@@ -86,7 +89,8 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
         .tid;
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
-    let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    let mutex: Arc<dyn Mutex + 'static> =
+        Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
     match request(tid, mutex_id, 1) {

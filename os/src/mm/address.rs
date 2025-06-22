@@ -5,11 +5,13 @@
 /// 低14位表示业内偏移，每个页可以存放2k个页表项
 /// 因此11-11-11-14,最高位是次高位的扩展
 ///
-
 use super::{translated_byte_buffer, PageTableEntry};
-use crate::{config::{PAGE_SIZE, PAGE_SIZE_BITS}, task::current_user_token};
-use core::fmt::{self, Debug, Formatter};
 use crate::phys_to_virt;
+use crate::{
+    config::{PAGE_SIZE, PAGE_SIZE_BITS},
+    task::current_user_token,
+};
+use core::fmt::{self, Debug, Formatter};
 use core::ops::Add;
 
 const PA_WIDTH_SV39: usize = 56;
@@ -73,32 +75,39 @@ impl Add<usize> for VirtPageNum {
     }
 }
 
-
 impl From<usize> for PhysAddr {
     fn from(v: usize) -> Self {
-        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << PA_WIDTH_SV39) - 1));
-        #[cfg(target_arch = "loongarch64")] return Self(v);
+        #[cfg(target_arch = "riscv64")]
+        return Self(v & ((1 << PA_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")]
+        return Self(v);
     }
 }
 
 impl From<usize> for PhysPageNum {
     fn from(v: usize) -> Self {
-        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << PPN_WIDTH_SV39) - 1));
-        #[cfg(target_arch = "loongarch64")] return Self(v);
+        #[cfg(target_arch = "riscv64")]
+        return Self(v & ((1 << PPN_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")]
+        return Self(v);
     }
 }
 
 impl From<usize> for VirtAddr {
     fn from(v: usize) -> Self {
         //debug!("Converting usize to VirtAddr: {:x}", v);
-        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << VA_WIDTH_SV39) - 1));
-        #[cfg(target_arch = "loongarch64")] return Self(v);
+        #[cfg(target_arch = "riscv64")]
+        return Self(v & ((1 << VA_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")]
+        return Self(v);
     }
 }
 impl From<usize> for VirtPageNum {
     fn from(v: usize) -> Self {
-        #[cfg(target_arch = "riscv64")] return Self(v & ((1 << VPN_WIDTH_SV39) - 1));
-        #[cfg(target_arch = "loongarch64")] return Self(v);
+        #[cfg(target_arch = "riscv64")]
+        return Self(v & ((1 << VPN_WIDTH_SV39) - 1));
+        #[cfg(target_arch = "loongarch64")]
+        return Self(v);
     }
 }
 
@@ -384,9 +393,9 @@ pub fn copy_to_virt<T>(src: &T, dst: *mut T) {
     let dst_frame_buffers = translated_byte_buffer(current_user_token(), dst_buf_ptr, len);
     let mut offset = 0;
     for dst_frame in dst_frame_buffers {
-        dst_frame.copy_from_slice(
-            unsafe { core::slice::from_raw_parts(src_buf_ptr.add(offset), dst_frame.len()) },
-        );
+        dst_frame.copy_from_slice(unsafe {
+            core::slice::from_raw_parts(src_buf_ptr.add(offset), dst_frame.len())
+        });
         offset += dst_frame.len();
     }
 }

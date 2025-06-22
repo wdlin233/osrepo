@@ -320,11 +320,9 @@ impl FsInfo {
     }
 
     fn get_mut(&self) -> &mut FsInfoInner {
-        unimplemented!()
-        //self.inner.get_unchecked_mut()
+        self.inner.get_unchecked_mut()
     }
     fn get_ref(&self) -> &FsInfoInner {
-        unimplemented!()
-        //self.inner.get_unchecked_ref()
+        self.inner.get_unchecked_ref()
     }
 }
