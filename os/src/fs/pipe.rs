@@ -212,54 +212,53 @@ impl File for Pipe {
     fn writable(&self) -> bool {
         self.writable
     }
-    fn read(&self, mut _buf: UserBuffer) -> SyscallRet {
-        // assert!(self.readable());
-        // // let buf_len = buf.len();
-        // let mut read_size = 0usize;
-        // let mut loop_read;
-        unimplemented!()
-        // loop {
-        //     let task = current_task().unwrap();
-        //     let task_inner = task.inner_lock();
-        //     let check_sig = task_inner.sig_pending.difference(task_inner.sig_mask);
-        //     if !check_sig.is_empty() && check_sig != SignalFlags:: // origin, SigSetSIGCHLD {
-        //         return Err(SysErrNo::ERESTART);
-        //     }
-        //     drop(task_inner);
-        //     drop(task);
-        //     let ring_buffer = self.inner_lock();
-        //     loop_read = ring_buffer.available_read();
-        //     if loop_read == 0 {
-        //         if ring_buffer.all_write_ends_closed() {
-        //             return Ok(read_size);
-        //         }
-        //         drop(ring_buffer);
-        //         suspend_current_and_run_next();
-        //         continue;
-        //     } else {
-        //         break;
-        //     }
-        // }
-        // // read at most loop_read bytes
-        // let mut ring_buffer = self.inner_lock();
-        // let length = buf.len();
-        // if length <= 10 {
-        //     let mut buf_iter = buf.into_iter();
-        //     for _ in 0..loop_read {
-        //         if let Some(byte_ref) = buf_iter.next() {
-        //             unsafe {
-        //                 *byte_ref = ring_buffer.read_byte();
-        //             }
-        //             read_size += 1;
-        //         } else {
-        //             break;
-        //         }
-        //     }
-        // } else {
-        //     read_size = min(loop_read, length);
-        //     buf.write(&ring_buffer.read_bytes(read_size));
-        // }
-        // Ok(read_size)
+    fn read(&self, mut buf: UserBuffer) -> SyscallRet {
+        assert!(self.readable());
+        let buf_len = buf.len();
+        let mut read_size = 0usize;
+        let mut loop_read;
+        loop {
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            let check_sig = inner.sig_pending.difference(inner.sig_mask);
+            if !check_sig.is_empty() && check_sig != SignalFlags::SIGCHLD {
+                return Err(SysErrNo::ERESTART);
+            }
+            drop(inner);
+            drop(process);
+            let ring_buffer = self.inner_lock();
+            loop_read = ring_buffer.available_read();
+            if loop_read == 0 {
+                if ring_buffer.all_write_ends_closed() {
+                    return Ok(read_size);
+                }
+                drop(ring_buffer);
+                suspend_current_and_run_next();
+                continue;
+            } else {
+                break;
+            }
+        }
+        // read at most loop_read bytes
+        let mut ring_buffer = self.inner_lock();
+        let length = buf.len();
+        if length <= 10 {
+            let mut buf_iter = buf.into_iter();
+            for _ in 0..loop_read {
+                if let Some(byte_ref) = buf_iter.next() {
+                    unsafe {
+                        *byte_ref = ring_buffer.read_byte();
+                    }
+                    read_size += 1;
+                } else {
+                    break;
+                }
+            }
+        } else {
+            read_size = min(loop_read, length);
+            buf.write(&ring_buffer.read_bytes(read_size));
+        }
+        Ok(read_size)
     }
     fn write(&self, mut buf: UserBuffer) -> SyscallRet {
         assert!(self.writable());
