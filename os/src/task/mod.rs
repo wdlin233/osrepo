@@ -9,6 +9,7 @@
 //! Be careful when you see [`__switch`]. Control flow around this function
 //! might not be what you expect.
 
+mod aux;
 mod context;
 mod id;
 mod manager;
@@ -34,6 +35,7 @@ use spin::Lazy;
 use switch::__switch;
 
 use crate::signal::SignalFlags;
+pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
