@@ -4,13 +4,13 @@
 #[macro_use]
 extern crate user_lib;
 
-use user_lib::{exec, fork, wait, sched_yield};
+use user_lib::{exec, fork, sched_yield, wait};
 
 #[no_mangle]
 fn main() -> i32 {
     println!("[initproc] Init process started");
     if fork() == 0 {
-        exec("/glibc/busybox_testcase.sh\0", &[core::ptr::null::<u8>()]);
+        exec("usertest\0", &[core::ptr::null::<u8>()]);
     } else {
         loop {
             let mut exit_code: i32 = 0;

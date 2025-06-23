@@ -1,3 +1,4 @@
+use crate::alloc::string::ToString;
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
@@ -5,9 +6,9 @@ use crate::{
     signal::SignalFlags,
     syscall::{process, MmapFlags, MmapProt},
     task::{
-        block_current_and_run_next, current_process, current_task, current_user_token,
+        add_task, block_current_and_run_next, current_process, current_task, current_user_token,
         exit_current_and_run_next, mmap, munmap, pid2process, suspend_current_and_run_next,
-        TmsInner,
+        CloneFlags, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -28,10 +29,10 @@ pub fn sys_exit(exit_code: i32) -> ! {
     //     "kernel:pid[{}] sys_exit",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    // let current_process = current_process();
-    // let pid = current_process.getpid();
-    // debug!("exiting pid is:{},exit code is:{}",pid,exit_code);
-    // drop(current_process);
+    let current_process = current_process();
+    let pid = current_process.getpid();
+    debug!("exiting pid is:{},exit code is:{}", pid, exit_code);
+    drop(current_process);
     exit_current_and_run_next(exit_code);
     debug!("exit ok");
     panic!("Unreachable in sys_exit!");
@@ -44,17 +45,31 @@ pub fn sys_yield() -> isize {
 }
 
 /// fork child process syscall
-pub fn sys_fork() -> isize {
+pub fn sys_fork(
+    flags: usize,
+    stack_ptr: usize,
+    parent_tid_ptr: usize,
+    tls_ptr: usize,
+    child_tid_ptr: usize,
+) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_fork",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
     debug!("in sys fork");
+    let flags = CloneFlags::from_bits(flags as u32).unwrap();
     let current_process = current_process();
     //current_process.inner_exclusive_access().is_blocked+=1;
-    let new_process = current_process.fork();
+    let new_process = current_process.fork(
+        flags,
+        stack_ptr,
+        parent_tid_ptr as *mut u32,
+        tls_ptr,
+        child_tid_ptr as *mut u32,
+    );
     //debug!("sys_fork: current process pid is : {}",current_process.getpid());
     let new_pid = new_process.getpid();
+    debug!("the new pid is :{}", new_pid);
     // modify trap context of new_task, because it returns immediately after switching
     let new_process_inner = new_process.inner_exclusive_access();
     let task = new_process_inner.tasks[0].as_ref().unwrap();
@@ -73,7 +88,7 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 /// exec syscall
-pub fn sys_exec(pathp: *const u8, mut args: *const usize) -> isize {
+pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_exec(path: 0x{:x?}, args: 0x{:x?})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(),
@@ -83,10 +98,11 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize) -> isize {
     //unimplemented!()
     debug!("in sys exec");
     let current_process = current_process();
-    //debug!("get current process ok");
+    debug!("current process id is :{}", current_process.getpid());
     let mut inner = current_process.inner_exclusive_access();
     //debug!("get inner ok");
     let mut argv = Vec::<String>::new();
+    let mut env = Vec::<String>::new();
     let mut path;
     let token = inner.get_user_token();
     unsafe {
@@ -119,6 +135,33 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize) -> isize {
             argv.push(translated_str(token, arg_str_ptr as *const u8));
             args = args.add(1);
         }
+
+        // 处理envp参数
+        if !envp.is_null() {
+            loop {
+                let envp_ptr = *envp;
+                if envp_ptr == 0 {
+                    break;
+                }
+                env.push(c_ptr_to_string(envp_ptr as *const u8));
+                envp = envp.add(1);
+            }
+        }
+    }
+    let env_path = "PATH=/:/bin:".to_string();
+    if !env.contains(&env_path) {
+        env.push(env_path);
+    }
+
+    let env_ld_library_path = "LD_LIBRARY_PATH=/lib:/lib/glibc:/lib/musl:".to_string();
+    if !env.contains(&env_ld_library_path) {
+        env.push(env_ld_library_path);
+    }
+
+    let env_enough = "ENOUGH=100000".to_string();
+    if !env.contains(&env_enough) {
+        //设置系统最大负载
+        env.push(env_enough);
     }
     let cwd = if !path.starts_with('/') {
         inner.fs_info.cwd()
@@ -137,7 +180,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize) -> isize {
     drop(inner);
     let len = argv.len();
     debug!("in sys exec,to pcb exec");
-    current_process.exec(&elf_data, argv);
+    current_process.exec(&elf_data, argv, &mut env);
     len as isize
     // let path = translated_str(token, path);
     // let mut args_vec: Vec<String> = Vec::new();

@@ -40,7 +40,7 @@ pub use manager::{
     add_block_task, add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,
     wakeup_task_by_pid,
 };
-pub use process::{Tms, TmsInner};
+pub use process::{CloneFlags, Tms, TmsInner};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
 #[cfg(target_arch = "riscv64")]
@@ -142,6 +142,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // record exit code of main process
         process_inner.exit_code = exit_code;
         // wakeup his parent
+
         let parent = process_inner.parent.clone().unwrap();
         wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
 

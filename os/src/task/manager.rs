@@ -12,7 +12,7 @@ use lazy_static::*;
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
     ///block map : <pid,>
-    block_map: BTreeMap<usize,Arc<TaskControlBlock>>,
+    block_map: BTreeMap<usize, Arc<TaskControlBlock>>,
     /// The stopping task, leave a reference so that the kernel stack will not be recycled when switching tasks
     stop_task: Option<Arc<TaskControlBlock>>,
 }
@@ -29,9 +29,7 @@ impl TaskManager {
     }
     /// Add process back to ready queue
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
-        //debug!("in taskmanager add");
         self.ready_queue.push_back(task);
-        //debug!("task manager add ok");
     }
     /// Add a task to stopping task
     pub fn add_stop(&mut self, task: Arc<TaskControlBlock>) {
@@ -41,16 +39,16 @@ impl TaskManager {
         self.stop_task = Some(task);
     }
     /// Add a task to block task
-    pub fn add_block(&mut self,task: Arc<TaskControlBlock>) {
+    pub fn add_block(&mut self, task: Arc<TaskControlBlock>) {
         //The blocking queue
         // which temporarily holds tasks waiting for timer expiration.
         let process = task.process.upgrade().unwrap();
-        self.block_map.insert(process.getpid(),task);
+        self.block_map.insert(process.getpid(), task);
     }
 
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        //debug!("ready queue size:{}",self.ready_queue.len());
+        //debug!("ready queue size:{}", self.ready_queue.len());
         self.ready_queue.pop_front()
     }
     pub fn remove(&mut self, task: Arc<TaskControlBlock>) {
@@ -64,27 +62,25 @@ impl TaskManager {
         }
     }
     /// remove block
-    pub fn remove_block(&mut self,task: &Arc<TaskControlBlock>){
+    pub fn remove_block(&mut self, task: &Arc<TaskControlBlock>) {
         let process = task.process.upgrade().unwrap();
         let pid = process.getpid();
         //debug!("remove block :{}",pid);
         self.block_map.remove(&pid);
     }
     /// remove block by pid
-    pub fn remove_block_by_pid(&mut self,pid: usize){
+    pub fn remove_block_by_pid(&mut self, pid: usize) {
         //debug!("remove block by pid:{}",pid);
-        if let Some(task) = self.block_map.remove(&pid){
+        if let Some(task) = self.block_map.remove(&pid) {
             let mut inner = task.inner_exclusive_access();
-            if inner.task_status != TaskStatus::Ready{
+            if inner.task_status != TaskStatus::Ready {
                 inner.task_status = TaskStatus::Ready;
                 drop(inner);
                 self.add(task);
-                debug!("add task ok : {}",pid);
+                debug!("add task ok : {}", pid);
             }
         }
     }
-  
-
 }
 
 lazy_static! {
@@ -116,7 +112,7 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
     add_task(task);
 }
 /// wake up a task by pid
-pub fn wakeup_task_by_pid(pid: usize){
+pub fn wakeup_task_by_pid(pid: usize) {
     //debug!("block task id:{}",pid);
     TASK_MANAGER.exclusive_access().remove_block_by_pid(pid);
     //debug!("wake up task {} ok",pid);
@@ -156,4 +152,3 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     //debug!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
 }
-

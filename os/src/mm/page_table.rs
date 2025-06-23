@@ -1,22 +1,22 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
-use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
-use bitflags::*;
-use crate::{print, println};
-use crate::timer::get_time;
-use core::fmt::{self};
-use crate::mm::MemorySet;
-use alloc::sync::Arc;
-#[cfg(target_arch = "riscv64")]
-use riscv::register::scause::{Exception, Trap};
-#[cfg(target_arch = "loongarch64")]
-use loongarch64::register::estat::{Exception, Trap};
-#[cfg(target_arch = "loongarch64")]
-use bit_field::BitField;
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
+use crate::mm::MemorySet;
+use crate::timer::get_time;
+use crate::{print, println};
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+#[cfg(target_arch = "loongarch64")]
+use bit_field::BitField;
+use bitflags::*;
+use core::fmt::{self};
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::register::estat::{Exception, Trap};
+#[cfg(target_arch = "riscv64")]
+use riscv::register::scause::{Exception, Trap};
 
 use core::arch::asm;
 pub fn flush_tlb() {
@@ -108,7 +108,7 @@ impl PageTableEntry {
         };
         #[cfg(target_arch = "loongarch64")]
         {
-             //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
+            //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
             let mut bits = 0usize;
             bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
             bits = bits | flags.bits;
@@ -120,17 +120,21 @@ impl PageTableEntry {
         PageTableEntry { bits: 0 }
     }
 
-    /// Get the physical page number from the page table entry 
+    /// Get the physical page number from the page table entry
     /// 返回物理页号---页表项
     pub fn ppn(&self) -> PhysPageNum {
-        #[cfg(target_arch = "riscv64")] return (self.bits >> 10 & ((1usize << 44) - 1)).into();
-        #[cfg(target_arch = "loongarch64")] return self.bits.get_bits(14..PALEN).into();
+        #[cfg(target_arch = "riscv64")]
+        return (self.bits >> 10 & ((1usize << 44) - 1)).into();
+        #[cfg(target_arch = "loongarch64")]
+        return self.bits.get_bits(14..PALEN).into();
     }
     /// Get the flags from the page table entry
     /// 返回标志位
     pub fn flags(&self) -> PTEFlags {
-        #[cfg(target_arch = "riscv64")] return PTEFlags::from_bits(self.bits as u8).unwrap();
-        #[cfg(target_arch = "loongarch64")] {
+        #[cfg(target_arch = "riscv64")]
+        return PTEFlags::from_bits(self.bits as u8).unwrap();
+        #[cfg(target_arch = "loongarch64")]
+        {
             //这里只需要标志位，需要把非标志位的位置清零
             let mut bits = self.bits;
             bits.set_bits(14..PALEN, 0);
@@ -154,13 +158,17 @@ impl PageTableEntry {
     }
     /// The page pointered by page table entry is readable?
     pub fn readable(&self) -> bool {
-        #[cfg(target_arch = "riscv64")] return (self.flags() & PTEFlags::R) != PTEFlags::empty();
-        #[cfg(target_arch = "loongarch64")] return !((self.flags() & PTEFlags::NR) != PTEFlags::empty());
+        #[cfg(target_arch = "riscv64")]
+        return (self.flags() & PTEFlags::R) != PTEFlags::empty();
+        #[cfg(target_arch = "loongarch64")]
+        return !((self.flags() & PTEFlags::NR) != PTEFlags::empty());
     }
     /// The page pointered by page table entry is executable?
     pub fn executable(&self) -> bool {
-        #[cfg(target_arch = "riscv64")] return (self.flags() & PTEFlags::X) != PTEFlags::empty();
-        #[cfg(target_arch = "loongarch64")] return !((self.flags() & PTEFlags::NX) != PTEFlags::empty());
+        #[cfg(target_arch = "riscv64")]
+        return (self.flags() & PTEFlags::X) != PTEFlags::empty();
+        #[cfg(target_arch = "loongarch64")]
+        return !((self.flags() & PTEFlags::NX) != PTEFlags::empty());
     }
     //设置脏位
     #[cfg(target_arch = "loongarch64")]
@@ -340,8 +348,10 @@ impl PageTable {
     }
     /// get the token from the page table
     pub fn token(&self) -> usize {
-        #[cfg(target_arch = "riscv64")] return 8usize << 60 | self.root_ppn.0;
-        #[cfg(target_arch = "loongarch64")] return self.root_ppn.0;
+        #[cfg(target_arch = "riscv64")]
+        return 8usize << 60 | self.root_ppn.0;
+        #[cfg(target_arch = "loongarch64")]
+        return self.root_ppn.0;
     }
     pub fn set_map_flags(&mut self, vpn: VirtPageNum, flags: PTEFlags) {
         self.find_pte_create(vpn)
@@ -428,10 +438,16 @@ pub fn safe_translated_byte_buffer(
             }
         }
         #[cfg(target_arch = "loongarch64")]
-        if !page_table.translate(vpn).map_or(false, |pte| pte.is_valid()) {
+        if !page_table
+            .translate(vpn)
+            .map_or(false, |pte| pte.is_valid())
+        {
             memory_set.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
             // 重新检查
-            if !page_table.translate(vpn).map_or(false, |pte| pte.is_valid()) {
+            if !page_table
+                .translate(vpn)
+                .map_or(false, |pte| pte.is_valid())
+            {
                 return None;
             }
         }
@@ -462,7 +478,7 @@ pub fn safe_translated_byte_buffer(
             use crate::config::PAGE_SIZE;
             let phys_addr: PhysAddr = ppn.into();
             let kernel_va = phys_addr.0 | 0x9000_0000_0000_0000;
-            
+
             // debug!(
             //     "safe_translated_byte_buffer: start_va: {:?}, ppn: {:?}, kernel_va: {:?}",
             //     start_va, ppn, kernel_va
@@ -473,16 +489,13 @@ pub fn safe_translated_byte_buffer(
             let bytes_in_page = usize::min(page_remaining, end - start);
             // 获取内核虚拟地址的切片
             let slice_start = kernel_va + page_offset;
-            let slice = unsafe {
-                core::slice::from_raw_parts_mut(
-                    slice_start as *mut u8,
-                    bytes_in_page
-                )
-            };
+            let slice =
+                unsafe { core::slice::from_raw_parts_mut(slice_start as *mut u8, bytes_in_page) };
             v.push(slice);
             start += bytes_in_page;
         }
     }
+    debug!("safe trsnslated byte buffer ok");
     Some(v)
 }
 
@@ -504,12 +517,12 @@ pub struct Iter<'a> {
 
 impl<'a> Iterator for Iter<'a> {
     type Item = &'a u8;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.current.is_empty() {
             self.current = self.buffers.next()?;
         }
-        
+
         let (first, rest) = self.current.split_first()?;
         self.current = rest;
         Some(first)
@@ -524,12 +537,12 @@ pub struct IterMut<'a> {
 
 impl<'a> Iterator for IterMut<'a> {
     type Item = &'a mut u8;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.current.is_empty() {
             self.current = self.buffers.next()?;
         }
-        
+
         // 安全：从当前切片分离出第一个元素
         let slice = core::mem::replace(&mut self.current, &mut []);
         let (first, rest) = slice.split_first_mut()?;

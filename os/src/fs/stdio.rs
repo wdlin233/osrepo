@@ -1,9 +1,9 @@
 use super::{File, Kstat, StMode};
-use crate::mm::UserBuffer;
 use crate::hal::utils::console_getchar;
-use crate::task::suspend_current_and_run_next;
+use crate::mm::UserBuffer;
 use crate::print;
-use crate::syscall::{PollEvents};
+use crate::syscall::PollEvents;
+use crate::task::suspend_current_and_run_next;
 
 use crate::utils::{SysErrNo, SyscallRet};
 use alloc::vec::Vec;
@@ -48,6 +48,7 @@ impl File for Stdin {
         1
         */
         //一次读取多个字符
+        //debug!("in stdin read, the user buf len is :{}", user_buf.len());
         let mut c: usize;
         let mut count: usize = 0;
         let mut buf = Vec::new();
@@ -56,6 +57,7 @@ impl File for Stdin {
             match c {
                 // `c > 255`是为了兼容OPENSBI，OPENSBI未获取字符时会返回-1
                 0 | 256.. => {
+                    //debug!("to susupend");
                     suspend_current_and_run_next();
                     continue;
                 }
