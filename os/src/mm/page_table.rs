@@ -193,11 +193,17 @@ impl PageTableEntry {
     pub fn reset_cow(&mut self) {
         (*self).bits = self.bits & !(1 << 9);
     }
-    pub fn set_map_flags(&mut self, _flags: PTEFlags) {
-        //? 这个地址对不对啊，这个映射有点怪吧
-        //let new_flags: u8 = (self.bits & 0xFF) as u8 | flags.bits().clone();
-        //self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
-        unimplemented!();
+    #[cfg(target_arch = "riscv64")]
+    pub fn reset_w(&mut self) {
+        (*self).bits = self.bits & !(1 << 2);
+    }
+    #[cfg(target_arch = "riscv64")]
+    pub fn set_w(&mut self) {
+        (*self).bits = self.bits | (1 << 2);
+    }
+    pub fn set_map_flags(&mut self, flags: PTEFlags) {
+        let new_flags: u8 = (self.bits & 0xFF) as u8 | flags.bits().clone();
+        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);    
     }
 }
 
@@ -361,6 +367,15 @@ impl PageTable {
     pub fn set_cow(&mut self, vpn: VirtPageNum) {
         self.find_pte_create(vpn).unwrap().set_cow();
     }
+    pub fn reset_cow(&mut self, vpn: VirtPageNum) {
+        self.find_pte_create(vpn).unwrap().reset_cow();
+    }
+    pub fn set_w(&mut self, vpn: VirtPageNum) {
+        self.find_pte_create(vpn).unwrap().set_w();
+    }
+    pub fn reset_w(&mut self, vpn: VirtPageNum) {
+        self.find_pte_create(vpn).unwrap().reset_w();
+    }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
@@ -419,6 +434,7 @@ pub fn safe_translated_byte_buffer(
     ptr: *const u8,
     len: usize,
 ) -> Option<Vec<&'static mut [u8]>> {
+    debug!("safe_translated_byte_buffer: ptr: {:?}, len: {}", ptr, len);
     let page_table = PageTable::from_token(memory_set.token());
     let mut start = ptr as usize;
     let end = start + len;

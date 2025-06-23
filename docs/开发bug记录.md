@@ -225,6 +225,99 @@ impl File for Stdout {
 
 涉及的是关于物理内存到内核虚拟地址的映射问题，于是重新设计了一个 `safe_translated_byte_buffer` 让其传给 `File::write` 的是被处理过后的内核虚地址.
 
+## 2025.6.23
+
+在实现 `sys_mmap` 时遇到了地址不能被访问的问题
+
+```shell
+[DEBUG] in memory set, mmap
+[ERROR] find_insert_addr: hint = 0x2ffdcd7000, size = 4096
+[ERROR] find_insert_addr: start_vpn = 0x2ffdcd6, end_vpn = 0x2ffdcd7, start_va = 0x2ffdcd6000
+[DEBUG] [sys_mmap] start_va:0x2ffdcd6000,end_va:0x2ffdcd7000
+[DEBUG] [sys_mmap] alloc addr=0x2ffdcd6000
+[DEBUG] in sys write
+[DEBUG] current pid is :1
+[DEBUG] in write,to translated byte buffer
+[DEBUG] Getting bytes array for PhysAddr: 0x822ff000
+[ INFO] safe_translated_byte_buffer: start_va: VA:0x1f78, end_va: VA:0x1f86, ppn: PPN:0x822ff
+[DEBUG] safe trsnslated byte buffer ok
+[DEBUG] UserBuffer::new: buffers: [[109, 109, 97, 112, 32, 99, 111, 110, 116, 101, 110, 116, 58, 32]]
+[ INFO] kernel: write to stdout
+mmap content: [ INFO] kernel: write to stdout done
+[DEBUG] in write, to return , ret is :14
+[DEBUG] in sys write
+[DEBUG] current pid is :1
+[DEBUG] in write,to translated byte buffer
+[DEBUG] safe trsnslated byte buffer ok
+[DEBUG] UserBuffer::new: buffers: []
+[ INFO] kernel: write to stdout
+[ INFO] kernel: write to stdout done
+[DEBUG] in write, to return , ret is :0
+[ERROR] [kernel] trap_handler: Exception(LoadPageFault) in application, bad addr = 0x2ffdcd6000, bad instruction = 0x1970, kernel killed it.
+```
+
+具体而言是 `MMAP_TOP` 附近的地址不能被正确访问.
+
+如果在 `find_insert_addr` 这个函数中修改映射的地址位置，
+
+```shell
+[ERROR] find_insert_addr: hint = 0x2ffdcd7000, size = 4096
+[ERROR] find_insert_addr: start_vpn = 0x2ffdcd6, end_vpn = 0x2ffdcd7, start_va = 0x2ffdcd5000
+[DEBUG] [sys_mmap] start_va:0x2ffdcd6000,end_va:0x2ffdcd7000
+[DEBUG] [sys_mmap] alloc addr=0x2ffdcd6000
+[DEBUG] in sys write
+[DEBUG] current pid is :1
+[DEBUG] in write,to translated byte buffer
+[DEBUG] Getting bytes array for PhysAddr: 0x822ff000
+[ INFO] safe_translated_byte_buffer: start_va: VA:0x1f78, end_va: VA:0x1f86, ppn: PPN:0x822ff
+[DEBUG] safe trsnslated byte buffer ok
+[DEBUG] UserBuffer::new: buffers: [[109, 109, 97, 112, 32, 99, 111, 110, 116, 101, 110, 116, 58, 32]]
+[ INFO] kernel: write to stdout
+mmap content: [ INFO] kernel: write to stdout done
+[DEBUG] in write, to return , ret is :14
+[DEBUG] in sys write
+[DEBUG] current pid is :1
+[DEBUG] in write,to translated byte buffer
+[DEBUG] safe trsnslated byte buffer ok
+[DEBUG] UserBuffer::new: buffers: []
+[ INFO] kernel: write to stdout
+[ INFO] kernel: write to stdout done
+[DEBUG] in write, to return , ret is :0
+[ERROR] [kernel] trap_handler: Exception(LoadPageFault) in application, bad addr = 0x2ffdcd6000, bad instruction = 0x1970, kernel killed it.
+```
+
+应该是在创建 `MapArea` 时的问题而不是在用户地址空间里插入映射信息的问题. 导致整个映射出现错误了. 我怀疑这整个段都不能访问，`mmap` 和 `munmap` 的区别就在于 `mmap` 对映射的地址进行了访问.
+
+```shell
+[DEBUG] [sys_mmap] start_va:0x2ffdcd6000,end_va:0x2ffdcd7000
+[DEBUG] [sys_mmap] alloc addr=0x2ffdcd7000
+[DEBUG] [sys_mmap] alloc addr=0x2ffdcd7000 as isize
+[ERROR] [kernel] trap_handler: Exception(LoadPageFault) in application, bad addr = 0x2ffdcd7000, bad instruction = 0x1970, kernel killed it.
+```
+
+当我使用原本的方法
+
+```rust
+self.insert_framed_area(VirtAddr::from(addr), VirtAddr::from(addr + len), map_perm, area_type);
+```
+
+就不会出现 `LoadPageFault` 的报错，也可能是说，错误是因为没有建立对映的映射而导致的，并不是这个地址的问题，因为缓冲区又一次出现空的情况，所以也有可能是 `sys_write` 的问题，换句话说，对应的地址没有被映射是一回事，对应地址的数据又是一回事. 可能是因为这个地址没有对应的数据. 
+
+是因为没有映射到文件的内容吗？这是有可能的.
+
+```c
+array = mmap(NULL, kst.st_size, PROT_WRITE | PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
+if (array == MAP_FAILED) {
+	printf("mmap error.\n");
+} else {
+	printf("mmap content: %s\n", array);
+}
+```
+
+在 `trap_handler` 中对 `LoadPageFault` 做了处理，实现了 `cow`. 然后一个错误是在 `OSInode::write` 中的 `for slice in buf.buffers.iter()` 不能访问 `slice`. 或者说 `munmap` 中 `buf` 的地址有问题.
+
+确实是 `buf` 在内核态访问了用户态的内容，一直尝试使用 `safe_translated_byte_buffer` 来解决问题，和引用问题斗争了很久. 经过指点发现完全可以使用 `translated_byte_buffer` 这个更基础的函数来解决，惭愧.
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.

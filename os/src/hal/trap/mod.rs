@@ -25,6 +25,7 @@ use crate::task::{
     current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
 };
 use crate::timer::check_timer;
+use crate::mm::VirtAddr;
 
 #[cfg(target_arch = "riscv64")]
 use crate::{
@@ -34,7 +35,7 @@ use crate::{
 };
 #[cfg(target_arch = "loongarch64")]
 use crate::{
-    mm::{PageTable, VirtAddr, VirtPageNum},
+    mm::{PageTable, VirtPageNum},
     task::current_trap_addr,
     timer::get_time,
 };
@@ -181,19 +182,42 @@ pub fn trap_handler() -> ! {
             cx = current_trap_cx();
             cx.x[10] = result as usize;
         }
-        Trap::Exception(Exception::StoreFault)
-        | Trap::Exception(Exception::StorePageFault)
-        | Trap::Exception(Exception::InstructionFault)
+        Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::InstructionPageFault)
-        | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
+            // page fault
+            let mut res: bool;
+            {
+                let process = current_process();
+                let inner = process.inner_exclusive_access();
+                res = inner.memory_set
+                    .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+                if !res {
+                    res = inner.memory_set
+                    .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+                }
+                // drop to avoid deadlock and exit exception 
+            }
+            if !res {
+                error!(
+                    "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+                    scause.cause(),
+                    stval,
+                    current_trap_cx().sepc,
+                );
+                current_add_signal(SignalFlags::SIGSEGV);
+            }    
+        }
+        Trap::Exception(Exception::StoreFault)
+        | Trap::Exception(Exception::InstructionFault)
+        | Trap::Exception(Exception::LoadFault) => {
             error!(
                 "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
                 scause.cause(),
                 stval,
                 current_trap_cx().sepc,
             );
-            current_add_signal(SignalFlags::SIGSEGV);
+            exit_current_and_run_next(-2);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             current_add_signal(SignalFlags::SIGILL);

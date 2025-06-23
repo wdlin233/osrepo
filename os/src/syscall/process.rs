@@ -344,10 +344,6 @@ pub fn sys_mmap(
     addr: usize, len: usize, port: u32, 
     flags: u32, fd: usize, off: usize
 ) -> isize {
-    // trace!(
-    //     "kernel:pid[{}] sys_mmap)(start: 0x{start:x}, len: 0x{len:x}, port: 0x{port:x})",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
     if flags == 0 {
         return SysErrNo::EINVAL as isize;
     }
@@ -364,6 +360,10 @@ pub fn sys_mmap(
     if flags.contains(MmapFlags::MAP_FIXED) && addr == 0 {
         return SysErrNo::EPERM as isize;
     }
+    info!(
+        "[sys_mmap]: addr {:#x}, len {:#x}, fd {}, offset {:#x}, flags {:?}, prot is {:?}, map_perm {:?}",
+        addr, len, fd as isize, off, flags,mmap_prot, permission
+    );
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
@@ -410,6 +410,7 @@ pub fn sys_mmap(
         .memory_set
         .mmap(addr, len, permission, flags, Some(file), off);
     debug!("[sys_mmap] alloc addr={:#x}", ret);
+    debug!("[sys_mmap] alloc addr={:#x} as isize", ret as isize);
     return ret as isize;
 }
 

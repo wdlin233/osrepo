@@ -9,7 +9,7 @@ pub static GROUP_SHARE: Lazy<Mutex<GroupManager>> = Lazy::new(|| Mutex::new(Grou
 //以MapArea为单元分组，每个MapArea一个groupid,在同一个group内的MapArea共享内存
 struct GroupInner {
     //该组内共享的帧
-    pub shared_frames: BTreeMap<VirtPageNum, FrameTracker>,
+    pub shared_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
     //该组内剩余的maparea数量
     pub maparea_num: usize,
 }
@@ -66,7 +66,7 @@ impl GroupManager {
     }
     //添加共享帧
     //同一组只有第一次触发懒分配时调用，所有权直接转移给shared_frames
-    pub fn add_frame(&mut self, id: usize, vpn: VirtPageNum, frame: FrameTracker) {
+    pub fn add_frame(&mut self, id: usize, vpn: VirtPageNum, frame: Arc<FrameTracker>) {
         self.groups
             .get_mut(&id)
             .unwrap()
@@ -74,7 +74,7 @@ impl GroupManager {
             .insert(vpn, frame);
     }
     //查找共享帧
-    pub fn find(&mut self, id: usize, vpn: VirtPageNum) -> Option<FrameTracker> {
+    pub fn find(&mut self, id: usize, vpn: VirtPageNum) -> Option<Arc<FrameTracker>> {
         if id == 0 {
             return None;
         }

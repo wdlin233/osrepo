@@ -12,13 +12,19 @@ use alloc::collections::BTreeMap;
 #[derive(Clone)]
 pub struct MapArea {
     pub vpn_range: VPNRange,
-    pub data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+    pub data_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
     #[cfg(target_arch = "riscv64")] pub map_type: MapType,
     pub map_perm: MapPermission,
     pub area_type: MapAreaType,
     pub mmap_file: MmapFile,
     pub mmap_flags: MmapFlags,
     pub groupid: usize,
+}
+
+impl Drop for MapArea {
+    fn drop(&mut self) {
+        GROUP_SHARE.lock().del_area(self.groupid);
+    }
 }
 
 impl MapArea {
@@ -67,7 +73,7 @@ impl MapArea {
             MapType::Framed => {
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
-                self.data_frames.insert(vpn, frame);
+                self.data_frames.insert(vpn, Arc::new(frame));
             }
         }
         #[cfg(target_arch = "loongarch64")]
@@ -158,6 +164,7 @@ impl MapArea {
             groupid = GROUP_SHARE.lock().alloc_id();
             GROUP_SHARE.lock().add_area(groupid);
         }
+        //info!("start_vpn: {:x}", start_vpn.0);
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),

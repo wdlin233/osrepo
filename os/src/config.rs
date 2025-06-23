@@ -66,7 +66,8 @@ pub const BLOCK_SIZE: usize = 4096;
 pub const IO_BLOCK_SIZE: usize = 512;
 
 pub const THREAD_MAX_NUM: usize = 3000;
-pub const USER_SPACE_SIZE: usize = 0x30_0000_0000;
+// 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
+pub const USER_SPACE_SIZE: usize = 0x30_0000_0000; // 192GiB
 pub const USER_TRAP_CONTEXT_TOP: usize = USER_SPACE_SIZE;
 pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
     - PAGE_SIZE * THREAD_MAX_NUM

@@ -21,7 +21,7 @@ use alloc::sync::Arc;
 
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
-    debug!("in sys write");
+    debug!("in sys write with buf: {:x?}, len: {}", buf, len);
     let process = current_process();
     debug!("current pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
@@ -167,14 +167,14 @@ pub fn sys_close(fd: usize) -> isize {
     let process = current_process();
     debug!("in close, pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
-    if fd >= inner.fd_table.len() {
+    if fd >= inner.fd_table.len() || fd < 0 {
         return -1;
     }
     if inner.fd_table.try_get(fd).is_none() {
-        return -1;
+        return 0;
     }
     inner.fd_table.take(fd);
-    //inner.fs_info.remove(fd);
+    inner.fs_info.remove(fd);
     debug!("sys close ok");
     0
 }

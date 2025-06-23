@@ -10,7 +10,7 @@ use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::MapType;
 use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
-use crate::mm::page_fault_handler::{lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault};
+use crate::mm::page_fault_handler::{cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault};
 //,USER_STACK_SIZE};
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
@@ -19,9 +19,10 @@ use crate::hal::{
     ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
 };
 use crate::mm::page_table::flush_tlb;
-use crate::mm::UserBuffer;
+use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
+use crate::task::current_process;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -160,8 +161,13 @@ impl MemorySet {
     ) -> usize {
         self.inner.get_unchecked_mut().mmap(start, len, port, flags, fd, off)
     }
+    #[inline(always)]
     pub fn munmap(&self, addr: usize, len: usize) -> isize {
         self.inner.get_unchecked_mut().munmap(addr, len)
+    }
+    #[inline(always)]
+    pub fn cow_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
+        self.inner.get_unchecked_mut().cow_page_fault(vpn, scause)
     }
 }
 
@@ -681,6 +687,7 @@ impl MemorySetInner {
         } else {
             MapAreaType::Mmap
         };
+        //self.insert_framed_area(VirtAddr::from(addr), VirtAddr::from(addr + len), map_perm, area_type);
         self.push_lazily(MapArea::new_mmap(
             VirtAddr::from(addr),
             VirtAddr::from(addr + len),
@@ -699,10 +706,10 @@ impl MemorySetInner {
         debug!("in memory set, munmap");
         let start_vpn = VirtPageNum::from(VirtAddr::from(addr));
         let end_vpn = VirtPageNum::from(VirtAddr::from(addr + len));
-        // debug!(
-        //     "[MemorySet] start_vpn:{:#x},end_vpn:{:#x}",
-        //     start_vpn.0, end_vpn.0
-        // );
+        debug!(
+             "[MemorySet] start_vpn:{:#x},end_vpn:{:#x}",
+             start_vpn.0, end_vpn.0
+        );
         while let Some((idx, area)) = self
             .areas
             .iter_mut()
@@ -722,6 +729,11 @@ impl MemorySetInner {
                 if found_res.clone().err() != Some(SysErrNo::ENOENT) {
                     // 相邻的页面一次写回
                     let mut wb_range: Vec<(VirtPageNum, VirtPageNum)> = Vec::new();
+                    // debug!(
+                    //     "when munmap {}, file {} has not been unlinked!",
+                    //     idx,
+                    //     file.inode.path()
+                    // );
                     VPNRange::new(start_vpn, end_vpn)
                         .into_iter()
                         .for_each(|vpn| {
@@ -744,10 +756,28 @@ impl MemorySetInner {
                     wb_range.into_iter().for_each(|(start_vpn, end_vpn)| {
                         let start_addr: usize = VirtAddr::from(start_vpn).into();
                         let mapped_len: usize = (end_vpn.0 - start_vpn.0) * PAGE_SIZE;
-                        let buf = UserBuffer::new_single(data_flow!({
-                            core::slice::from_raw_parts_mut(start_addr as *mut u8, mapped_len)
-                        }));
+                        // debug!(
+                        //     "when munmap {}, file {} write back start_addr:{:#x},mapped_len:{}",
+                        //     idx,
+                        //     file.inode.path(),
+                        //     start_addr,
+                        //     mapped_len
+                        // );
+                        info!("start_addr:{:#x},mapped_len:{}", start_addr, mapped_len);
+                        
+                        // let buf = UserBuffer::new_single(data_flow!({
+                        //     core::slice::from_raw_parts_mut(start_addr as *mut u8, mapped_len)
+                        // }));
+                        let token = self.page_table.token();
+                        let buffers = translated_byte_buffer(token, start_addr as *const u8, mapped_len);
+                        let buf = UserBuffer::new(buffers);
+
                         file.lseek((start_addr - addr) as isize, SEEK_SET);
+                        debug!(
+                            "when munmap {}, file {} write back buf:bbb",
+                            idx,
+                            file.inode.path(),
+                        );
                         file.write(buf);
                     });
                     file.lseek(off as isize, SEEK_SET);
@@ -759,12 +789,12 @@ impl MemorySetInner {
                     );
                 }
             }
-            // debug!(
-            //     "[area vpn_range] start:{:#x},end:{:#x}",
-            //     area.vpn_range.start().0,
-            //     area.vpn_range.end().0
-            // );
-            // 取消映射
+            debug!(
+                "[area vpn_range] start:{:#x},end:{:#x}",
+                area.vpn_range.get_start().0,
+                area.vpn_range.get_end().0
+            );
+            //取消映射
             for vpn in VPNRange::new(start_vpn, end_vpn) {
                 area.unmap_one(&mut self.page_table, vpn);
             }
@@ -875,11 +905,12 @@ impl MemorySetInner {
         flush_tlb();
     }
     pub fn find_insert_addr(&self, hint: usize, size: usize) -> usize {
-        error!("find_insert_addr: hint = {:#x}, size = {}", hint, size);
+        info!("find_insert_addr: hint = {:#x}, size = {}", hint, size);
         let end_vpn = VirtAddr::from(hint).floor();
         let start_vpn = VirtAddr::from(hint - size).floor();
         let start_va: VirtAddr = start_vpn.into();
-        error!(
+        //for test let start_va: VirtAddr = (start_va.0 - PAGE_SIZE).into();
+        info!(
             "find_insert_addr: start_vpn = {:#x}, end_vpn = {:#x}, start_va = {:#x}",
             start_vpn.0, end_vpn.0, start_va.0
         );
@@ -887,7 +918,7 @@ impl MemorySetInner {
             let (start, end) = area.vpn_range.range();
             if end_vpn > start && start_vpn < end {
                 let new_hint = VirtAddr::from(start_vpn).0 - PAGE_SIZE;
-                error!(
+                info!(
                     "find_insert_addr: hint = {:#x}, size = {}, new_hint = {:#x}",
                     hint, size, new_hint
                 );
@@ -895,5 +926,152 @@ impl MemorySetInner {
             }
         }
         VirtAddr::from(start_vpn).0
+        
+        // use crate::config::PAGE_SIZE_BITS;
+        // // 确保地址按16KB对齐
+        // let aligned_size = (size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        // let aligned_hint = hint & !(PAGE_SIZE - 1);
+        
+        // // 从高地址向低地址搜索
+        // let mut candidate = aligned_hint - aligned_size;
+        
+        // info!(
+        //     "find_insert_addr: hint={:#x}, size={}, aligned_size={}, candidate={:#x}",
+        //     hint, size, aligned_size, candidate
+        // );
+
+        // 'search: loop {
+        //     // 检查候选区域是否重叠
+        //     let candidate_end = candidate + aligned_size;
+        //     for area in self.areas.iter() {
+        //         let (area_start, area_end) = area.vpn_range.range();
+        //         let area_start_va = area_start.0 << PAGE_SIZE_BITS;
+        //         let area_end_va = area_end.0 << PAGE_SIZE_BITS;
+                
+        //         if candidate_end > area_start_va && candidate < area_end_va {
+        //             // 有重叠，向前移动一个完整区域
+        //             candidate = candidate.checked_sub(PAGE_SIZE).unwrap_or(0);
+        //             info!("Overlap found, new candidate={:#x}", candidate);
+        //             continue 'search;
+        //         }
+        //     }
+            
+        //     // 检查对齐
+        //     if candidate & (PAGE_SIZE - 1) != 0 {
+        //         warn!("Unaligned candidate: {:#x}, aligning down", candidate);
+        //         candidate = candidate & !(PAGE_SIZE - 1);
+        //     }
+            
+        //     info!("Found valid address: {:#x}", candidate);
+        //     return candidate;
+        // }
+    }
+    pub fn cow_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
+        if scause == Trap::Exception(Exception::LoadPageFault)
+            || scause == Trap::Exception(Exception::InstructionPageFault)
+        {
+            return false;
+        }
+        //找到触发cow的段
+        if let Some(area) = self
+            .areas
+            .iter_mut()
+            .filter(|area| {
+                area.area_type == MapAreaType::Elf
+                    || area.area_type == MapAreaType::Brk
+                    || area.area_type == MapAreaType::Mmap
+            })
+            .find(|area| {
+                let (start, end) = area.vpn_range.range();
+                start <= vpn && vpn < end
+            })
+        {
+            if let Some(pte) = self.page_table.translate(vpn) {
+                if pte.is_cow() {
+                    cow_page_fault(vpn.into(), &mut self.page_table, area);
+                }
+                return true;
+            }
+        }
+        false
+    }
+    pub fn inner_safe_translate(mut self, ptr: *const u8, len: usize) -> Option<Vec<&'static mut [u8]>>{
+        let mut start = ptr as usize;
+        let end = start + len;
+        let mut v = Vec::new();
+        while start < end {
+        let start_va = VirtAddr::from(start);
+        let mut vpn = start_va.floor();
+        #[cfg(target_arch = "riscv64")]
+        match self.page_table.translate(vpn) {
+            None => {
+                self.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
+            }
+            Some(ref pte) => {
+                if !pte.is_valid() {
+                    self.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
+                }
+            }
+        }
+        #[cfg(target_arch = "loongarch64")]
+        if !self.page_table
+            .translate(vpn)
+            .map_or(false, |pte| pte.is_valid())
+        {
+            self.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
+            // 重新检查
+            if !self.page_table
+                .translate(vpn)
+                .map_or(false, |pte| pte.is_valid())
+            {
+                return None;
+            }
+        }
+
+        let ppn = match self.page_table.translate(vpn) {
+            Some(pte) if pte.is_valid() => pte.ppn(),
+            _ => return None,
+        };
+
+        #[cfg(target_arch = "riscv64")]
+        {
+            vpn.step();
+            let mut end_va: VirtAddr = vpn.into();
+            end_va = end_va.min(VirtAddr::from(end));
+            if end_va.page_offset() == 0 {
+                v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..]);
+            } else {
+                v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..end_va.page_offset()]);
+            }
+            info!(
+                "safe_translated_byte_buffer: start_va: {:?}, end_va: {:?}, ppn: {:?}",
+                start_va, end_va, ppn
+            );
+            start = end_va.into();
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            use crate::config::PAGE_SIZE;
+            let phys_addr: PhysAddr = ppn.into();
+            let kernel_va = phys_addr.0 | 0x9000_0000_0000_0000;
+
+            // debug!(
+            //     "safe_translated_byte_buffer: start_va: {:?}, ppn: {:?}, kernel_va: {:?}",
+            //     start_va, ppn, kernel_va
+            // );
+            // 计算当前页内可访问的字节数
+            let page_offset = start_va.page_offset();
+            let page_remaining = PAGE_SIZE - page_offset;
+            let bytes_in_page = usize::min(page_remaining, end - start);
+            // 获取内核虚拟地址的切片
+            let slice_start = kernel_va + page_offset;
+            let slice =
+                unsafe { core::slice::from_raw_parts_mut(slice_start as *mut u8, bytes_in_page) };
+            v.push(slice);
+            start += bytes_in_page;
+        }
+    }
+    debug!("safe translated byte buffer ok");
+    Some(v)
     }
 }

@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use crate::{
     fs::{
         SEEK_CUR, SEEK_SET,
@@ -90,5 +92,29 @@ pub fn mmap_write_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut
     if need_cow {
         page_table.set_cow(vpn);
     }
+    flush_tlb();
+}
+
+///copy on write
+pub fn cow_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut MapArea) {
+    // 只有一个，不用复制
+    let vpn = va.floor();
+    let frame = vma.data_frames.get(&vpn).unwrap();
+    // debug!("handle va {:#x}, count={}", va.0, Arc::strong_count(frame));
+    if Arc::strong_count(frame) == 1 {
+        page_table.reset_cow(vpn);
+        page_table.set_w(vpn);
+        flush_tlb();
+        return;
+    }
+
+    //旧物理页的内容复制到新物理页
+    let src = &mut page_table.translate(vpn).unwrap().ppn().bytes_array_mut()[..PAGE_SIZE];
+    vma.unmap_one(page_table, vpn);
+    vma.map_one(page_table, vpn);
+    let dst = &mut page_table.translate(vpn).unwrap().ppn().bytes_array_mut()[..PAGE_SIZE];
+    dst.copy_from_slice(src);
+    page_table.reset_cow(vpn);
+    page_table.set_w(vpn);
     flush_tlb();
 }
