@@ -88,7 +88,7 @@ fs-img:
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
-fs-img:	
+fs-img:
 	@sudo mkdir -p /mnt/image_part
 	@sudo mount $(FS_IMG) /mnt/image_part
 	@make build -C ../user_la
@@ -115,9 +115,15 @@ clean:
 	-tmux kill-server
 	@sudo umount /mnt/image_part
 
+ifeq ($(ARCH),riscv64)
 modify:
-	@rm -rf sdcard-rv.img
-	@cp /home/molinwu/sdcard-rv.img  /home/molinwu/osrepo/os/
+	@cp ${HOME}/sdcard-rv.img  ${HOME}/osrepo/os/sdcard-rv.img
+else ifeq ($(ARCH),loongarch64)
+modify:
+	@cp ${HOME}/sdcard-la.img  ${HOME}/osrepo/os/sdcard-la.img
+else
+	$(error "ARCH" must be one of "riscv64" or "loongarch64")
+endif
 
 ifeq ($(ARCH),riscv64)
 disasm: kernel
@@ -175,4 +181,4 @@ gdbserver: build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config
+.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config modfiy

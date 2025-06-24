@@ -80,7 +80,7 @@ impl MapArea {
         {
             let frame = frame_alloc().unwrap();
             ppn = frame.ppn;
-            self.data_frames.insert(vpn, frame); //虚拟页号与物理页帧的对应关系
+            self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
@@ -155,6 +155,8 @@ impl MapArea {
         offset: usize,
         mmap_flags: MmapFlags,
     ) -> Self {
+        debug!("MapArea::new_mmap: {:#x} - {:#x}, offset: {}, flags: {:?}", 
+            start_va.0, end_va.0, offset, mmap_flags);
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         let groupid;
@@ -168,12 +170,12 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")] map_type,
-            map_perm,
-            area_type,
+            #[cfg(target_arch = "riscv64")] map_type: map_type,
+            map_perm: map_perm,
+            area_type: area_type,
             mmap_file: MmapFile::new(file, offset),
-            mmap_flags,
-            groupid,
+            mmap_flags: mmap_flags,
+            groupid: groupid,
         }
     }
 }

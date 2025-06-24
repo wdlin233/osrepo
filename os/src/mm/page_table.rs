@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 #[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
 use bitflags::*;
+use core::error;
 use core::fmt::{self};
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::{Exception, Trap};
@@ -102,6 +103,7 @@ impl fmt::Debug for PageTableEntry {
 impl PageTableEntry {
     /// Create a new page table entry
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
+        info!("PageTableEntry::new: ppn: {:?}, flags: {:?}", ppn, flags);
         #[cfg(target_arch = "riscv64")]
         return PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
@@ -135,10 +137,21 @@ impl PageTableEntry {
         return PTEFlags::from_bits(self.bits as u8).unwrap();
         #[cfg(target_arch = "loongarch64")]
         {
-            //这里只需要标志位，需要把非标志位的位置清零
-            let mut bits = self.bits;
-            bits.set_bits(14..PALEN, 0);
-            PTEFlags::from_bits(bits).unwrap()
+            //debug!("PageTableEntry::flags: bits: {:#x}", self.bits);
+            let valid_flags = PTEFlags::V.bits() 
+                | PTEFlags::D.bits() 
+                | PTEFlags::PLVL.bits() 
+                | PTEFlags::PLVH.bits() 
+                | PTEFlags::MATL.bits() 
+                | PTEFlags::MATH.bits() 
+                | PTEFlags::G.bits() 
+                | PTEFlags::P.bits() 
+                | PTEFlags::W.bits() 
+                | PTEFlags::NR.bits() 
+                | PTEFlags::NX.bits() 
+                | PTEFlags::RPLV.bits();    
+            let flags_bits = self.bits & valid_flags;
+            PTEFlags::from_bits_truncate(flags_bits)
         }
     }
     // 返回物理页号---页目录项
@@ -183,7 +196,7 @@ impl PageTableEntry {
     pub fn is_zero(&self) -> bool {
         self.bits == 0
     }
-    /// 因为flags只给了8位，改成16位的话又要改一堆接口，于是就不用flags了
+    /// 统一用 9 位来做 cow. 在 rv 上这样可以减少接口的改动.
     pub fn is_cow(&self) -> bool {
         self.bits & (1 << 9) != 0
     }
@@ -193,16 +206,23 @@ impl PageTableEntry {
     pub fn reset_cow(&mut self) {
         (*self).bits = self.bits & !(1 << 9);
     }
-    #[cfg(target_arch = "riscv64")]
     pub fn reset_w(&mut self) {
-        (*self).bits = self.bits & !(1 << 2);
+        #[cfg(target_arch = "riscv64")]
+        return (*self).bits = self.bits & !(1 << 2);
+        #[cfg(target_arch = "loongarch64")]
+        return (*self).bits = self.bits & !(1 << 8);
     }
-    #[cfg(target_arch = "riscv64")]
     pub fn set_w(&mut self) {
-        (*self).bits = self.bits | (1 << 2);
+        #[cfg(target_arch = "riscv64")]
+        return (*self).bits = self.bits | (1 << 2);
+        #[cfg(target_arch = "loongarch64")]
+        return (*self).bits = self.bits | (1 << 8);
     }
     pub fn set_map_flags(&mut self, flags: PTEFlags) {
+        #[cfg(target_arch = "riscv64")]
         let new_flags: u8 = (self.bits & 0xFF) as u8 | flags.bits().clone();
+        #[cfg(target_arch = "loongarch64")]
+        let new_flags: usize = (self.bits & 0xFF) as usize | flags.bits().clone();
         self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);    
     }
 }
@@ -467,7 +487,7 @@ pub fn safe_translated_byte_buffer(
                 return None;
             }
         }
-
+        //info!("safe_translated_byte_buffer: vpn: {:?}, start_va: {:?}", vpn, start_va);
         let ppn = match page_table.translate(vpn) {
             Some(pte) if pte.is_valid() => pte.ppn(),
             _ => return None,

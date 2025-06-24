@@ -1,4 +1,6 @@
 use alloc::sync::Arc;
+use core::arch::asm;
+use crate::config::PAGE_SIZE_BITS;
 
 use crate::{
     fs::{
@@ -104,6 +106,10 @@ pub fn cow_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut MapAre
     if Arc::strong_count(frame) == 1 {
         page_table.reset_cow(vpn);
         page_table.set_w(vpn);
+        #[cfg(target_arch = "loongarch64")]
+        unsafe {
+            asm!("invtlb 0, {}, {}", in(reg) 0, in(reg) vpn.0 << PAGE_SIZE_BITS);
+        }
         flush_tlb();
         return;
     }
@@ -116,5 +122,9 @@ pub fn cow_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut MapAre
     dst.copy_from_slice(src);
     page_table.reset_cow(vpn);
     page_table.set_w(vpn);
+    #[cfg(target_arch = "loongarch64")]
+    unsafe {
+        asm!("invtlb 0, {}, {}", in(reg) 0, in(reg) vpn.0 << PAGE_SIZE_BITS);
+    }
     flush_tlb();
 }

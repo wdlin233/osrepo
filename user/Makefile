@@ -46,7 +46,7 @@ pre:
 ifeq ($(ARCH),riscv64)
 build: clean pre binary
 	@$(foreach t, $(ELFS), cp $(t).bin $(BUILD_DIR)/bin/;)
-	@$(foreach t, $(ELFS), cp $(t).elf $(BUILD_DIR)/elf/;)
+	@$(foreach t, $(ELFS), cp $(t) $(BUILD_DIR)/elf/;)
 else ifeq ($(ARCH),loongarch64)
 build:
 	@cargo build --release --target $(TARGET)

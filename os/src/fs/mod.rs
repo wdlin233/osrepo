@@ -124,6 +124,12 @@ impl FileClass {
             FileClass::Abs(f) => f.clone(),
         }
     }
+    pub fn fstat(&self) -> Kstat {
+        match self {
+            FileClass::File(f) => f.inode.fstat(),
+            FileClass::Abs(f) => f.fstat(),
+        }
+    }
 }
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

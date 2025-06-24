@@ -148,7 +148,7 @@ impl MemorySet {
     }    
     #[inline(always)]
     pub fn all_valid(&self, start: VirtAddr, end: VirtAddr) -> bool {
-        self.inner.get_unchecked_mut().all_invalid(start, end)
+        self.inner.get_unchecked_mut().all_valid(start, end)
     }
     #[inline(always)]
     pub fn all_invalid(&self, start: VirtAddr, end: VirtAddr) -> bool {
@@ -518,7 +518,7 @@ impl MemorySetInner {
     }
     pub fn lazy_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
         let pte = self.page_table.translate(vpn);
-        //println!("vpn={:#X},enter lazy", vpn.0);
+        //debug!("vpn={:#X},enter lazy", vpn.0);
         if pte.is_some() && pte.unwrap().is_valid() {
             return false;
         }
@@ -662,10 +662,21 @@ impl MemorySetInner {
                     }
                 }
             } else {
+                #[cfg(target_arch = "riscv64")]
                 self.push_lazily(MapArea::new_mmap(
                     VirtAddr::from(addr),
                     VirtAddr::from(addr + len),
-                    #[cfg(target_arch = "riscv64")] MapType::Framed,
+                    MapType::Framed,
+                    map_perm,
+                    MapAreaType::Mmap,
+                    file.clone(),
+                    off,
+                    flags,
+                ));
+                #[cfg(target_arch = "loongarch64")]
+                self.push_lazily(MapArea::new_mmap(
+                    VirtAddr::from(addr),
+                    VirtAddr::from(addr + len),
                     map_perm,
                     MapAreaType::Mmap,
                     file.clone(),
@@ -688,10 +699,21 @@ impl MemorySetInner {
             MapAreaType::Mmap
         };
         //self.insert_framed_area(VirtAddr::from(addr), VirtAddr::from(addr + len), map_perm, area_type);
+        #[cfg(target_arch = "riscv64")]
         self.push_lazily(MapArea::new_mmap(
             VirtAddr::from(addr),
             VirtAddr::from(addr + len),
-            #[cfg(target_arch = "riscv64")] MapType::Framed,
+            MapType::Framed,
+            map_perm,
+            area_type,
+            file,
+            off,
+            flags,
+        ));
+        #[cfg(target_arch = "loongarch64")]
+        self.push_lazily(MapArea::new_mmap(
+            VirtAddr::from(addr),
+            VirtAddr::from(addr + len),
             map_perm,
             area_type,
             file,
@@ -967,10 +989,29 @@ impl MemorySetInner {
         // }
     }
     pub fn cow_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
-        if scause == Trap::Exception(Exception::LoadPageFault)
-            || scause == Trap::Exception(Exception::InstructionPageFault)
+        info!("cow_page_fault: vpn = {:#x}", vpn.0);
+        #[cfg(target_arch = "riscv64")]
         {
-            return false;
+            if scause == Trap::Exception(Exception::LoadPageFault)
+                || scause == Trap::Exception(Exception::InstructionPageFault)
+            {
+                return false;
+            }
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            info!("cow_page_fault: scause = {:?}", scause);
+            // match scause {
+            //     Trap::Exception(Exception::FetchPageFault)
+            //     | Trap::Exception(Exception::LoadPageFault) 
+            //     // load 和 fetch 都是读操作
+            //     => {
+            //         info!("cow_page_fault: LoadPageFault or FetchPageFault, return false");
+            //         return false;
+                
+            //     }
+            //     _ => {}
+            // }
         }
         //找到触发cow的段
         if let Some(area) = self
@@ -994,84 +1035,5 @@ impl MemorySetInner {
             }
         }
         false
-    }
-    pub fn inner_safe_translate(mut self, ptr: *const u8, len: usize) -> Option<Vec<&'static mut [u8]>>{
-        let mut start = ptr as usize;
-        let end = start + len;
-        let mut v = Vec::new();
-        while start < end {
-        let start_va = VirtAddr::from(start);
-        let mut vpn = start_va.floor();
-        #[cfg(target_arch = "riscv64")]
-        match self.page_table.translate(vpn) {
-            None => {
-                self.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
-            }
-            Some(ref pte) => {
-                if !pte.is_valid() {
-                    self.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
-                }
-            }
-        }
-        #[cfg(target_arch = "loongarch64")]
-        if !self.page_table
-            .translate(vpn)
-            .map_or(false, |pte| pte.is_valid())
-        {
-            self.lazy_page_fault(vpn, Trap::Exception(Exception::LoadPageFault));
-            // 重新检查
-            if !self.page_table
-                .translate(vpn)
-                .map_or(false, |pte| pte.is_valid())
-            {
-                return None;
-            }
-        }
-
-        let ppn = match self.page_table.translate(vpn) {
-            Some(pte) if pte.is_valid() => pte.ppn(),
-            _ => return None,
-        };
-
-        #[cfg(target_arch = "riscv64")]
-        {
-            vpn.step();
-            let mut end_va: VirtAddr = vpn.into();
-            end_va = end_va.min(VirtAddr::from(end));
-            if end_va.page_offset() == 0 {
-                v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..]);
-            } else {
-                v.push(&mut ppn.bytes_array_mut()[start_va.page_offset()..end_va.page_offset()]);
-            }
-            info!(
-                "safe_translated_byte_buffer: start_va: {:?}, end_va: {:?}, ppn: {:?}",
-                start_va, end_va, ppn
-            );
-            start = end_va.into();
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            use crate::config::PAGE_SIZE;
-            let phys_addr: PhysAddr = ppn.into();
-            let kernel_va = phys_addr.0 | 0x9000_0000_0000_0000;
-
-            // debug!(
-            //     "safe_translated_byte_buffer: start_va: {:?}, ppn: {:?}, kernel_va: {:?}",
-            //     start_va, ppn, kernel_va
-            // );
-            // 计算当前页内可访问的字节数
-            let page_offset = start_va.page_offset();
-            let page_remaining = PAGE_SIZE - page_offset;
-            let bytes_in_page = usize::min(page_remaining, end - start);
-            // 获取内核虚拟地址的切片
-            let slice_start = kernel_va + page_offset;
-            let slice =
-                unsafe { core::slice::from_raw_parts_mut(slice_start as *mut u8, bytes_in_page) };
-            v.push(slice);
-            start += bytes_in_page;
-        }
-    }
-    debug!("safe translated byte buffer ok");
-    Some(v)
     }
 }

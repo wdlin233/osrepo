@@ -129,6 +129,8 @@ pub const SYSCALL_CONDVAR_CREATE: usize = 471;
 pub const SYSCALL_CONDVAR_SIGNAL: usize = 472;
 /// condvar_wait syscallca
 pub const SYSCALL_CONDVAR_WAIT: usize = 473;
+/// statx syscall
+pub const SYSCALL_STATX: usize = 291;
 
 mod fs;
 mod options;
@@ -147,7 +149,7 @@ use thread::*;
 pub use options::*;
 use uname::*;
 
-use crate::{fs::Kstat, system::UTSname, task::TmsInner};
+use crate::{fs::{Kstat, Statx}, system::UTSname, task::TmsInner};
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -227,6 +229,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         //SYSCALL_IOCTL => sys_ioctl(),
         //SYSCALL_WRITEV => sys_writev(args[0], args[1] as *const IoVec, args[2]),
         SYSCALL_EXIT_GROUP => sys_exit(0),
+        SYSCALL_STATX => sys_statx(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as i32,
+            args[3] as u32,
+            args[4] as *mut Statx,
+        ),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

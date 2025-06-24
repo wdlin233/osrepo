@@ -92,6 +92,12 @@ impl PartialOrd for TimeSpec {
     }
 }
 
+impl Default for TimeSpec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeSpec {
     pub fn new() -> Self {
         Self {

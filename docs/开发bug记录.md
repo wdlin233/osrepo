@@ -318,6 +318,12 @@ if (array == MAP_FAILED) {
 
 确实是 `buf` 在内核态访问了用户态的内容，一直尝试使用 `safe_translated_byte_buffer` 来解决问题，和引用问题斗争了很久. 经过指点发现完全可以使用 `translated_byte_buffer` 这个更基础的函数来解决，惭愧.
 
+## 2025.6.24
+
+> 在COW机制中，当一个页面被标记为只读（因为COW）时，任何写操作都会触发一个页面错误。因此，存储操作（写操作）会触发StorePageFault。而读操作和取指操作不会触发写操作，因此不会因为COW而触发错误（除非该页面本身也不允许读或执行）。所以在COW处理中，我们应该只处理StorePageFault，而将LoadPageFault和FetchPageFault视为真正的错误。
+
+但不是很确定 LA 下的 `LoadPageFault` 和 `FetchPageFault` 是否也需要 COW 的处理，也没什么资料能佐证这一点，虽然测例通过了...会是 LA 的 TLB 重填中遇到的一些页面权限的问题吗？不是很确定架构上是否存在着这个差异，感觉代码也写的没什么问题.
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.
@@ -327,3 +333,4 @@ if (array == MAP_FAILED) {
 
 la 和 rv 的主要区别除了一些参数外，就在于 la 因为有窗口映射就没有设置内核地址空间，以及需要手动处理 TLB 的一些操作.
 
+- [ ] 用 COW 优化 `fork()`.

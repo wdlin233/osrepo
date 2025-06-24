@@ -279,9 +279,28 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             // tlb_page_fault();
             let t = estat.cause();
             let badv = badv::read().vaddr();
-            println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
-            // 设置SIGSEGV信号
-            current_add_signal(SignalFlags::SIGSEGV);
+            info!("badv: {:#x}", badv);
+            let mut res: bool;
+            {
+                let process = current_process();
+                let inner = process.inner_exclusive_access();
+                let add = VirtAddr::from(badv);
+                info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
+                let add = add.floor();
+                info!("[kernel] trap_handler: {:?} at {:#x} as vpn", t, add.0);
+                res = inner.memory_set
+                    .lazy_page_fault(add, t);
+                if !res {
+                    res = inner.memory_set
+                    .cow_page_fault(add, t);
+                }
+                // drop to avoid deadlock and exit exception 
+            }
+            if !res {
+                println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
+                // 设置SIGSEGV信号
+                current_add_signal(SignalFlags::SIGSEGV);
+            }    
         }
         Trap::Exception(Exception::InstructionPrivilegeIllegal) => {
             // 指令权限不足
@@ -300,6 +319,21 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             tlb_refill_handler();
         }
         Trap::Exception(Exception::PageModifyFault) => {
+            // let badv = badv::read().vaddr();
+            // let mut res: bool = false;
+            // {
+            //     let process = current_process();
+            //     let inner = process.inner_exclusive_access();
+            //     res = inner.memory_set
+            //         .cow_page_fault(VirtAddr::from(badv).floor(), estat.cause());
+            // }
+            // if !res {
+            //     error!(
+            //         "[kernel] PageModifyFault at {:#x} in application, kernel killed it.",
+            //         badv
+            //     );
+            //     current_add_signal(SignalFlags::SIGSEGV);
+            // }
             tlb_page_modify_handler();
         }
         Trap::Exception(Exception::PagePrivilegeIllegal) => {
