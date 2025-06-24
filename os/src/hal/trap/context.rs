@@ -40,7 +40,7 @@ impl Debug for TrapContext {
         {
             return write!(
                 f,
-                "TrapContext {{ x: {:?}, prmd: {:#x}, sepc: {:#x}, trap_handler: {:#x} }}",
+                "TrapContext {{ x: {:#x?}, prmd: {:#x}, sepc: {:#x}, trap_handler: {:#x} }}",
                 self.x, self.prmd, self.sepc, self.trap_handler
             );
         }

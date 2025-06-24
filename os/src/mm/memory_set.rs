@@ -113,12 +113,6 @@ impl MemorySet {
         let (memory_set, user_sp_base, entry_point) = MemorySetInner::from_elf(elf_data);
         (Self::new(memory_set), user_sp_base, entry_point)
     }
-    #[inline(always)]
-    pub fn from_existed_user(user_space: &MemorySet) -> Self {
-        Self::new(MemorySetInner::from_existed_user(
-            user_space.inner.get_unchecked_mut(),
-        ))
-    }
     #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn activate(&self) {
@@ -440,13 +434,13 @@ impl MemorySetInner {
         )
     }
     /// Create a new address space by copy code&data from a exited process's address space.
-    pub fn from_existed_user(user_space: &Self) -> Self {
+    pub fn from_existed_user(user_space: &Arc<MemorySet>) -> Self {
         let mut memory_set = Self::new_bare();
         #[cfg(target_arch = "riscv64")]
         // map trampoline
         memory_set.map_trampoline();
         // copy data sections/trap_context/user_stack
-        for area in user_space.areas.iter() {
+        for area in user_space.get_mut().areas.iter() {
             let new_area = MapArea::from_another(area);
             memory_set.push(new_area, None);
             // copy data from another space

@@ -74,6 +74,7 @@ pub fn sys_fork(
     let new_process_inner = new_process.inner_exclusive_access();
     let task = new_process_inner.tasks[0].as_ref().unwrap();
     let trap_cx = task.inner_exclusive_access().get_trap_cx();
+    debug!("sys_fork, trap_cx is :{:#x?}", trap_cx);
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
     #[cfg(target_arch = "riscv64")]
@@ -114,7 +115,6 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             debug!("push busybox");
             argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
-            argv.push(path);
             path = String::from("/busybox");
         }
 

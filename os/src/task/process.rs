@@ -14,7 +14,7 @@ use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
-use crate::mm::{translated_refmut, MemorySet};
+use crate::mm::{translated_refmut, MemorySet, MemorySetInner};
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::timer::get_time;
@@ -322,7 +322,7 @@ impl ProcessControlBlock {
         // push arguments on user stack
         //trace!("kernel: exec .. push arguments on user stack");
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
-        info!("in pcb exec, initial user_sp = {}", user_sp);
+        info!("in pcb exec, initial user_sp = {:#x}", user_sp);
 
         //      00000000000100b0 <main>:
         //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
@@ -401,6 +401,7 @@ impl ProcessControlBlock {
         }
         envp.push(0);
         user_sp -= user_sp % size;
+        info!("in exec pcb, user_sp after envp = {:#x}", user_sp);
 
         //args
         let mut argv = Vec::new();
@@ -417,6 +418,7 @@ impl ProcessControlBlock {
         }
         argv.push(0);
         user_sp -= user_sp % size;
+        info!("in exec pcb, user_sp after argv = {:#x}", user_sp);
 
         //aux 16字节随机变量
         let mut aux = Vec::new();
@@ -438,6 +440,7 @@ impl ProcessControlBlock {
             *translated_refmut(new_token, pp as *mut usize) = aux.value;
         }
         let aux_base = user_sp;
+        info!("in exec pcb, user_sp after aux = {:#x}", user_sp);
 
         //env指针
         //env指针空间
@@ -447,6 +450,7 @@ impl ProcessControlBlock {
             let mut p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = envp[i];
         }
+        info!("in exec pcb, user_sp after env = {:#x}", user_sp);
 
         //args 指针
         //args指针空间
@@ -456,14 +460,17 @@ impl ProcessControlBlock {
             let mut p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = argv[i];
         }
+        info!("in exec pcb, user_sp after argv = {:#x}", user_sp);
 
         //获取argc
         let args_len = args.len();
         //debug!("the args len is :{}", args_len);
         //设置argc
-        *translated_refmut(new_token, (user_sp - size) as *mut usize) = args.len().into();
-        //对齐地址
-        user_sp -= user_sp % size;
+        user_sp -= size;
+        let argc_ptr = user_sp;
+        *translated_refmut(new_token, user_sp as *mut usize) = args.len().into();
+        
+        user_sp = argc_ptr;
 
         // initialize trap_cx
         debug!("init context");
@@ -488,6 +495,8 @@ impl ProcessControlBlock {
         {
             trap_cx.x[4] = args_len;
             trap_cx.x[5] = argv_base; // maybe, or user_sp + 8
+            trap_cx.x[6] = env_base;
+            trap_cx.x[7] = aux_base;
         }
         *task_inner.get_trap_cx() = trap_cx;
 
@@ -525,7 +534,14 @@ impl ProcessControlBlock {
         let pid = pid_alloc();
 
         // 检查是否共享虚拟内存
-        let memory_set = MemorySet::from_existed_user(&parent.memory_set);
+        //let memory_set = MemorySet::from_existed_user(&parent.memory_set);
+        let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
+            Arc::clone(&parent.memory_set)
+        } else {
+            Arc::new(MemorySet::new(MemorySetInner::from_existed_user(
+                &parent.memory_set,
+            )))
+        };
 
         // 检查是否共享文件系统信息
         //filesystem information.  This includes the root
@@ -558,7 +574,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
-                    memory_set: Arc::new(memory_set),
+                    memory_set: memory_set,
                     fs_info,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),

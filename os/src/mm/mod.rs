@@ -22,7 +22,7 @@ pub mod system_allocator; // heap allocator
 use address::VPNRange;
 pub use address::{insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker, frame_alloc_contiguous};
-pub use memory_set::MemorySet;
+pub use memory_set::{MemorySet, MemorySetInner};
 use page_table::PTEFlags;
 pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,

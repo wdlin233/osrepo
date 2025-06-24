@@ -39,7 +39,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 #[cfg(target_arch = "riscv64")]
 /// user app's stack size
-pub const USER_STACK_SIZE: usize = 4096 * 2;
+pub const USER_STACK_SIZE: usize = 4096 * 2; // 0x1000 * 2
 #[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
@@ -53,7 +53,7 @@ pub const PAGE_SIZE_BITS: usize = 14; // 0xe
 #[cfg(target_arch = "loongarch64")]
 pub const PALEN: usize = 48;
 #[cfg(target_arch = "loongarch64")]
-pub const USER_STACK_SIZE: usize = PAGE_SIZE;
+pub const USER_STACK_SIZE: usize = PAGE_SIZE * 2;
 #[cfg(target_arch = "loongarch64")]
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 

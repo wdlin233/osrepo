@@ -277,6 +277,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
         | Trap::Exception(Exception::InstructionNotExist) => {
             // 页面异常
             // tlb_page_fault();
+            use crate::config::USER_SPACE_SIZE;
             let t = estat.cause();
             let badv = badv::read().vaddr();
             info!("badv: {:#x}", badv);
@@ -297,14 +298,14 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
                 // drop to avoid deadlock and exit exception 
             }
             if !res {
-                println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
+                error!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
                 // 设置SIGSEGV信号
                 current_add_signal(SignalFlags::SIGSEGV);
             }    
         }
         Trap::Exception(Exception::InstructionPrivilegeIllegal) => {
             // 指令权限不足
-            println!("[kernel] InstructionPrivilegeIllegal in application, core dumped.");
+            error!("[kernel] InstructionPrivilegeIllegal in application, core dumped.");
             current_add_signal(SignalFlags::SIGILL);
         }
         Trap::Interrupt(Interrupt::Timer) => {
@@ -352,7 +353,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
     }
     // check error signals (if error then exit)
     if let Some((errno, msg)) = check_signals_of_current() {
-        println!("[kernel] {}", msg);
+        error!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
     set_user_trap_entry();
