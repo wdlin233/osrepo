@@ -84,16 +84,15 @@ impl MemorySet {
         permission: MapPermission,
         area_type: MapAreaType,
     ) {
-        self.inner.get_unchecked_mut().insert_framed_area(
-            start_va,
-            end_va,
-            permission,
-            area_type,
-        );
+        self.inner
+            .get_unchecked_mut()
+            .insert_framed_area(start_va, end_va, permission, area_type);
     }
     #[inline(always)]
     pub fn remove_area_with_start_vpn(&self, start_vpn: VirtPageNum) {
-        self.inner.get_unchecked_mut().remove_area_with_start_vpn(start_vpn);
+        self.inner
+            .get_unchecked_mut()
+            .remove_area_with_start_vpn(start_vpn);
     }
     #[inline(always)]
     pub fn push(&self, map_area: MapArea, data: Option<&[u8]>) {
@@ -117,7 +116,7 @@ impl MemorySet {
     #[inline(always)]
     pub fn from_existed_user(user_space: &MemorySet) -> Self {
         Self::new(MemorySetInner::from_existed_user(
-            user_space.inner.get_unchecked_mut()
+            user_space.inner.get_unchecked_mut(),
         ))
     }
     #[cfg(target_arch = "riscv64")]
@@ -126,8 +125,7 @@ impl MemorySet {
         self.inner.get_unchecked_ref().activate();
     }
     #[inline(always)]
-    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry>
-    {
+    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.inner.get_unchecked_ref().translate(vpn)
     }
     #[inline(always)]
@@ -145,7 +143,7 @@ impl MemorySet {
     #[inline(always)]
     pub fn lazy_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
         self.inner.get_unchecked_mut().lazy_page_fault(vpn, scause)
-    }    
+    }
     #[inline(always)]
     pub fn all_valid(&self, start: VirtAddr, end: VirtAddr) -> bool {
         self.inner.get_unchecked_mut().all_valid(start, end)
@@ -430,9 +428,10 @@ impl MemorySetInner {
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_stack_base: usize = max_end_va.into(); // user_stack_bottom
-        info!("user stack base: {:#x}", user_stack_base);
+
         // guard page，用户栈
         user_stack_base += PAGE_SIZE;
+        info!("user stack base: {:#x}", user_stack_base);
         // 返回 address空间,用户栈顶,入口地址
         (
             memory_set,

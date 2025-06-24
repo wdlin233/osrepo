@@ -2,18 +2,18 @@
 
 use super::ProcessControlBlock;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
-use crate::mm::{MapPermission, PhysPageNum, VirtAddr, MapAreaType};
-use crate::sync::UPSafeCell;
 use crate::hal::trap::TrapContext;
+#[cfg(target_arch = "riscv64")]
+use crate::mm::KERNEL_SPACE;
+use crate::mm::{frame_alloc, FrameTracker, PhysAddr};
+use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VirtAddr};
+use crate::phys_to_virt;
+use crate::sync::UPSafeCell;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
 use lazy_static::*;
-use crate::phys_to_virt;
-use crate::mm::{FrameTracker, frame_alloc, PhysAddr};
-#[cfg(target_arch = "riscv64")]
-use crate::mm::KERNEL_SPACE;
 
 /// Allocator with a simple recycle strategy
 pub struct RecycleAllocator {
@@ -133,7 +133,7 @@ impl KernelStack {
     pub fn new() -> Self {
         frame_alloc().map(|frame| KernelStack { frame }).unwrap()
     }
-    
+
     #[cfg(target_arch = "riscv64")]
     /// return the top of the kernel stack
     pub fn get_top(&self) -> usize {
@@ -151,8 +151,10 @@ impl KernelStack {
     where
         T: Sized,
     {
-        #[cfg(target_arch = "riscv64")] let kernel_stack_top = self.get_top();
-        #[cfg(target_arch = "loongarch64")] let kernel_stack_top = self.get_virt_top();
+        #[cfg(target_arch = "riscv64")]
+        let kernel_stack_top = self.get_top();
+        #[cfg(target_arch = "loongarch64")]
+        let kernel_stack_top = self.get_virt_top();
         let ptr_mut = (kernel_stack_top - core::mem::size_of::<T>()) as *mut T;
         unsafe {
             *ptr_mut = value;
@@ -182,7 +184,6 @@ impl KernelStack {
         addr
     }
 }
-
 
 /// User Resource for a task
 pub struct TaskUserRes {
@@ -240,8 +241,11 @@ impl TaskUserRes {
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
         self.heap_bottom = ustack_top + PAGE_SIZE;
         self.program_brk = ustack_top + PAGE_SIZE;
-        
-        // debug!("ustack_bottom = {},ustack_top = {}",ustack_bottom,ustack_top);
+
+        debug!(
+            "ustack_bottom = {},ustack_top = {}",
+            ustack_bottom, ustack_top
+        );
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
@@ -282,7 +286,7 @@ impl TaskUserRes {
             .memory_set
             .remove_area_with_start_vpn(ustack_bottom_va.into());
         // dealloc user heap manually
-        let heap_bottom_va: VirtAddr = self.heap_bottom.into(); 
+        let heap_bottom_va: VirtAddr = self.heap_bottom.into();
         process_inner
             .memory_set
             .remove_area_with_start_vpn(heap_bottom_va.into());
@@ -336,13 +340,20 @@ impl TaskUserRes {
     }
     /// the top addr (high addr) of the user stack for a task
     pub fn ustack_top(&self) -> usize {
+        debug!(
+            "in ustack top, ustack base is :{}, tid is :{}",
+            self.ustack_base, self.tid
+        );
         ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
     }
     /// change the location of the program break. return None if failed.
-    pub fn change_program_brk(&mut self,path: i32) -> Option<usize>{
-        debug!("in change brk,path = {}",path);
-        debug!("self.brk = {},self.bottom = {}",self.program_brk,self.heap_bottom);
-        if path == 0{
+    pub fn change_program_brk(&mut self, path: i32) -> Option<usize> {
+        debug!("in change brk,path = {}", path);
+        debug!(
+            "self.brk = {},self.bottom = {}",
+            self.program_brk, self.heap_bottom
+        );
+        if path == 0 {
             return Some(self.program_brk);
         }
         let process = self.process.upgrade().unwrap();
@@ -354,13 +365,20 @@ impl TaskUserRes {
             return None;
         }
         let result = if new_brk < self.program_brk as isize {
-            inner.memory_set.shrink_to(VirtAddr(heap_bottom),VirtAddr(new_brk as usize))
+            inner
+                .memory_set
+                .shrink_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
         } else {
-            debug!("to append memory set...heap_bottom = {},new_brk = {}",heap_bottom,new_brk);
-            inner.memory_set.append_to(VirtAddr(heap_bottom),VirtAddr(new_brk as usize))
+            debug!(
+                "to append memory set...heap_bottom = {},new_brk = {}",
+                heap_bottom, new_brk
+            );
+            inner
+                .memory_set
+                .append_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
         };
         if result {
-            debug!("to modify self brk,new brk is :{}",new_brk);
+            debug!("to modify self brk,new brk is :{}", new_brk);
             self.program_brk = new_brk as usize;
             Some(0)
         } else {

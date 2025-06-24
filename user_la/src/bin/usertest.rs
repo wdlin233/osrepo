@@ -21,23 +21,23 @@ static TESTS: &[&str] = &[
     "getppid\0",
     "times\0",
     
-    "chdir\0", // 34
-    "close\0", // panic
-    "dup\0", // 23
-    "fstat\0", // 291
-    "getcwd\0", // 17
-    "getdents\0", // 61
-    "mkdir_\0", // 34
-    "mmap\0", // panic, NoneOption
-    "mount\0", // 40
-    "munmap\0", // panic
-    "openat\0", // panic
-    "open\0", // fatal
-    "pipe\0", // waiting forever
-    "read\0", // fatal
-    "umount\0", // panic
-    "uname\0", // 160
-    "unlink\0", // panic
+    "chdir\0", 
+    "close\0", 
+    "dup\0", 
+    "fstat\0", 
+    "getcwd\0", 
+    "getdents\0", 
+    "mkdir_\0", 
+    "mmap\0", 
+    "mount\0", 
+    "munmap\0", 
+    "openat\0", 
+    "open\0", 
+    "pipe\0", 
+    "read\0", 
+    "umount\0", 
+    "uname\0", 
+    "unlink\0",
 ];
 
 const TEST_NUM: usize = TESTS.len();

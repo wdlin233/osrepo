@@ -1,6 +1,7 @@
 //! Implementation of  [`ProcessControlBlock`]
 
 use super::add_task;
+use super::aux::{Aux, AuxType};
 use super::id::RecycleAllocator;
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
@@ -295,17 +296,13 @@ impl ProcessControlBlock {
     }
 
     /// Only support processes with a single thread.
-    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>, _env: &mut Vec<String>) {
+    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>, env: &mut Vec<String>) {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        // memory_set with elf program headers/trampoline/trap context/user stack
-        //trace!("kernel: exec .. MemorySet::from_elf");
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
         let new_token = memory_set.token();
-        let args_len = args.len();
-        // substitute memory_set
-        //trace!("kernel: exec .. substitute memory_set");
+
         self.inner_exclusive_access().memory_set = Arc::new(memory_set);
         // then we alloc user resource for main thread again
         // since memory_set has been changed
@@ -322,11 +319,11 @@ impl ProcessControlBlock {
         {
             task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
         }
-
         // push arguments on user stack
         //trace!("kernel: exec .. push arguments on user stack");
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
-        info!("initial user_sp = {}", user_sp);
+        info!("in pcb exec, initial user_sp = {}", user_sp);
+
         //      00000000000100b0 <main>:
         //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
         //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
@@ -336,51 +333,140 @@ impl ProcessControlBlock {
         //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
         //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
 
-        // Reserve memory space for the stack
+        /*
+        -----------------------ustack top == sp(init)
+                .
+                .
+                .
+            ------------
+            env string 2
+            ------------
+            env string 1
+        ------------------------env_st
+            地址对齐
+        --------------------------
+
+                .
+                .
+                .
+            -------------
+            args string 2
+            -------------
+            args string 1
+        ---------------------------args_st
+            地址对齐
+        ----------------------------
+            aux空间
+            以两个0为结束标志
+        ----------------------------
+                0(envp 结束)
+            ---------------------
+                .
+                .
+                .
+            ---------------------
+            envp2 -> env string 2
+            ---------------------
+            envp1 -> env string 1
+        -----------------------------env_base
+                0(argv 结束)
+            --------------------------
+                .
+                .
+                .
+            --------------------------
+                argv2 -> args string 2
+            --------------------------
+                argv1 -> args string 1
+        --------------------------------argv_base
+            argc
+        ---------------------------------sp(final)
+        */
+
+        //usize大小
+        let size = core::mem::size_of::<usize>();
+
+        //环境变量内容入栈
+        let mut envp = Vec::new();
+        for env in env.iter() {
+            user_sp -= env.len() + 1;
+            envp.push(user_sp);
+            let mut p = user_sp;
+            //设置env字符串
+            for c in env.as_bytes() {
+                *translated_refmut(new_token, p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(new_token, p as *mut u8) = 0;
+        }
+        envp.push(0);
+        user_sp -= user_sp % size;
+
+        //args
+        let mut argv = Vec::new();
         for i in 0..args.len() {
             user_sp -= args[i].len() + 1;
-        }
-        let argv_st = user_sp;
-        // make the user_sp aligned to 8B for k210 platform
-        user_sp -= user_sp % core::mem::size_of::<usize>();
-        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
-        let argv_base = user_sp;
-
-        let mut argv: Vec<_> = (0..=args.len())
-            .map(|arg| {
-                translated_refmut(
-                    new_token,
-                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
-                )
-            })
-            .collect();
-
-        // Set stack parameters
-        // from low addr to high addr
-        // argv content
-        user_sp = argv_st;
-        for i in 0..args.len() {
-            *argv[i] = user_sp;
+            argv.push(user_sp);
             let mut p = user_sp;
+            //讲args字符串内容写到栈空间中
             for c in args[i].as_bytes() {
                 *translated_refmut(new_token, p as *mut u8) = *c;
                 p += 1;
             }
             *translated_refmut(new_token, p as *mut u8) = 0;
-            user_sp += args[i].len() + 1;
         }
-        *argv[args.len()] = 0;
+        argv.push(0);
+        user_sp -= user_sp % size;
 
-        // argc
-        user_sp = argv_base;
-        *translated_refmut(
-            new_token,
-            (user_sp - core::mem::size_of::<usize>()) as *mut usize,
-        ) = args.len().into();
-        user_sp -= core::mem::size_of::<usize>();
+        //aux 16字节随机变量
+        let mut aux = Vec::new();
+        user_sp -= 16;
+        aux.push(Aux::new(AuxType::RANDOM, user_sp));
+        for i in 0..0xf {
+            let mut p = user_sp + i;
+            *translated_refmut(new_token, p as *mut u8) = (i * 2) as u8;
+        }
+        user_sp -= user_sp % 16;
+        //aux
+        aux.push(Aux::new(AuxType::EXECFN, argv[0]));
+        aux.push(Aux::new(AuxType::NULL, 0));
+        for aux in aux.iter().rev() {
+            user_sp -= core::mem::size_of::<Aux>();
+            let mut p = user_sp;
+            let mut pp = user_sp + size;
+            *translated_refmut(new_token, p as *mut usize) = aux.aux_type as usize;
+            *translated_refmut(new_token, pp as *mut usize) = aux.value;
+        }
+        let aux_base = user_sp;
+
+        //env指针
+        //env指针空间
+        user_sp -= envp.len() * size;
+        let env_base = user_sp;
+        for i in 0..envp.len() {
+            let mut p = user_sp + i * size;
+            *translated_refmut(new_token, p as *mut usize) = envp[i];
+        }
+
+        //args 指针
+        //args指针空间
+        user_sp -= argv.len() * size;
+        let argv_base = user_sp;
+        for i in 0..argv.len() {
+            let mut p = user_sp + i * size;
+            *translated_refmut(new_token, p as *mut usize) = argv[i];
+        }
+
+        //获取argc
+        let args_len = args.len();
+        //debug!("the args len is :{}", args_len);
+        //设置argc
+        *translated_refmut(new_token, (user_sp - size) as *mut usize) = args.len().into();
+        //对齐地址
+        user_sp -= user_sp % size;
 
         // initialize trap_cx
-        //trace!("kernel: exec .. initialize trap_cx");
+        debug!("init context");
         let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -395,6 +481,8 @@ impl ProcessControlBlock {
         {
             trap_cx.x[10] = args_len; // a0, the same with previous stack frame
             trap_cx.x[11] = argv_base; // a1
+            trap_cx.x[12] = env_base;
+            trap_cx.x[13] = aux_base;
         }
         #[cfg(target_arch = "loongarch64")]
         {
@@ -416,6 +504,7 @@ impl ProcessControlBlock {
             // Pgdl::read().set_val(pgd).write(); //设置新的页基址
             pgdl::set_base(pgd); //设置新的页基址
         }
+        debug!("in pcb, exec ok");
     }
 
     /// Only support processes with a single thread.

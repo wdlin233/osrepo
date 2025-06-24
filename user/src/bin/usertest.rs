@@ -4,11 +4,11 @@
 #[macro_use]
 extern crate user_lib;
 
-/*
-
-
-        "munmap\0", // panic
-            "mmap\0", // panic
+const TESTS: &[&str] = &[
+    //"mnt/test_mount\0",
+    "pipe\0", 
+    "munmap\0", 
+            "mmap\0", 
 
                 "dup2\0",
     "clone\0",
@@ -25,27 +25,19 @@ extern crate user_lib;
     "uname\0",
     "getppid\0",
     "exit\0",
-    "close\0",    // panic
-    "dup\0",      // 23
-    "fstat\0",    // fatal
-    "getcwd\0",   // 17
-    "chdir\0",    // 34
-    "getdents\0", // 61
-        "mkdir_\0", // 34
-    "mount\0",  // 40
-    "openat\0", // panic
-    "open\0",   // fatal
-    "read\0",   // fatal
-    "umount\0", // panic
-    "unlink\0", // panic
-
-
-
-*/
-
-// Basic 测例中除去 mnt 以外的
-const TESTS: &[&str] = &[
-    "pipe\0", // waiting forever
+    "close\0",    
+    "dup\0",      
+    "fstat\0",    
+    "getcwd\0",   
+    "chdir\0",    
+    "getdents\0", 
+        "mkdir_\0", 
+    "mount\0",  
+    "openat\0", 
+    "open\0",   
+    "read\0",   
+    "umount\0",
+    "unlink\0", 
 ];
 
 const TEST_NUM: usize = TESTS.len();
