@@ -103,7 +103,7 @@ impl fmt::Debug for PageTableEntry {
 impl PageTableEntry {
     /// Create a new page table entry
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
-        info!("PageTableEntry::new: ppn: {:?}, flags: {:?}", ppn, flags);
+        //info!("PageTableEntry::new: ppn: {:?}, flags: {:?}", ppn, flags);
         #[cfg(target_arch = "riscv64")]
         return PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,

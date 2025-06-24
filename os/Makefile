@@ -18,6 +18,10 @@ DISASM ?= -d
 TESTSUITS := $(wildcard ../testsuits/$(ARCH)/*)
 TESTCASES := $(filter-out, $(TESTSUITS))
 
+# debug
+GDB_PORT := 1238
+TMUX_SESSION := os-debug2
+
 ifeq ($(ARCH), riscv64)
   	TARGET := riscv64gc-unknown-none-elf
 	KERNEL_ELF := target/$(TARGET)/$(MODE)/os
@@ -164,21 +168,27 @@ QEMU_EXEC += -nographic \
 run-inner:
 	$(QEMU_EXEC)
 
-# debug, gdbserver and gdbclient no changes
-debug: build
-	@tmux new-session -d \
-		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -drive file=$(FS_IMG),if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -s -S" && \
-		tmux split-window -h "riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'" && \
-		tmux -2 attach-session -d 
+ifeq ($(ARCH), riscv64)
+    GDB := riscv64-unknown-elf-gdb
+    QEMU_DEBUG_ARGS := -s -S
+else ifeq ($(ARCH), loongarch64)
+    GDB := loongarch64-unknown-linux-gnu-gdb
+    QEMU_DEBUG_ARGS := -gdb tcp::$(GDB_PORT) -S
+endif
 
+debug: build
+	@tmux new-session -d -s $(TMUX_SESSION) \
+		"$(QEMU_EXEC) $(QEMU_DEBUG_ARGS)" && \
+		tmux split-window -h "$(GDB) -ex 'file $(KERNEL_ELF)' -ex 'target remote localhost:$(GDB_PORT)'" && \
+		tmux -2 attach-session -t $(TMUX_SESSION)
 
 gdbserver: build
-	@qemu-system-riscv64 -M 128m -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
-	-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
-        -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
-	-s -S
+	$(QEMU_EXEC) $(QEMU_DEBUG_ARGS)
 
 gdbclient:
-	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
+	@$(GDB) -ex "file $(KERNEL_ELF)" -ex "target remote localhost:$(GDB_PORT)"
 
-.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config modfiy
+clean-debug:
+	-tmux kill-server
+
+.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config modify debug
