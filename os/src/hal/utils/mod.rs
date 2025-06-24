@@ -58,9 +58,15 @@ pub fn shutdown() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub(crate) extern "C" fn shutdown() -> ! {
-    loop {
-        unsafe {
-            asm!("idle 0");
-        }
+    use core::panic;
+    use loongarch64::asm;
+    use crate::phys_to_virt;
+    let ged_ptr = phys_to_virt!(0x100E001C as usize) as *mut u8;
+    unsafe {
+        ged_ptr.write_volatile(0x34);
     }
+    loop {
+        unsafe { asm::idle() };
+    }
+    panic!("It should shutdown!");
 }
