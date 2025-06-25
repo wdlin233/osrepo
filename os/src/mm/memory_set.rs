@@ -10,7 +10,9 @@ use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::MapType;
 use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
-use crate::mm::page_fault_handler::{cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault};
+use crate::mm::page_fault_handler::{
+    cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
+};
 //,USER_STACK_SIZE};
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
@@ -23,13 +25,13 @@ use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer}
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::task::current_process;
+use crate::utils::SysErrNo;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::error;
 use lazy_static::*;
-use crate::utils::SysErrNo;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::*;
 #[cfg(target_arch = "riscv64")]
@@ -153,11 +155,29 @@ impl MemorySet {
         self.inner.get_unchecked_mut().all_invalid(start, end)
     }
     #[inline(always)]
+    pub fn insert_framed_area_with_hint(
+        &self,
+        hint: usize,
+        size: usize,
+        map_perm: MapPermission,
+        area_type: MapAreaType,
+    ) -> (usize, usize) {
+        self.get_mut()
+            .insert_framed_area_with_hint(hint, size, map_perm, area_type)
+    }
+    #[inline(always)]
     pub fn mmap(
-        &self, start: usize, len: usize, port: MapPermission, 
-        flags: MmapFlags, fd: Option<Arc<OSInode>>, off: usize
+        &self,
+        start: usize,
+        len: usize,
+        port: MapPermission,
+        flags: MmapFlags,
+        fd: Option<Arc<OSInode>>,
+        off: usize,
     ) -> usize {
-        self.inner.get_unchecked_mut().mmap(start, len, port, flags, fd, off)
+        self.inner
+            .get_unchecked_mut()
+            .mmap(start, len, port, flags, fd, off)
     }
     #[inline(always)]
     pub fn munmap(&self, addr: usize, len: usize) -> isize {
@@ -189,6 +209,25 @@ impl MemorySetInner {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+
+    pub fn insert_framed_area_with_hint(
+        &mut self,
+        hint: usize,
+        size: usize,
+        map_perm: MapPermission,
+        area_type: MapAreaType,
+    ) -> (usize, usize) {
+        let start_va = self.find_insert_addr(hint, size);
+        let end_va = start_va + size;
+        self.insert_framed_area(
+            VirtAddr::from(start_va),
+            VirtAddr::from(end_va),
+            map_perm,
+            area_type,
+        );
+        (start_va, end_va)
+    }
+
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
@@ -225,6 +264,11 @@ impl MemorySetInner {
     /// Assuming that there are no conflicts in the virtual address
     /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+        debug!(
+            "in mem set inner push, the map area is, start : {}, end :{}",
+            map_area.vpn_range.get_start().0,
+            map_area.vpn_range.get_end().0
+        );
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
@@ -401,11 +445,12 @@ impl MemorySetInner {
                 );
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Brk);
-                //debug!("map_area: {:?}", map_area);
 
                 max_end_vpn = map_area.vpn_range.get_end();
+                debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
                 // A optimization for mapping data, keep aligned
                 if start_va.page_offset() == 0 {
+                    debug!("page offset == 0");
                     memory_set.push(
                         map_area,
                         Some(
@@ -414,6 +459,7 @@ impl MemorySetInner {
                         ),
                     );
                 } else {
+                    debug!("page offset != 0");
                     //error!("start_va page offset is not zero, start_va: {:?}", start_va);
                     let data_len = start_va.page_offset() + ph.file_size() as usize;
                     let mut data: Vec<u8> = Vec::with_capacity(data_len);
@@ -421,6 +467,7 @@ impl MemorySetInner {
                     data[start_va.page_offset()..].copy_from_slice(
                         &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
                     );
+                    debug!("to mem set push");
                     memory_set.push(map_area, Some(data.as_slice()));
                 }
             }
@@ -634,8 +681,13 @@ impl MemorySetInner {
 
     /// Create a new memory area with the given start address, length, and protection flags.
     pub fn mmap(
-        &mut self, addr: usize, len: usize, map_perm: MapPermission, 
-        flags: MmapFlags, file: Option<Arc<OSInode>>, off: usize
+        &mut self,
+        addr: usize,
+        len: usize,
+        map_perm: MapPermission,
+        flags: MmapFlags,
+        file: Option<Arc<OSInode>>,
+        off: usize,
     ) -> usize {
         debug!("in memory set, mmap");
         // 映射到固定地址
@@ -728,8 +780,8 @@ impl MemorySetInner {
         let start_vpn = VirtPageNum::from(VirtAddr::from(addr));
         let end_vpn = VirtPageNum::from(VirtAddr::from(addr + len));
         debug!(
-             "[MemorySet] start_vpn:{:#x},end_vpn:{:#x}",
-             start_vpn.0, end_vpn.0
+            "[MemorySet] start_vpn:{:#x},end_vpn:{:#x}",
+            start_vpn.0, end_vpn.0
         );
         while let Some((idx, area)) = self
             .areas
@@ -785,12 +837,13 @@ impl MemorySetInner {
                         //     mapped_len
                         // );
                         info!("start_addr:{:#x},mapped_len:{}", start_addr, mapped_len);
-                        
+
                         // let buf = UserBuffer::new_single(data_flow!({
                         //     core::slice::from_raw_parts_mut(start_addr as *mut u8, mapped_len)
                         // }));
                         let token = self.page_table.token();
-                        let buffers = translated_byte_buffer(token, start_addr as *const u8, mapped_len);
+                        let buffers =
+                            translated_byte_buffer(token, start_addr as *const u8, mapped_len);
                         let buf = UserBuffer::new(buffers);
 
                         file.lseek((start_addr - addr) as isize, SEEK_SET);
@@ -947,15 +1000,15 @@ impl MemorySetInner {
             }
         }
         VirtAddr::from(start_vpn).0
-        
+
         // use crate::config::PAGE_SIZE_BITS;
         // // 确保地址按16KB对齐
         // let aligned_size = (size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         // let aligned_hint = hint & !(PAGE_SIZE - 1);
-        
+
         // // 从高地址向低地址搜索
         // let mut candidate = aligned_hint - aligned_size;
-        
+
         // info!(
         //     "find_insert_addr: hint={:#x}, size={}, aligned_size={}, candidate={:#x}",
         //     hint, size, aligned_size, candidate
@@ -968,7 +1021,7 @@ impl MemorySetInner {
         //         let (area_start, area_end) = area.vpn_range.range();
         //         let area_start_va = area_start.0 << PAGE_SIZE_BITS;
         //         let area_end_va = area_end.0 << PAGE_SIZE_BITS;
-                
+
         //         if candidate_end > area_start_va && candidate < area_end_va {
         //             // 有重叠，向前移动一个完整区域
         //             candidate = candidate.checked_sub(PAGE_SIZE).unwrap_or(0);
@@ -976,13 +1029,13 @@ impl MemorySetInner {
         //             continue 'search;
         //         }
         //     }
-            
+
         //     // 检查对齐
         //     if candidate & (PAGE_SIZE - 1) != 0 {
         //         warn!("Unaligned candidate: {:#x}, aligning down", candidate);
         //         candidate = candidate & !(PAGE_SIZE - 1);
         //     }
-            
+
         //     info!("Found valid address: {:#x}", candidate);
         //     return candidate;
         // }
@@ -1002,12 +1055,12 @@ impl MemorySetInner {
             info!("cow_page_fault: scause = {:?}", scause);
             // match scause {
             //     Trap::Exception(Exception::FetchPageFault)
-            //     | Trap::Exception(Exception::LoadPageFault) 
+            //     | Trap::Exception(Exception::LoadPageFault)
             //     // load 和 fetch 都是读操作
             //     => {
             //         info!("cow_page_fault: LoadPageFault or FetchPageFault, return false");
             //         return false;
-                
+
             //     }
             //     _ => {}
             // }

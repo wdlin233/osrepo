@@ -1,8 +1,12 @@
+use super::sys_gettid;
 use crate::alloc::string::ToString;
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
-    mm::{copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref, translated_refmut, translated_str, MapPermission},
+    mm::{
+        copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
+        translated_refmut, translated_str, MapPermission,
+    },
     signal::SignalFlags,
     syscall::{process, MmapFlags, MmapProt},
     task::{
@@ -112,9 +116,11 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         if path.ends_with(".sh") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
-            argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
-            argv.push(path);
+            argv.push(String::from("busybox"));
+            //argv.push(String::from("echo"));
+            //argv.push(String::from("aaa"));
+            //argv.push(path);
             path = String::from("/busybox");
         }
 
@@ -194,7 +200,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
 /// Else if there is a child process but it is still running, return -2.
 /// block to wait
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize {
-    debug!("kernel: sys_waitpid");
+    //debug!("kernel: sys_waitpid");
     {
         let process = current_process();
         //debug!("{} is waiting child",process.getpid());
@@ -270,6 +276,17 @@ pub fn sys_getgid() -> isize {
     current_task().unwrap().process.upgrade().unwrap().getgid() as isize
 }
 
+/// set tid addr
+pub fn sys_set_tid_addr(tidptr: usize) -> isize {
+    current_task()
+        .unwrap()
+        .process
+        .upgrade()
+        .unwrap()
+        .set_clear_child_tid(tidptr);
+    sys_gettid()
+}
+
 /// kill syscall
 pub fn sys_kill(pid: usize, signal: u32) -> isize {
     // trace!(
@@ -318,23 +335,25 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
 /// mmap syscall ref: https://man7.org/linux/man-pages/man2/mmap.2.html
 /// `flags` determins whether updates mapping,
 /// `fd` as file descriptor, `off` as offset in file
-pub fn sys_mmap(
-    addr: usize, len: usize, port: u32, 
-    flags: u32, fd: usize, off: usize
-) -> isize {
+pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: usize) -> isize {
+    debug!("in sys mmap");
     if flags == 0 {
         return SysErrNo::EINVAL as isize;
     }
+    debug!("flags != 0");
     let flags = MmapFlags::from_bits(flags).unwrap();
     if fd == usize::MAX && !flags.contains(MmapFlags::MAP_ANONYMOUS) {
         return SysErrNo::EBADF as isize;
     }
-
+    debug!("fd  ok");
     if len == 0 {
         return SysErrNo::EINVAL as isize;
     }
+    debug!("len != 0");
     let mmap_prot = MmapProt::from_bits(port).unwrap();
+    debug!("mmap prot ok");
     let permission: MapPermission = mmap_prot.into();
+    debug!("perm ok");
     if flags.contains(MmapFlags::MAP_FIXED) && addr == 0 {
         return SysErrNo::EPERM as isize;
     }
@@ -346,18 +365,16 @@ pub fn sys_mmap(
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if fd == usize::MAX {
-        let ret = inner.memory_set.mmap(
-            addr, len, permission, 
-            flags, None, usize::MAX
-        );
+        let ret = inner
+            .memory_set
+            .mmap(addr, len, permission, flags, None, usize::MAX);
         return ret as isize;
     }
     if flags.contains(MmapFlags::MAP_ANONYMOUS) {
         // anonymous mapping
-        let ret = inner.memory_set.mmap(
-            0, 1, MapPermission::empty(), 
-            flags, None, usize::MAX
-        );
+        let ret = inner
+            .memory_set
+            .mmap(0, 1, MapPermission::empty(), flags, None, usize::MAX);
         insert_bad_address(ret);
         debug!("bad address is {:x}", ret);
         return ret as isize;
@@ -405,12 +422,16 @@ pub fn sys_munmap(addr: usize, len: usize) -> isize {
 }
 
 // change data segment size
-pub fn sys_brk(_path: i32) -> isize {
-    //trace!("kernel:pid[{}] sys_sbrk", current_task().unwrap().process.upgrade().unwrap().getpid());
+pub fn sys_brk(path: usize) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
-    if let Some(result) = inner.res.as_mut().unwrap().change_program_brk(_path) {
-        debug!("to returning result : {}", result);
+    if let Some(result) = inner
+        .res
+        .as_mut()
+        .unwrap()
+        .change_program_brk(path as isize)
+    {
+        debug!("to returning result : {}", result as isize);
         result as isize
     } else {
         -1

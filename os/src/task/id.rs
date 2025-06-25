@@ -1,12 +1,14 @@
 //! Allocator for pid, task user resource, kernel stack using a simple recycle strategy.
 
 use super::ProcessControlBlock;
-use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
+use crate::config::{
+    HEAP_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
+};
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
-use crate::mm::{frame_alloc, FrameTracker, PhysAddr};
-use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VirtAddr};
+use crate::mm::{frame_alloc, translated_ref, FrameTracker, PhysAddr};
+use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum};
 use crate::phys_to_virt;
 use crate::sync::UPSafeCell;
 use alloc::{
@@ -206,7 +208,7 @@ fn trap_cx_bottom_from_tid(tid: usize) -> usize {
 }
 /// Return the bottom addr (high addr) of the user stack for a task
 fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
-    ustack_base + tid * (2 * PAGE_SIZE + USER_STACK_SIZE)
+    ustack_base + tid * (HEAP_SIZE + PAGE_SIZE + USER_STACK_SIZE)
 }
 
 impl TaskUserRes {
@@ -231,6 +233,11 @@ impl TaskUserRes {
             task_user_res.alloc_user_res();
         }
         task_user_res
+    }
+
+    ///get tid
+    pub fn gettid(&self) -> usize {
+        self.tid
     }
     /// Allocate user resource for a task
     pub fn alloc_user_res(&mut self) {
@@ -347,7 +354,7 @@ impl TaskUserRes {
         ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
     }
     /// change the location of the program break. return None if failed.
-    pub fn change_program_brk(&mut self, path: i32) -> Option<usize> {
+    pub fn change_program_brk(&mut self, path: isize) -> Option<usize> {
         debug!("in change brk,path = {}", path);
         debug!(
             "self.brk = {},self.bottom = {}",
@@ -358,29 +365,47 @@ impl TaskUserRes {
         }
         let process = self.process.upgrade().unwrap();
         let mut inner = process.inner_exclusive_access();
+
+        let area = inner
+            .memory_set
+            .get_mut()
+            .areas
+            .iter_mut()
+            .find(|area| area.area_type == MapAreaType::Brk)
+            .unwrap();
+
         let heap_bottom = self.heap_bottom;
-        let new_brk = path as isize;
+        let new_brk = path;
         let heap_alloc = new_brk - heap_bottom as isize;
-        if new_brk < heap_bottom as isize || heap_alloc as usize > PAGE_SIZE {
+        if new_brk < heap_bottom as isize || heap_alloc as usize > HEAP_SIZE {
+            debug!("in change brk, return none");
             return None;
         }
+        let growed_vpn: VirtPageNum = ((new_brk as usize) / PAGE_SIZE + 1).into();
         let result = if new_brk < self.program_brk as isize {
-            inner
-                .memory_set
-                .shrink_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
+            area.vpn_range =
+                VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
+            while !area.data_frames.is_empty() {
+                let page = area.data_frames.pop_last().unwrap();
+                if page.0 < growed_vpn {
+                    area.data_frames.insert(page.0, page.1);
+                    break;
+                }
+                inner.memory_set.get_mut().page_table.unmap(page.0);
+            }
+            true
+            // inner
+            //     .memory_set
+            //     .shrink_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
         } else {
-            debug!(
-                "to append memory set...heap_bottom = {},new_brk = {}",
-                heap_bottom, new_brk
-            );
-            inner
-                .memory_set
-                .append_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
+            area.vpn_range =
+                VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
+            true
         };
         if result {
             debug!("to modify self brk,new brk is :{}", new_brk);
             self.program_brk = new_brk as usize;
-            Some(0)
+            Some(self.program_brk)
         } else {
             None
         }

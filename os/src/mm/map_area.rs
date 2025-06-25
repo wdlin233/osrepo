@@ -2,18 +2,20 @@ use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        address::StepByOne, frame_alloc, group::GROUP_SHARE, FrameTracker, PTEFlags, PageTable, PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum
+        address::StepByOne, frame_alloc, group::GROUP_SHARE, FrameTracker, PTEFlags, PageTable,
+        PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
     },
     syscall::MmapFlags,
 };
-use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 
 #[derive(Clone)]
 pub struct MapArea {
     pub vpn_range: VPNRange,
     pub data_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
-    #[cfg(target_arch = "riscv64")] pub map_type: MapType,
+    #[cfg(target_arch = "riscv64")]
+    pub map_type: MapType,
     pub map_perm: MapPermission,
     pub area_type: MapAreaType,
     pub mmap_file: MmapFile,
@@ -38,11 +40,16 @@ impl MapArea {
         //info!("MapArea::new: {:#x} - {:#x}", start_va.0, end_va.0);
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
-        //info!("MapArea::new start floor = {}, end ceil = {}",start_va.floor().0, end_va.ceil().0);
+        debug!(
+            "MapArea::new start floor = {}, end ceil = {}",
+            start_va.floor().0,
+            end_va.ceil().0
+        );
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")] map_type,
+            #[cfg(target_arch = "riscv64")]
+            map_type,
             map_perm,
             area_type,
             mmap_file: MmapFile::empty(),
@@ -54,7 +61,8 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")] map_type: another.map_type,
+            #[cfg(target_arch = "riscv64")]
+            map_type: another.map_type,
             map_perm: another.map_perm,
             area_type: another.area_type,
             mmap_file: another.mmap_file.clone(),
@@ -123,7 +131,8 @@ impl MapArea {
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
-        #[cfg(target_arch = "riscv64")] assert_eq!(self.map_type, MapType::Framed);
+        #[cfg(target_arch = "riscv64")]
+        assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
         let len = data.len();
@@ -155,8 +164,10 @@ impl MapArea {
         offset: usize,
         mmap_flags: MmapFlags,
     ) -> Self {
-        debug!("MapArea::new_mmap: {:#x} - {:#x}, offset: {}, flags: {:?}", 
-            start_va.0, end_va.0, offset, mmap_flags);
+        debug!(
+            "MapArea::new_mmap: {:#x} - {:#x}, offset: {}, flags: {:?}",
+            start_va.0, end_va.0, offset, mmap_flags
+        );
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         let groupid;
@@ -170,7 +181,8 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")] map_type: map_type,
+            #[cfg(target_arch = "riscv64")]
+            map_type: map_type,
             map_perm: map_perm,
             area_type: area_type,
             mmap_file: MmapFile::new(file, offset),
@@ -222,8 +234,10 @@ bitflags! {
 impl Default for MapPermission {
     // alloc_user_res
     fn default() -> Self {
-        #[cfg(target_arch = "riscv64")] return MapPermission::R | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")] return MapPermission::PLVL | MapPermission::PLVH;
+        #[cfg(target_arch = "riscv64")]
+        return MapPermission::R | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")]
+        return MapPermission::PLVL | MapPermission::PLVH;
     }
 }
 
@@ -275,15 +289,16 @@ impl MapPermission {
         let bits = (port as u8) << 1;
         #[cfg(target_arch = "loongarch64")]
         let bits = port << 1;
-        MapPermission::from_bits(bits).unwrap() 
+        MapPermission::from_bits(bits).unwrap()
     }
 
-    
     /// Add user permission for MapPermission
     /// LA, 保留现有权限，添加用户模式所需的 PLV3 组合位
     pub fn with_user(self) -> Self {
-        #[cfg(target_arch = "riscv64")] return self | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")] return self | MapPermission::PLVL | MapPermission::PLVH;
+        #[cfg(target_arch = "riscv64")]
+        return self | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")]
+        return self | MapPermission::PLVL | MapPermission::PLVH;
     }
 
     #[allow(unused)]

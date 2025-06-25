@@ -17,6 +17,7 @@ mod context;
 mod trap;
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+use crate::mm::VirtAddr;
 use crate::println;
 pub use crate::signal::SignalFlags;
 use crate::syscall::syscall;
@@ -25,7 +26,6 @@ use crate::task::{
     current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
 };
 use crate::timer::check_timer;
-use crate::mm::VirtAddr;
 
 #[cfg(target_arch = "riscv64")]
 use crate::{
@@ -174,6 +174,10 @@ pub fn trap_handler() -> ! {
             let mut cx = current_trap_cx();
             cx.sepc += 4;
             // get system call return value
+            debug!(
+                "genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
+                cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
+            );
             let result = syscall(
                 cx.x[17],
                 [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
@@ -190,13 +194,20 @@ pub fn trap_handler() -> ! {
             {
                 let process = current_process();
                 let inner = process.inner_exclusive_access();
-                res = inner.memory_set
+                info!(
+                    "[kernel] trap_handler: {:?} at {:#x} as vpn",
+                    scause.cause(),
+                    stval,
+                );
+                res = inner
+                    .memory_set
                     .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
                 if !res {
-                    res = inner.memory_set
-                    .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+                    res = inner
+                        .memory_set
+                        .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
                 }
-                // drop to avoid deadlock and exit exception 
+                // drop to avoid deadlock and exit exception
             }
             if !res {
                 error!(
@@ -206,7 +217,7 @@ pub fn trap_handler() -> ! {
                     current_trap_cx().sepc,
                 );
                 current_add_signal(SignalFlags::SIGSEGV);
-            }    
+            }
         }
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::InstructionFault)
@@ -267,7 +278,10 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             //系统调用
             cx.sepc += 4;
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
-            let result = syscall(cx.x[11], [cx.x[4], cx.x[5], cx.x[6], cx.x[7], cx.x[8], cx.x[9]]) as usize;
+            let result = syscall(
+                cx.x[11],
+                [cx.x[4], cx.x[5], cx.x[6], cx.x[7], cx.x[8], cx.x[9]],
+            ) as usize;
             cx = current_trap_cx();
             cx.x[4] = result;
         }
@@ -288,19 +302,17 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
                 info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
                 let add = add.floor();
                 info!("[kernel] trap_handler: {:?} at {:#x} as vpn", t, add.0);
-                res = inner.memory_set
-                    .lazy_page_fault(add, t);
+                res = inner.memory_set.lazy_page_fault(add, t);
                 if !res {
-                    res = inner.memory_set
-                    .cow_page_fault(add, t);
+                    res = inner.memory_set.cow_page_fault(add, t);
                 }
-                // drop to avoid deadlock and exit exception 
+                // drop to avoid deadlock and exit exception
             }
             if !res {
                 println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
                 // 设置SIGSEGV信号
                 current_add_signal(SignalFlags::SIGSEGV);
-            }    
+            }
         }
         Trap::Exception(Exception::InstructionPrivilegeIllegal) => {
             // 指令权限不足

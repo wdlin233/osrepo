@@ -10,13 +10,14 @@ use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 use crate::hal::trap::TrapContext;
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
 use core::arch::asm;
+//use core::str::next_code_point;
 use lazy_static::*;
-use crate::mm::MapPermission;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::{asid, pgdl};
 
@@ -178,7 +179,7 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.exclusive_access();
     let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);
-    //debug!("in schedule, to switch");
+    //debug!("in schedule, to switch, currrent ra is : {},current sp is :{}, next ra is :{}, next sp is : {}",unsafe{(*switched_task_cx_ptr).get_ra()},unsafe{(*switched_task_cx_ptr).get_sp()},unsafe{(*idle_task_cx_ptr).get_ra()},unsafe{(*idle_task_cx_ptr).get_sp()});
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
@@ -186,9 +187,13 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
 
 /// Create a MapArea for the current task
 pub fn mmap(
-        addr: usize, len: usize, port: MapPermission, 
-        flags: MmapFlags, fd: Option<Arc<crate::fs::OSInode>>, off: usize
-    ) -> usize {
+    addr: usize,
+    len: usize,
+    port: MapPermission,
+    flags: MmapFlags,
+    fd: Option<Arc<crate::fs::OSInode>>,
+    off: usize,
+) -> usize {
     current_process()
         .inner_exclusive_access()
         .memory_set

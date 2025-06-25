@@ -1,7 +1,8 @@
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, open, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET
+    convert_kstat_to_statx, open, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat,
+    OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
 
 use crate::data_flow;
@@ -63,7 +64,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         // release current task TCB manually to avoid multi-borrow
         debug!("in write,to translated byte buffer");
         let buf = UserBuffer::new(safe_translated_byte_buffer(memory_set, buf, len).unwrap());
-        //debug!("to write file");
+        debug!("to write file");
         let ret = match file.write(buf) {
             Ok(n) => n as isize,
             Err(e) => {
@@ -571,12 +572,12 @@ pub fn sys_statx(
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
-    
+
     if flags & StatxFlags::AT_EMPTY_PATH.bits() as i32 != 0 {
         if dirfd < 0 || dirfd as usize >= inner.fd_table.len() {
             return SysErrNo::EBADF as isize;
         }
-        
+
         if let Some(file_desc) = inner.fd_table.try_get(dirfd as usize) {
             let file = file_desc.any();
             let kstat = file.fstat();
@@ -592,19 +593,19 @@ pub fn sys_statx(
         return SysErrNo::EFAULT as isize;
     }
     let path = translated_str(token, pathname);
-    
+
     // 获取绝对路径
     let abs_path = inner.get_abs_path(dirfd, &path);
     if abs_path.is_empty() {
         return SysErrNo::ENOENT as isize;
     }
-    
+
     // 设置打开标志
     let mut open_flags = OpenFlags::O_RDONLY;
     if flags & StatxFlags::AT_SYMLINK_NOFOLLOW.bits() as i32 != 0 {
         open_flags |= OpenFlags::O_NOFOLLOW;
     }
-    
+
     // 打开文件获取元数据
     match open(&abs_path, open_flags, NONE_MODE) {
         Ok(file) => {
@@ -616,4 +617,9 @@ pub fn sys_statx(
         }
         Err(_) => SysErrNo::ENOENT as isize, // 文件打开失败
     }
+}
+
+//ioctl
+pub fn sys_ioctl(_fd: usize, _cmd: usize, _arg: usize) -> isize {
+    0
 }

@@ -6,38 +6,38 @@
 //!
 //! Every task or process has a memory_set to control its virtual memory.
 mod address;
-mod memory_set;
-mod page_table;
 mod frame_allocator; // frame allocator
-mod page_fault_handler;
-mod map_area;
 mod group;
+mod map_area;
+mod memory_set;
+mod page_fault_handler;
+mod page_table;
 
 #[cfg(target_arch = "riscv64")]
 mod heap_allocator;
 #[cfg(target_arch = "loongarch64")]
 pub mod system_allocator; // heap allocator
 
-
-use address::VPNRange;
-pub use address::{insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
-pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker, frame_alloc_contiguous};
-pub use memory_set::MemorySet;
-use page_table::PTEFlags;
-pub use page_table::{
-    translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
-    PageTableEntry, UserBuffer, UserBufferIterator, safe_translated_byte_buffer,
+pub use address::VPNRange;
+pub use address::{
+    copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
+    StepByOne, VirtAddr, VirtPageNum,
 };
-pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
-#[cfg(target_arch = "riscv64")]
-pub use memory_set::{KERNEL_SPACE, kernel_token, remap_test};
+pub use frame_allocator::{frame_alloc, frame_alloc_contiguous, frame_dealloc, FrameTracker};
 #[cfg(target_arch = "riscv64")]
 pub use map_area::MapType;
+pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
+pub use memory_set::MemorySet;
+#[cfg(target_arch = "riscv64")]
+pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
+use page_table::PTEFlags;
+pub use page_table::{
+    safe_translated_byte_buffer, translated_byte_buffer, translated_ref, translated_refmut,
+    translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
+};
 
 #[cfg(target_arch = "loongarch64")]
-use crate::{
-    config::VIRT_BIAS,
-};
+use crate::config::VIRT_BIAS;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::mm::system_allocator::init_heap;

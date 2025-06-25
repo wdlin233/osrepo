@@ -103,7 +103,7 @@ impl fmt::Debug for PageTableEntry {
 impl PageTableEntry {
     /// Create a new page table entry
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
-        info!("PageTableEntry::new: ppn: {:?}, flags: {:?}", ppn, flags);
+        //info!("PageTableEntry::new: ppn: {:?}, flags: {:?}", ppn, flags);
         #[cfg(target_arch = "riscv64")]
         return PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
@@ -138,18 +138,18 @@ impl PageTableEntry {
         #[cfg(target_arch = "loongarch64")]
         {
             //debug!("PageTableEntry::flags: bits: {:#x}", self.bits);
-            let valid_flags = PTEFlags::V.bits() 
-                | PTEFlags::D.bits() 
-                | PTEFlags::PLVL.bits() 
-                | PTEFlags::PLVH.bits() 
-                | PTEFlags::MATL.bits() 
-                | PTEFlags::MATH.bits() 
-                | PTEFlags::G.bits() 
-                | PTEFlags::P.bits() 
-                | PTEFlags::W.bits() 
-                | PTEFlags::NR.bits() 
-                | PTEFlags::NX.bits() 
-                | PTEFlags::RPLV.bits();    
+            let valid_flags = PTEFlags::V.bits()
+                | PTEFlags::D.bits()
+                | PTEFlags::PLVL.bits()
+                | PTEFlags::PLVH.bits()
+                | PTEFlags::MATL.bits()
+                | PTEFlags::MATH.bits()
+                | PTEFlags::G.bits()
+                | PTEFlags::P.bits()
+                | PTEFlags::W.bits()
+                | PTEFlags::NR.bits()
+                | PTEFlags::NX.bits()
+                | PTEFlags::RPLV.bits();
             let flags_bits = self.bits & valid_flags;
             PTEFlags::from_bits_truncate(flags_bits)
         }
@@ -223,7 +223,7 @@ impl PageTableEntry {
         let new_flags: u8 = (self.bits & 0xFF) as u8 | flags.bits().clone();
         #[cfg(target_arch = "loongarch64")]
         let new_flags: usize = (self.bits & 0xFF) as usize | flags.bits().clone();
-        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);    
+        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
     }
 }
 

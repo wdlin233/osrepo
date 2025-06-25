@@ -28,6 +28,9 @@ pub use crate::board::{CLOCK_FREQ, MMIO};
 pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
+///heap size
+pub const HEAP_SIZE: usize = 0x1000_000;
+
 #[cfg(target_arch = "riscv64")]
 /// physical memory end address
 pub const MEMORY_END: usize = 0x88000000;
@@ -39,7 +42,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 #[cfg(target_arch = "riscv64")]
 /// user app's stack size
-pub const USER_STACK_SIZE: usize = 4096 * 2;
+pub const USER_STACK_SIZE: usize = 4096 * 2 * 1024;
 #[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
