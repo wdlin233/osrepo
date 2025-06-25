@@ -1,5 +1,5 @@
 /// 存放系统调用的各种Option
-use crate::mm::MapPermission;
+use crate::mm::map_area::MapPermission;
 use num_enum::FromPrimitive;
 
 bitflags! {

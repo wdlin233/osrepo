@@ -98,6 +98,8 @@ fs-img:
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part/
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
+	@sudo cp ../testcases/riscv64/busybox /mnt/image_part/
+	@sudo cp ../test-riscv/musl/* /mnt/image_part/
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else
@@ -142,7 +144,8 @@ run: build run-inner
 QEMU_EXEC += -nographic \
 			 -drive file=$(FS_IMG),if=none,format=raw,id=x0 \
 			 -smp 1 \
-			 -D qemu.log
+			 -D qemu.log \
+			 -monitor telnet:127.0.0.1:5555,server,nowait
 
 # @qemu-system-riscv64 \
 # 	-M 128m \
@@ -174,19 +177,28 @@ else ifeq ($(ARCH), loongarch64)
     QEMU_DEBUG_ARGS := -gdb tcp::$(GDB_PORT) -S
 endif
 
-debug: build
-	@tmux new-session -d -s $(TMUX_SESSION) \
-		"$(QEMU_EXEC) $(QEMU_DEBUG_ARGS)" && \
-		tmux split-window -h "$(GDB) -ex 'file $(KERNEL_ELF)' -ex 'target remote localhost:$(GDB_PORT)'" && \
-		tmux -2 attach-session -t $(TMUX_SESSION)
+# 通用调试目标
+gdb: build
+	@echo "启动 QEMU GDB 服务器..."
+	$(QEMU_EXEC) -s -S
 
-gdbserver: build
-	$(QEMU_EXEC) $(QEMU_DEBUG_ARGS)
+gdb-connect:
+ifeq ($(ARCH), riscv64)
+	@echo "连接 RISC-V GDB..."
+	$(GDB) -ex "target remote :1234" \
+	       -ex "file $(KERNEL_ELF)" \
+	       -ex "set arch riscv:rv64"  # 注意这里是 riscv:rv64
+else ifeq ($(ARCH), loongarch64)
+	@echo "连接 LoongArch GDB..."
+	$(GDB) -ex "target remote :$(GDB_PORT)" -ex "file $(KERNEL_ELF)" -ex "set arch loongarch64"
+endif
 
-gdbclient:
-	@$(GDB) -ex "file $(KERNEL_ELF)" -ex "target remote localhost:$(GDB_PORT)"
+# 自动调试 (需要 tmux)
+gdb-auto: build
+	@tmux new-session -d \
+		"$(QEMU_EXEC) -s -S" && \
+	tmux split-window -h \
+		"$(GDB) -ex 'target remote :$(GDB_PORT)' -ex 'file $(KERNEL_ELF)' -ex 'set arch $(ARCH)' -ex 'b rust_main'" && \
+	tmux -2 attach-session -d
 
-clean-debug:
-	-tmux kill-server
-
-.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config modify debug
+.PHONY: build env kernel clean disasm disasm-vim run-inner fs-img config modify gdb gdb-connect gdb-auto

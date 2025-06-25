@@ -31,3 +31,9 @@ loongarch64 = { version = "*", package = "loongArch64" }
 buddy_system_allocator = "0.11.0"
 
 
+[profile.dev]
+debug = true
+
+[profile.release]
+debug = true
+

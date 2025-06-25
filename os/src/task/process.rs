@@ -80,6 +80,8 @@ pub struct ProcessControlBlockInner {
     pub sig_mask: SignalFlags,
     /// signal pending
     pub sig_pending: SignalFlags,
+    /// clear child tid
+    pub clear_child_tid: usize,
 }
 
 ///record process times
@@ -246,6 +248,7 @@ impl ProcessControlBlock {
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
                     priority: 16,
+                    clear_child_tid: 0,
                     stride: Stride::default(),
                     tms: Tms::new(),
                     sig_table: Arc::new(SigTable::new()),
@@ -497,7 +500,7 @@ impl ProcessControlBlock {
         _stack: usize,
         _parent_tid: *mut u32,
         _tls: usize,
-        _child_tid: *mut u32,
+        child_tid: *mut u32,
     ) -> Arc<Self> {
         //unimplemented!()
         let user = self.user.clone();
@@ -541,6 +544,11 @@ impl ProcessControlBlock {
         };
         let sig_pending = SignalFlags::empty();
 
+        let clear_child_tid = if flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
+            child_tid as usize
+        } else {
+            0
+        };
         // create child process pcb
         let child = Arc::new(Self {
             pid,
@@ -548,6 +556,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
+                    clear_child_tid,
                     memory_set: memory_set,
                     fs_info,
                     parent: Some(Arc::downgrade(self)),
@@ -630,6 +639,11 @@ impl ProcessControlBlock {
     /// get default gid
     pub fn getgid(&self) -> usize {
         self.user.getgid()
+    }
+
+    /// set clear child tid
+    pub fn set_clear_child_tid(&self, new: usize) {
+        self.inner_exclusive_access().clear_child_tid = new;
     }
 }
 

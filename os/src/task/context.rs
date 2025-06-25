@@ -16,9 +16,11 @@ pub struct TaskContext {
     /// Stack pointer
     sp: usize,
     /// s0-11 register, callee saved
-    #[cfg(target_arch = "riscv64")] s: [usize; 12],
+    #[cfg(target_arch = "riscv64")]
+    s: [usize; 12],
     /// loongArch下需要保存10个s寄存器
-    #[cfg(target_arch = "loongarch64")] s: [usize; 10],
+    #[cfg(target_arch = "loongarch64")]
+    s: [usize; 10],
 }
 
 /// 在应用第一次运行时，我们需要为其构造一个任务上下文
@@ -30,8 +32,10 @@ impl TaskContext {
         Self {
             ra: 0,
             sp: 0,
-            #[cfg(target_arch = "riscv64")] s: [0; 12],
-            #[cfg(target_arch = "loongarch64")] s: [0; 10],
+            #[cfg(target_arch = "riscv64")]
+            s: [0; 12],
+            #[cfg(target_arch = "loongarch64")]
+            s: [0; 10],
         }
     }
     /// Create a new task context with a trap return addr and a kernel stack pointer
@@ -39,8 +43,16 @@ impl TaskContext {
         Self {
             ra: trap_return as usize,
             sp: kstack_ptr, //存放了trap上下文后的栈地址,内核栈地址
-            #[cfg(target_arch = "riscv64")] s: [0; 12],
-            #[cfg(target_arch = "loongarch64")] s: [0; 10],
+            #[cfg(target_arch = "riscv64")]
+            s: [0; 12],
+            #[cfg(target_arch = "loongarch64")]
+            s: [0; 10],
         }
+    }
+    pub fn get_ra(&self) -> usize {
+        self.ra
+    }
+    pub fn get_sp(&self) -> usize {
+        self.sp
     }
 }

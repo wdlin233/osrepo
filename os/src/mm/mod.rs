@@ -5,13 +5,13 @@
 //! map area and memory set, is implemented here.
 //!
 //! Every task or process has a memory_set to control its virtual memory.
-mod address;
-mod memory_set;
-mod page_table;
-mod frame_allocator; // frame allocator
-mod page_fault_handler;
-mod map_area;
-mod group;
+pub mod address;
+pub mod frame_allocator; // frame allocator
+pub mod group;
+pub mod map_area;
+pub mod memory_set;
+pub mod page_fault_handler;
+pub mod page_table;
 
 #[cfg(target_arch = "riscv64")]
 mod heap_allocator;
@@ -29,16 +29,13 @@ pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
     PageTableEntry, UserBuffer, UserBufferIterator, safe_translated_byte_buffer, flush_tlb,
 };
-pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
+pub use map_area::{MapArea, MapType, MapPermission, MapAreaType, MmapFile};
+
 #[cfg(target_arch = "riscv64")]
-pub use memory_set::{KERNEL_SPACE, kernel_token, remap_test};
-#[cfg(target_arch = "riscv64")]
-pub use map_area::MapType;
+pub use memory_set::{kernel_token, KERNEL_SPACE, remap_test};
 
 #[cfg(target_arch = "loongarch64")]
-use crate::{
-    config::VIRT_BIAS,
-};
+use crate::config::VIRT_BIAS;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::mm::system_allocator::init_heap;

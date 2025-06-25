@@ -5,7 +5,7 @@
 extern crate user_lib;
 
 const TESTS: &[&str] = &[
-    "musl/basic_testcode.sh\0",
+    "/musl/basic_testcode.sh\0",
     //"mnt/test_mount\0",
     // "pipe\0", 
     // "munmap\0", 
