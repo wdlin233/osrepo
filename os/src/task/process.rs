@@ -220,7 +220,7 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, ustack_base, entry_point) = MemorySetInner::from_elf(elf_data);
         info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
             elf_data.len(), ustack_base, entry_point);
         // allocate a pid
@@ -232,7 +232,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
-                    memory_set: Arc::new(memory_set),
+                    memory_set: Arc::new(MemorySet::new(memory_set)),
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
@@ -300,10 +300,10 @@ impl ProcessControlBlock {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, ustack_base, entry_point) = MemorySetInner::from_elf(elf_data);
         let new_token = memory_set.token();
 
-        self.inner_exclusive_access().memory_set = Arc::new(memory_set);
+        self.inner_exclusive_access().memory_set = Arc::new(MemorySet::new(memory_set));
         // then we alloc user resource for main thread again
         // since memory_set has been changed
         //trace!("kernel: exec .. alloc user resource for main thread again");

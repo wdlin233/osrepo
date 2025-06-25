@@ -73,3 +73,5 @@ pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
     - PAGE_SIZE * THREAD_MAX_NUM
     - USER_STACK_SIZE * THREAD_MAX_NUM
     - PAGE_SIZE;
+
+pub const USER_HEAP_SIZE: usize = 0x10_000_000; // 16MB

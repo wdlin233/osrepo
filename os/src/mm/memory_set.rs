@@ -108,11 +108,6 @@ impl MemorySet {
     pub fn new_kernel() -> Self {
         Self::new(MemorySetInner::new_kernel())
     }
-    #[inline(always)]
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
-        let (memory_set, user_sp_base, entry_point) = MemorySetInner::from_elf(elf_data);
-        (Self::new(memory_set), user_sp_base, entry_point)
-    }
     #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn activate(&self) {
@@ -342,6 +337,7 @@ impl MemorySetInner {
         let _magic = elf_header.pt1.magic;
         //assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
+        let mut entry_point = elf.header.pt2.entry_point() as usize;
         let mut max_end_vpn = VirtPageNum(0);
         debug!("elf program header count: {}", ph_count);
         for i in 0..ph_count {

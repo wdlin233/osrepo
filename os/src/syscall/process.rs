@@ -14,6 +14,7 @@ use crate::{
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct TimeVal {
@@ -185,7 +186,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     debug!("in sys exec,to pcb exec");
     current_process.exec(&elf_data, argv, &mut env);
     debug!("in sys exec, return argv len is :{}", len);
-    len as isize
+    len as isize // return 0?
 }
 
 /// waitpid syscall
@@ -405,16 +406,16 @@ pub fn sys_munmap(addr: usize, len: usize) -> isize {
 }
 
 // change data segment size
-pub fn sys_brk(_path: i32) -> isize {
+pub fn sys_brk(brk_addr: usize) -> isize {
     //trace!("kernel:pid[{}] sys_sbrk", current_task().unwrap().process.upgrade().unwrap().getpid());
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
-    if let Some(result) = inner.res.as_mut().unwrap().change_program_brk(_path) {
-        debug!("to returning result : {}", result);
-        result as isize
-    } else {
-        -1
+    let former_addr: usize = inner.res.as_mut().unwrap().growproc(0);
+    if brk_addr == 0 {
+        return former_addr as isize;
     }
+    let grow_size: isize = (brk_addr - former_addr) as isize;
+    return inner.res.as_mut().unwrap().growproc(grow_size) as isize;
 }
 // like sys_spawn a unnecessary syscall
 

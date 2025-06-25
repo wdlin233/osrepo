@@ -440,6 +440,21 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     string
 }
 
+#[allow(unused)]
+pub fn c_ptr_to_string(c_ptr: *const u8) -> String {
+    let mut res = String::new();
+    let mut i = 0;
+    loop {
+        let c = unsafe { *c_ptr.add(i) };
+        if c == 0 {
+            break;
+        }
+        res.push(c as char);
+        i += 1;
+    }
+    res
+}
+
 /// translate a pointer `ptr` in other address space to a immutable u8 slice in kernel address space. NOTICE: the content pointed to by the pointer `ptr` cannot cross physical pages, otherwise translated_byte_buffer should be used.
 pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
     let page_table = PageTable::from_token(token);

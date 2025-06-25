@@ -19,14 +19,15 @@ mod heap_allocator;
 pub mod system_allocator; // heap allocator
 
 
-use address::VPNRange;
-pub use address::{insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, copy_to_virt};
+pub use address::{insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum, 
+    StepByOne, VirtAddr, VirtPageNum, copy_to_virt, VPNRange
+};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker, frame_alloc_contiguous};
 pub use memory_set::{MemorySet, MemorySetInner};
 use page_table::PTEFlags;
 pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
-    PageTableEntry, UserBuffer, UserBufferIterator, safe_translated_byte_buffer,
+    PageTableEntry, UserBuffer, UserBufferIterator, safe_translated_byte_buffer, flush_tlb,
 };
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
 #[cfg(target_arch = "riscv64")]

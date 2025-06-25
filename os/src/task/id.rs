@@ -1,11 +1,11 @@
 //! Allocator for pid, task user resource, kernel stack using a simple recycle strategy.
 
 use super::ProcessControlBlock;
-use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
+use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_SIZE};
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
-use crate::mm::{frame_alloc, FrameTracker, PhysAddr};
+use crate::mm::{flush_tlb, frame_alloc, FrameTracker, PhysAddr, VPNRange, VirtPageNum};
 use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VirtAddr};
 use crate::phys_to_virt;
 use crate::sync::UPSafeCell;
@@ -385,6 +385,52 @@ impl TaskUserRes {
             None
         }
     }
+    pub fn growproc(&mut self, grow_size: isize) -> usize {
+        info!("in growproc,grow_size = {}", grow_size);
+        if grow_size == 0 {
+            return self.program_brk;
+        }
+        let process = self.process.upgrade().unwrap();
+        let mut inner = process.inner_exclusive_access();
+        let area = inner
+            .memory_set
+            .get_mut()
+            .areas
+            .iter_mut()
+            .find(|area| area.area_type == MapAreaType::Brk)
+            .unwrap();
+        let growed_addr: usize = self.program_brk + grow_size as usize;
+        let shrinked_addr: usize = (self.program_brk as isize + grow_size) as usize;
+        let user_vpn_top: VirtPageNum =
+            ((self.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
+        let growed_vpn: VirtPageNum = (growed_addr / PAGE_SIZE + 1).into();
+        let shrinked_vpn: VirtPageNum = (shrinked_addr / PAGE_SIZE + 1).into();
+        if grow_size > 0 {
+            if growed_vpn >= user_vpn_top {
+                panic!("USER_HEAP overflow as {:#X}!", growed_addr);
+            }
+            //因为是懒分配，只要改范围就行了
+            area.vpn_range = VPNRange::new((self.heap_bottom / PAGE_SIZE).into(), growed_vpn);
+            self.program_brk = growed_addr;
+        } else {
+            if shrinked_addr < self.heap_bottom {
+                panic!("USER_HEAP downflow at {:#X}!", shrinked_addr);
+            }
+            area.vpn_range =
+                VPNRange::new((self.heap_bottom / PAGE_SIZE).into(), shrinked_vpn);
+            while !area.data_frames.is_empty() {
+                let page = area.data_frames.pop_last().unwrap();
+                if page.0 < growed_vpn {
+                    area.data_frames.insert(page.0, page.1);
+                    break;
+                }
+                inner.memory_set.get_mut().page_table.unmap(page.0);
+            }
+            self.program_brk = shrinked_addr;
+        }
+        flush_tlb();
+        self.program_brk
+    }   
 }
 
 impl Drop for TaskUserRes {

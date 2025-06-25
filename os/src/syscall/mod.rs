@@ -172,7 +172,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_GETUID => sys_getuid(),
         SYSCALL_UNAME => sys_uname(args[0] as *mut UTSname),
         SYSCALL_TIMES => sys_tms(args[0] as *mut TmsInner),
-        SYSCALL_BRK => sys_brk(args[0] as i32),
+        SYSCALL_BRK => sys_brk(args[0] as usize),
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID => sys_getppid(),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32, args[2]),

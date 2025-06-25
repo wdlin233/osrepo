@@ -52,7 +52,11 @@ pub fn main() -> i32 {
         println!("Usertests: Running {}", test);
         let pid = fork();
         if pid == 0 {
-            exec(&*test, &[core::ptr::null::<u8>()]);
+            let args = ["run-all.sh\0"];
+            let mut v= args.map(|arg| arg.as_ptr()).to_vec();
+            v.push(0 as *const u8);
+            println!("[initproc] exec busybox sh...");
+            exec(&test, &v);
             panic!("unreachable!");
         } else {
             pids[i] = pid;
