@@ -29,7 +29,7 @@ pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
     PageTableEntry, UserBuffer, UserBufferIterator, safe_translated_byte_buffer, flush_tlb,
 };
-pub use map_area::{MapArea, MapType, MapPermission, MapAreaType, MmapFile};
+pub use map_area::{MapArea, MapPermission, MapAreaType, MmapFile};
 
 #[cfg(target_arch = "riscv64")]
 pub use memory_set::{kernel_token, KERNEL_SPACE, remap_test};

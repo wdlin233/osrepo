@@ -7,12 +7,14 @@ use virtio_drivers::{Hal, BufferDirection};
 use crate::{
     mm::{
         frame_alloc, frame_dealloc, FrameTracker, PageTable, PhysAddr, PhysPageNum,
-        StepByOne, VirtAddr, KERNEL_SPACE,
+        StepByOne, VirtAddr,
     },
     task::current_token,
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::ptr::NonNull;
+#[cfg(target_arch = "riscv64")]
+use crate::mm::KERNEL_SPACE;
 
 /// 实现 Trait BlockDevice时对内部操作加锁
 // pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());

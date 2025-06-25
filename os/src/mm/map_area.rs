@@ -144,8 +144,8 @@ impl MapArea {
                 .unwrap()
                 .ppn()
                 .bytes_array_mut()[page_offset..(page_offset + src.len())];
+            // 如下这句触发 StorePageFault, la
             dst.copy_from_slice(src);
-
             start += PAGE_SIZE - page_offset;
 
             page_offset = 0;

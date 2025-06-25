@@ -480,10 +480,10 @@ impl ProcessControlBlock {
         }
         #[cfg(target_arch = "loongarch64")]
         {
-            trap_cx.x[4] = args_len;
-            trap_cx.x[5] = argv_base; // maybe, or user_sp + 8
-            trap_cx.x[6] = env_base;
-            trap_cx.x[7] = aux_base;
+            trap_cx.x[4] = argv.len();
+            trap_cx.x[5] = argv_base;
+            trap_cx.x[6] = envp_base;
+            // trap_cx.x[7] = aux_base;
         }
         *task_inner.get_trap_cx() = trap_cx;
 
@@ -496,7 +496,7 @@ impl ProcessControlBlock {
                 asm!("invtlb 0x4,{},$r0",in(reg) pid);
             }
             // 设置新的pgdl
-            let pgd = new_token << PAGE_SIZE_BITS;
+            let pgd = token << PAGE_SIZE_BITS;
             // Pgdl::read().set_val(pgd).write(); //设置新的页基址
             pgdl::set_base(pgd); //设置新的页基址
         }

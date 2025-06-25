@@ -415,89 +415,7 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::SECURE, 0 as usize));
         auxv.push(Aux::new(AuxType::NOTELF, 0x112d as usize));
 
-        // let mut max_end_vpn = VirtPageNum(0);
-        // let mut header_va = 0;
-        // let mut has_found_header_va = false;
-        // debug!("elf program header count: {}", ph_count);
-        // for i in 0..ph_count {
-        //     let ph = elf.program_header(i).unwrap();
-        //     if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-        //         let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-        //         let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-        //         debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
-        //         if !has_found_header_va {
-        //             header_va = start_va.0;
-        //             has_found_header_va = true;
-        //         }
-
-        //         #[cfg(target_arch = "riscv64")]
-        //         let mut map_perm = MapPermission::U;
-        //         #[cfg(target_arch = "loongarch64")]
-        //         let mut map_perm = MapPermission::default();
-
-        //         let ph_flags = ph.flags();
-        //         #[cfg(target_arch = "riscv64")]
-        //         {
-        //             if ph_flags.is_read() {
-        //                 map_perm |= MapPermission::R;
-        //             }
-        //             if ph_flags.is_write() {
-        //                 map_perm |= MapPermission::W;
-        //             }
-        //             if ph_flags.is_execute() {
-        //                 map_perm |= MapPermission::X;
-        //             }
-        //         }
-        //         #[cfg(target_arch = "loongarch64")]
-        //         {
-        //             if !ph_flags.is_read() {
-        //                 map_perm |= MapPermission::NR;
-        //             }
-        //             if ph_flags.is_write() {
-        //                 map_perm |= MapPermission::W;
-        //             }
-        //             if !ph_flags.is_execute() {
-        //                 map_perm |= MapPermission::NX;
-        //             }
-        //         }
-        //         debug!(
-        //             "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-        //             start_va, end_va, map_perm
-        //         );
-        //         #[cfg(target_arch = "riscv64")]
-        //         let map_area = MapArea::new(
-        //             start_va,
-        //             end_va,
-        //             MapType::Framed,
-        //             map_perm,
-        //             MapAreaType::Elf,
-        //         );
-        //         #[cfg(target_arch = "loongarch64")]
-        //         let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Brk);
-        //         //debug!("map_area: {:?}", map_area);
-
-        //         max_end_vpn = map_area.vpn_range.get_end();
-        //         // A optimization for mapping data, keep aligned
-        //         if start_va.page_offset() == 0 {
-        //             memory_set.push(
-        //                 map_area,
-        //                 Some(
-        //                     &elf.input
-        //                         [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-        //                 ),
-        //             );
-        //         } else {
-        //             //error!("start_va page offset is not zero, start_va: {:?}", start_va);
-        //             let data_len = start_va.page_offset() + ph.file_size() as usize;
-        //             let mut data: Vec<u8> = Vec::with_capacity(data_len);
-        //             data.resize(data_len, 0);
-        //             data[start_va.page_offset()..].copy_from_slice(
-        //                 &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-        //             );
-        //             memory_set.push(map_area, Some(data.as_slice()));
-        //         }
-        //     }
-        // }
+        info!("(from_elf): entry point: {:#x}", entry_point);
         let (max_end_vpn, header_va) = memory_set.map_elf(&elf, VirtAddr(0));
         // Get ph_head addr for auxv
         let ph_head_addr = header_va.0 + elf.header.pt2.ph_offset() as usize;
@@ -509,15 +427,15 @@ impl MemorySetInner {
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_heap_bottom: usize = max_end_va.into();
 
+        info!("(from_elf): max end va: {:#x}", user_heap_bottom);
         // guard page，用户栈
         user_heap_bottom += PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom;
-        #[cfg(target_arch = "riscv64")]
         memory_set.push_lazily(MapArea::new(
             user_heap_bottom.into(),
             user_heap_top.into(),
-            MapType::Framed,
-            MapPermission::R | MapPermission::W | MapPermission::U,
+            #[cfg(target_arch = "riscv64")] MapType::Framed,
+            MapPermission::default() | MapPermission::W,
             MapAreaType::Brk,
         ));
         info!("(from_elf): user heap bottom: {:#x}", user_heap_bottom);
@@ -1180,8 +1098,8 @@ impl MemorySetInner {
         let mut max_end_vpn = offset.floor();
         let mut header_va = 0;
         let mut has_found_header_va = false;
-
         for i in 0..ph_count {
+            info!("mapping program header {}", i);
             let ph = elf.program_header(i).unwrap();
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize + offset.0).into();
@@ -1191,22 +1109,52 @@ impl MemorySetInner {
                     header_va = start_va.0;
                     has_found_header_va = true;
                 }
+                info!(
+                    "mapping program header {}: start_va = {:#x}, end_va = {:#x}",
+                    i, start_va.0, end_va.0
+                );
+                #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
+                #[cfg(target_arch = "loongarch64")]
+                let mut map_perm = MapPermission::default();
+
                 let ph_flags = ph.flags();
-                if ph_flags.is_read() {
-                    map_perm |= MapPermission::R;
+                #[cfg(target_arch = "riscv64")]
+                {
+                    if ph_flags.is_read() {
+                        map_perm |= MapPermission::R;
+                    }
+                    if ph_flags.is_write() {
+                        map_perm |= MapPermission::W;
+                    }
+                    if ph_flags.is_execute() {
+                        map_perm |= MapPermission::X;
+                    }
                 }
-                if ph_flags.is_write() {
-                    map_perm |= MapPermission::W;
-                }
-                if ph_flags.is_execute() {
-                    map_perm |= MapPermission::X;
+                #[cfg(target_arch = "loongarch64")]
+                {
+                    if !ph_flags.is_read() {
+                        map_perm |= MapPermission::NR;
+                    }
+                    if ph_flags.is_write() {
+                        map_perm |= MapPermission::W;
+                    }
+                    if !ph_flags.is_execute() {
+                        map_perm |= MapPermission::NX;
+                    }
                 }
                 #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(
                     start_va,
                     end_va,
                     MapType::Framed,
+                    map_perm,
+                    MapAreaType::Elf,
+                );
+                #[cfg(target_arch = "loongarch64")]
+                let map_area = MapArea::new(
+                    start_va,
+                    end_va,
                     map_perm,
                     MapAreaType::Elf,
                 );
@@ -1218,6 +1166,27 @@ impl MemorySetInner {
                     Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
                 );
             }
+            //     max_end_vpn = map_area.vpn_range.get_end();
+            //     // A optimization for mapping data, keep aligned
+            //     if start_va.page_offset() == 0 {
+            //         self.push(
+            //             map_area,
+            //             Some(
+            //                 &elf.input
+            //                     [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
+            //             ),
+            //         );
+            //     } else {
+            //         //error!("start_va page offset is not zero, start_va: {:?}", start_va);
+            //         let data_len = start_va.page_offset() + ph.file_size() as usize;
+            //         let mut data: Vec<u8> = Vec::with_capacity(data_len);
+            //         data.resize(data_len, 0);
+            //         data[start_va.page_offset()..].copy_from_slice(
+            //             &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
+            //         );
+            //         self.push(map_area, Some(data.as_slice()));
+            //     }
+            // }
         }
         (max_end_vpn, header_va.into())
     }
