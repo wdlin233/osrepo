@@ -85,9 +85,9 @@ pub const SYSCALL_GETGID: usize = 176;
 /// gettid syscall
 pub const SYSCALL_GETTID: usize = 178;
 /// fork syscall
-pub const SYSCALL_FORK: usize = 220;
+pub const SYSCALL_CLONE: usize = 220;
 /// exec syscall
-pub const SYSCALL_EXEC: usize = 221;
+pub const SYSCALL_EXECVE: usize = 221;
 /// sbrk syscall
 pub const SYSCALL_BRK: usize = 214;
 /// munmap syscall
@@ -180,7 +180,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID => sys_getppid(),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32, args[2]),
-        SYSCALL_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
+        SYSCALL_CLONE => sys_clone(args[0], args[1], args[2], args[3], args[4]),
         SYSCALL_YIELD => sys_yield(),
 
         SYSCALL_LINKAT => sys_linkat(args[1] as *const u8, args[3] as *const u8),
@@ -199,7 +199,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_EXIT => sys_exit(args[0] as i32),
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_GETTID => sys_gettid(),
-        SYSCALL_EXEC => sys_exec(
+        SYSCALL_EXECVE => sys_execve(
             args[0] as *const u8,
             args[1] as *const usize,
             args[2] as *const usize,

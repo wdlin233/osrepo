@@ -50,7 +50,7 @@ pub fn sys_yield() -> isize {
 }
 
 /// fork child process syscall
-pub fn sys_fork(
+pub fn sys_clone(
     flags: usize,
     stack_ptr: usize,
     parent_tid_ptr: usize,
@@ -94,7 +94,7 @@ pub fn sys_fork(
     new_pid as isize
 }
 /// exec syscall
-pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize) -> isize {
+pub fn sys_execve(pathp: *const u8, mut args: *const usize, mut envp: *const usize) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_exec(path: 0x{:x?}, args: 0x{:x?})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(),
@@ -193,7 +193,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     debug!("in sys exec,to pcb exec");
     current_process.exec(&elf_data, argv, &mut env);
     debug!("in sys exec, return argv len is :{}", len);
-    len as isize // return 0?
+    return 0;
 }
 
 /// waitpid syscall
@@ -425,15 +425,18 @@ pub fn sys_munmap(addr: usize, len: usize) -> isize {
 
 // change data segment size
 pub fn sys_brk(brk_addr: usize) -> isize {
-    //trace!("kernel:pid[{}] sys_sbrk", current_task().unwrap().process.upgrade().unwrap().getpid());
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
-    let former_addr: usize = inner.res.as_mut().unwrap().growproc(0);
+    info!(
+        "kernel:pid[{}] sys_brk(brk_addr: 0x{:x?})",
+        current_task().unwrap().process.upgrade().unwrap().getpid(),
+        brk_addr
+    );
+    let mut process = current_process();
+    let former_addr: usize = process.growproc(0);
     if brk_addr == 0 {
         return former_addr as isize;
     }
     let grow_size: isize = (brk_addr - former_addr) as isize;
-    return inner.res.as_mut().unwrap().growproc(grow_size) as isize;
+    return process.growproc(grow_size) as isize;
 }
 // like sys_spawn a unnecessary syscall
 

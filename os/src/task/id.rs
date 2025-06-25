@@ -155,10 +155,8 @@ impl KernelStack {
     where
         T: Sized,
     {
-        #[cfg(target_arch = "riscv64")]
-        let kernel_stack_top = self.get_top();
-        #[cfg(target_arch = "loongarch64")]
-        let kernel_stack_top = self.get_virt_top();
+        #[cfg(target_arch = "riscv64")] let kernel_stack_top = self.get_top();
+        #[cfg(target_arch = "loongarch64")] let kernel_stack_top = self.get_virt_top();
         let ptr_mut = (kernel_stack_top - core::mem::size_of::<T>()) as *mut T;
         unsafe {
             *ptr_mut = value;
@@ -197,10 +195,6 @@ pub struct TaskUserRes {
     pub ustack_base: usize,
     /// process belongs to
     pub process: Weak<ProcessControlBlock>,
-    ///heap bottom
-    pub heap_bottom: usize,
-    ///program brk
-    pub program_brk: usize,
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -228,8 +222,6 @@ impl TaskUserRes {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
-            heap_bottom: user_sp,
-            program_brk: user_sp,
         };
         if alloc_user_res {
             task_user_res.alloc_user_res();
@@ -248,8 +240,6 @@ impl TaskUserRes {
         // alloc user stack
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
-        self.heap_bottom = ustack_top + PAGE_SIZE;
-        self.program_brk = ustack_top + PAGE_SIZE;
 
         debug!(
             "ustack_bottom = {},ustack_top = {}",
@@ -260,15 +250,6 @@ impl TaskUserRes {
             ustack_top.into(),
             MapPermission::default() | MapPermission::W,
             MapAreaType::Stack,
-        );
-
-        // alloc user heap
-        // debug!("heap_bottom = {},program_brk = {}",self.heap_bottom,self.program_brk);
-        process_inner.memory_set.insert_framed_area(
-            self.heap_bottom.into(),
-            self.program_brk.into(),
-            MapPermission::default() | MapPermission::W,
-            MapAreaType::Brk,
         );
 
         // alloc trap_cx
@@ -295,10 +276,6 @@ impl TaskUserRes {
             .memory_set
             .remove_area_with_start_vpn(ustack_bottom_va.into());
         // dealloc user heap manually
-        let heap_bottom_va: VirtAddr = self.heap_bottom.into();
-        process_inner
-            .memory_set
-            .remove_area_with_start_vpn(heap_bottom_va.into());
         // dealloc trap_cx manually
         #[cfg(target_arch = "riscv64")]
         {
@@ -354,109 +331,6 @@ impl TaskUserRes {
             self.ustack_base, self.tid
         );
         ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
-    }
-    /// change the location of the program break. return None if failed.
-    pub fn change_program_brk(&mut self, path: isize) -> Option<usize> {
-        debug!("in change brk,path = {}", path);
-        debug!(
-            "self.brk = {},self.bottom = {}",
-            self.program_brk, self.heap_bottom
-        );
-        if path == 0 {
-            return Some(self.program_brk);
-        }
-        let process = self.process.upgrade().unwrap();
-        let mut inner = process.inner_exclusive_access();
-
-        let area = inner
-            .memory_set
-            .get_mut()
-            .areas
-            .iter_mut()
-            .find(|area| area.area_type == MapAreaType::Brk)
-            .unwrap();
-
-        let heap_bottom = self.heap_bottom;
-        let new_brk = path;
-        let heap_alloc = new_brk - heap_bottom as isize;
-        if new_brk < heap_bottom as isize || heap_alloc as usize > HEAP_SIZE {
-            debug!("in change brk, return none");
-            return None;
-        }
-        let growed_vpn: VirtPageNum = ((new_brk as usize) / PAGE_SIZE + 1).into();
-        let result = if new_brk < self.program_brk as isize {
-            area.vpn_range =
-                VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
-            while !area.data_frames.is_empty() {
-                let page = area.data_frames.pop_last().unwrap();
-                if page.0 < growed_vpn {
-                    area.data_frames.insert(page.0, page.1);
-                    break;
-                }
-                inner.memory_set.get_mut().page_table.unmap(page.0);
-            }
-            true
-            // inner
-            //     .memory_set
-            //     .shrink_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
-        } else {
-            area.vpn_range =
-                VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
-            true
-        };
-        if result {
-            debug!("to modify self brk,new brk is :{}", new_brk);
-            self.program_brk = new_brk as usize;
-            Some(self.program_brk)
-        } else {
-            None
-        }
-    }
-    pub fn growproc(&mut self, grow_size: isize) -> usize {
-        info!("in growproc,grow_size = {}", grow_size);
-        if grow_size == 0 {
-            return self.program_brk;
-        }
-        let process = self.process.upgrade().unwrap();
-        let mut inner = process.inner_exclusive_access();
-        let area = inner
-            .memory_set
-            .get_mut()
-            .areas
-            .iter_mut()
-            .find(|area| area.area_type == MapAreaType::Brk)
-            .unwrap();
-        let growed_addr: usize = self.program_brk + grow_size as usize;
-        let shrinked_addr: usize = (self.program_brk as isize + grow_size) as usize;
-        let user_vpn_top: VirtPageNum =
-            ((self.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
-        let growed_vpn: VirtPageNum = (growed_addr / PAGE_SIZE + 1).into();
-        let shrinked_vpn: VirtPageNum = (shrinked_addr / PAGE_SIZE + 1).into();
-        if grow_size > 0 {
-            if growed_vpn >= user_vpn_top {
-                panic!("USER_HEAP overflow as {:#X}!", growed_addr);
-            }
-            //因为是懒分配，只要改范围就行了
-            area.vpn_range = VPNRange::new((self.heap_bottom / PAGE_SIZE).into(), growed_vpn);
-            self.program_brk = growed_addr;
-        } else {
-            if shrinked_addr < self.heap_bottom {
-                panic!("USER_HEAP downflow at {:#X}!", shrinked_addr);
-            }
-            area.vpn_range =
-                VPNRange::new((self.heap_bottom / PAGE_SIZE).into(), shrinked_vpn);
-            while !area.data_frames.is_empty() {
-                let page = area.data_frames.pop_last().unwrap();
-                if page.0 < growed_vpn {
-                    area.data_frames.insert(page.0, page.1);
-                    break;
-                }
-                inner.memory_set.get_mut().page_table.unmap(page.0);
-            }
-            self.program_brk = shrinked_addr;
-        }
-        flush_tlb();
-        self.program_brk
     }   
 }
 

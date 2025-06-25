@@ -9,15 +9,16 @@ use super::TaskControlBlock;
 use super::{pid_alloc, PidHandle};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
+use crate::config::USER_HEAP_SIZE;
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
-use crate::mm::{translated_refmut, MemorySet, MemorySetInner};
+use crate::mm::{flush_tlb, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VPNRange, VirtPageNum};
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
-use crate::task::current_process;
+use crate::task::{self, current_process};
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -25,6 +26,7 @@ use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
+use virtio_drivers::PAGE_SIZE;
 use core::arch::asm;
 use core::cell::RefMut;
 #[cfg(target_arch = "loongarch64")]
@@ -82,6 +84,10 @@ pub struct ProcessControlBlockInner {
     pub sig_pending: SignalFlags,
     /// clear child tid
     pub clear_child_tid: usize,
+    ///heap bottom
+    pub heap_bottom: usize,
+    ///program brk
+    pub program_brk: usize,
 }
 
 ///record process times
@@ -254,6 +260,8 @@ impl ProcessControlBlock {
                     sig_table: Arc::new(SigTable::new()),
                     sig_mask: SignalFlags::empty(),
                     sig_pending: SignalFlags::empty(),
+                    heap_bottom: ustack_base,
+                    program_brk: ustack_base,
                 })
             },
         });
@@ -302,11 +310,13 @@ impl ProcessControlBlock {
     /// Only support processes with a single thread.
     pub fn exec(self: &Arc<Self>, elf_data: &[u8], argv: Vec<String>, env: &mut Vec<String>) {
         //trace!("kernel: exec");
-        debug!("kernel: exec, pid = {}", self.getpid());
+        //debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
         let (memory_set, ustack_base, entry_point, mut auxv) = MemorySetInner::from_elf(elf_data);
         let token = memory_set.token();
-
+        info!("kernel: exec, pid = {}, ustack_base = {:#x}, entry_point = {:#x}",
+            self.getpid(), ustack_base, entry_point);
+        
         self.inner_exclusive_access().memory_set = Arc::new(MemorySet::new(memory_set));
         // then we alloc user resource for main thread again
         // since memory_set has been changed
@@ -491,18 +501,19 @@ impl ProcessControlBlock {
             pgdl::set_base(pgd); //设置新的页基址
         }
         debug!("in pcb, exec ok");
+        self.inner_exclusive_access().heap_bottom = ustack_base;
+        self.inner_exclusive_access().program_brk = ustack_base;
     }
 
     /// Only support processes with a single thread.
     pub fn fork(
         self: &Arc<Self>,
         flags: CloneFlags,
-        _stack: usize,
+        stack: usize,
         _parent_tid: *mut u32,
         _tls: usize,
-        child_tid: *mut u32,
+        child_pid: *mut u32,
     ) -> Arc<Self> {
-        //unimplemented!()
         let user = self.user.clone();
         let mut parent = self.inner_exclusive_access();
         assert_eq!(parent.thread_count(), 1);
@@ -535,8 +546,6 @@ impl ProcessControlBlock {
             Arc::new(FdTable::from_another(&parent.fd_table))
         };
 
-        let sig_mask = parent.sig_mask.clone();
-
         let sig_table = if flags.contains(CloneFlags::CLONE_SIGHAND) {
             Arc::clone(&parent.sig_table)
         } else {
@@ -545,10 +554,31 @@ impl ProcessControlBlock {
         let sig_pending = SignalFlags::empty();
 
         let clear_child_tid = if flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
-            child_tid as usize
+            child_pid as usize
         } else {
             0
         };
+
+        // 检查是否创建线程
+        let mut sig_mask = SignalFlags::empty();
+        if flags.contains(CloneFlags::CLONE_THREAD) {
+            // 针对线程也有特定的处理，这里先跳过
+            error!("kernel: fork with CLONE_THREAD is not supported yet");
+            // pid = self.pid;
+            // ppid = self.ppid;
+            // timer = Arc::clone(&parent_inner.timer);
+            //sig_mask = SignalFlags::empty();
+        } else {
+            // pid = tid_handle.0;
+            // ppid = self.pid;
+            // timer = Arc::new(Timer::new());
+            sig_mask = parent.sig_mask.clone();
+        }
+        if flags.contains(CloneFlags::CLONE_PARENT) {
+            error!("kernel: fork with CLONE_PARENT is not supported yet");
+            //ppid = self.ppid;
+        }
+
         // create child process pcb
         let child = Arc::new(Self {
             pid,
@@ -575,12 +605,15 @@ impl ProcessControlBlock {
                     sig_mask,
                     sig_pending,
                     sig_table,
+                    program_brk: parent.program_brk,
+                    heap_bottom: parent.heap_bottom,
                 })
             },
         });
         // add child
         parent.children.push(Arc::clone(&child));
         // create main thread of child process
+        // 如果 CLONE_THREAD 是 true, 需要分配资源.
         let task = Arc::new(TaskControlBlock::new(
             Arc::clone(&child),
             parent
@@ -598,6 +631,21 @@ impl ProcessControlBlock {
         let mut child_inner = child.inner_exclusive_access();
         child_inner.tasks.push(Some(Arc::clone(&task)));
         drop(child_inner);
+        if stack != 0 {
+            unimplemented!()
+        }
+        if flags.contains(CloneFlags::CLONE_SETTLS) {
+            unimplemented!()
+            // tp
+            //trap_cx.gp.x[4] = tls;
+        }
+        // CLONE_CHILD_SETTID
+        if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
+            unimplemented!()
+            //let child_token = child_inner.user_token();
+            //put_data(child_token, child_tid, child.tid() as u32);
+        }
+
         // modify kstack_top in trap_cx of this thread
         #[cfg(target_arch = "riscv64")]
         let task_inner = task.inner_exclusive_access();
@@ -628,6 +676,7 @@ impl ProcessControlBlock {
     }
     /// get parent pid
     pub fn getppid(&self) -> usize {
+        error!("kernel: getppid is not implemented yet");
         let inner = self.inner_exclusive_access();
         let parent = inner.parent.clone().unwrap();
         parent.upgrade().unwrap().getpid() + 1
@@ -644,6 +693,51 @@ impl ProcessControlBlock {
     /// set clear child tid
     pub fn set_clear_child_tid(&self, new: usize) {
         self.inner_exclusive_access().clear_child_tid = new;
+    }
+    pub fn growproc(self: &mut Arc<Self>, grow_size: isize) -> usize {
+        info!("in growproc,grow_size = {}", grow_size);
+        let mut inner = self.inner_exclusive_access();
+        if grow_size == 0 {
+            return inner.program_brk;
+        }
+       let area = inner
+            .memory_set
+            .get_mut()
+            .areas
+            .iter_mut()
+            .find(|area| area.area_type == MapAreaType::Brk)
+            .unwrap();
+        let growed_addr: usize = inner.program_brk + grow_size as usize;
+        let shrinked_addr: usize = (inner.program_brk as isize + grow_size) as usize;
+        let user_vpn_top: VirtPageNum =
+            ((inner.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
+        let growed_vpn: VirtPageNum = (growed_addr / PAGE_SIZE + 1).into();
+        let shrinked_vpn: VirtPageNum = (shrinked_addr / PAGE_SIZE + 1).into();
+        if grow_size > 0 {
+            if growed_vpn >= user_vpn_top {
+                panic!("USER_HEAP overflow as {:#X}!", growed_addr);
+            }
+            //因为是懒分配，只要改范围就行了
+            area.vpn_range = VPNRange::new((inner.heap_bottom / PAGE_SIZE).into(), growed_vpn);
+            inner.program_brk = growed_addr;
+        } else {
+            if shrinked_addr < inner.heap_bottom {
+                panic!("USER_HEAP downflow at {:#X}!", shrinked_addr);
+            }
+            area.vpn_range =
+                VPNRange::new((inner.heap_bottom / PAGE_SIZE).into(), shrinked_vpn);
+            while !area.data_frames.is_empty() {
+                let page = area.data_frames.pop_last().unwrap();
+                if page.0 < growed_vpn {
+                    area.data_frames.insert(page.0, page.1);
+                    break;
+                }
+                inner.memory_set.get_mut().page_table.unmap(page.0);
+            }
+            inner.program_brk = shrinked_addr;
+        }
+        flush_tlb();
+        inner.program_brk
     }
 }
 
