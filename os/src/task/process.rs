@@ -2,7 +2,7 @@
 
 use super::add_task;
 use super::aux::{Aux, AuxType};
-use super::id::RecycleAllocator;
+use super::id::{tid_alloc, RecycleAllocator, TidHandle};
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
@@ -17,6 +17,7 @@ use crate::mm::KERNEL_SPACE;
 use crate::mm::{translated_refmut, MemorySet};
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::task::id::tid_dealloc;
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -177,11 +178,13 @@ impl ProcessControlBlockInner {
     // } use fstruct.rs instead
     /// allocate a new task id
     pub fn alloc_tid(&mut self) -> usize {
-        self.task_res_allocator.alloc()
+        //self.task_res_allocator.alloc()
+        tid_alloc().0
     }
     /// deallocate a task id
     pub fn dealloc_tid(&mut self, tid: usize) {
-        self.task_res_allocator.dealloc(tid)
+        //self.task_res_allocator.dealloc(tid)
+        tid_dealloc(tid);
     }
     /// the count of tasks(threads) in this process
     pub fn thread_count(&self) -> usize {
@@ -266,7 +269,7 @@ impl ProcessControlBlock {
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
-        let ustack_top = task_inner.res.as_ref().unwrap().ustack_top();
+        let ustack_top = task_inner.res.as_ref().unwrap().ustack_top(true);
         #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
@@ -318,6 +321,7 @@ impl ProcessControlBlock {
         let task = self.inner_exclusive_access().get_task(0);
         let mut task_inner = task.inner_exclusive_access();
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
+        task_inner.res.as_mut().unwrap().is_exec = true;
         task_inner.res.as_mut().unwrap().alloc_user_res();
         debug!(
             "kernel: exec .. alloc user resource for main thread again, pid = {}",
@@ -326,10 +330,11 @@ impl ProcessControlBlock {
         #[cfg(target_arch = "riscv64")]
         {
             task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+            debug!("in pcb exec, trap cx ppn is : {}", task_inner.trap_cx_ppn.0);
         }
         // push arguments on user stack
         //trace!("kernel: exec .. push arguments on user stack");
-        let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
+        let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top(true) as usize;
         info!("in pcb exec, initial user_sp = {}", user_sp);
 
         //      00000000000100b0 <main>:
@@ -657,7 +662,9 @@ impl ProcessControlBlock {
     pub fn getgid(&self) -> usize {
         self.user.getgid()
     }
-
+    pub fn get_task_len(&self) -> usize {
+        self.inner_exclusive_access().tasks.len()
+    }
     /// set clear child tid
     pub fn set_clear_child_tid(&self, new: usize) {
         self.inner_exclusive_access().clear_child_tid = new;

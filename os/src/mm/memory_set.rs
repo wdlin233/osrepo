@@ -264,11 +264,11 @@ impl MemorySetInner {
     /// Assuming that there are no conflicts in the virtual address
     /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        debug!(
-            "in mem set inner push, the map area is, start : {}, end :{}",
-            map_area.vpn_range.get_start().0,
-            map_area.vpn_range.get_end().0
-        );
+        // debug!(
+        //     "in mem set inner push, the map area is, start : {}, end :{}",
+        //     map_area.vpn_range.get_start().0,
+        //     map_area.vpn_range.get_end().0
+        // );
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);

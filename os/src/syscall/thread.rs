@@ -1,6 +1,6 @@
 use crate::{
-    task::{add_task, current_task, TaskControlBlock},
     hal::trap::{trap_handler, TrapContext},
+    task::{add_task, current_task, TaskControlBlock},
 };
 use alloc::sync::Arc;
 /// thread create syscall
@@ -46,7 +46,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
         use crate::mm::kernel_token;
         *new_task_trap_cx = TrapContext::app_init_context(
             entry,
-            new_task_res.ustack_top(),
+            new_task_res.ustack_top(true),
             kernel_token(),
             new_task.kstack.get_top(),
             trap_handler as usize,
@@ -55,10 +55,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     }
     #[cfg(target_arch = "loongarch64")]
     {
-        *new_task_trap_cx = TrapContext::app_init_context(
-            entry, 
-            new_task_res.ustack_top()
-        );
+        *new_task_trap_cx = TrapContext::app_init_context(entry, new_task_res.ustack_top(true));
         new_task_trap_cx.x[4] = arg;
     }
     new_task_tid as isize

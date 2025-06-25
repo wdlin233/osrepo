@@ -2,7 +2,8 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    HEAP_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
+    HEAP_BASE, HEAP_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE,
+    USER_STACK_SIZE,
 };
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
@@ -16,6 +17,8 @@ use alloc::{
     vec::Vec,
 };
 use lazy_static::*;
+use lwext4_rust::file::PAGE_MASK;
+//use virtio_drivers::PAGE_SIZE;
 
 /// Allocator with a simple recycle strategy
 pub struct RecycleAllocator {
@@ -56,6 +59,8 @@ lazy_static! {
     /// Glocal allocator for pid
     static ref PID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
         unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+        static ref TID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
+        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
 }
 #[cfg(target_arch = "riscv64")]
 lazy_static! {
@@ -82,11 +87,23 @@ pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
 
+pub struct TidHandle(pub usize);
+
+/// Allocate a new PID
+pub fn tid_alloc() -> TidHandle {
+    TidHandle(TID_ALLOCATOR.exclusive_access().alloc())
+}
+pub fn tid_dealloc(id: usize) {
+    TID_ALLOCATOR.exclusive_access().dealloc(id);
+}
+
 #[cfg(target_arch = "riscv64")]
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
+    debug!("in kernel stack position, app id is : {}", app_id);
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
+    debug!("kstack bottom is : {}, top is : {}", bottom, top);
     (bottom, top)
 }
 
@@ -102,8 +119,11 @@ pub struct KernelStack {
 #[cfg(target_arch = "riscv64")]
 /// Allocate a kernel stack for a task
 pub fn kstack_alloc() -> KernelStack {
+    debug!("in kstack alloc");
     let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
+    debug!("kstack id is : {}", kstack_id);
     let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
+    debug!("to map kernel space");
     KERNEL_SPACE.exclusive_access().insert_framed_area(
         kstack_bottom.into(),
         kstack_top.into(),
@@ -116,6 +136,7 @@ pub fn kstack_alloc() -> KernelStack {
 #[cfg(target_arch = "riscv64")]
 impl Drop for KernelStack {
     fn drop(&mut self) {
+        debug!("to drop kernel stack");
         let (kernel_stack_bottom, _) = kernel_stack_position(self.0);
         let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
         KERNEL_SPACE
@@ -139,6 +160,7 @@ impl KernelStack {
     #[cfg(target_arch = "riscv64")]
     /// return the top of the kernel stack
     pub fn get_top(&self) -> usize {
+        debug!("in kernel stack, to get top");
         let (_, kernel_stack_top) = kernel_stack_position(self.0);
         kernel_stack_top
     }
@@ -199,16 +221,27 @@ pub struct TaskUserRes {
     pub heap_bottom: usize,
     ///program brk
     pub program_brk: usize,
+    //
+    pub is_exec: bool,
 }
 
 #[cfg(target_arch = "riscv64")]
 /// Return the bottom addr (low addr) of the trap context for a task
 fn trap_cx_bottom_from_tid(tid: usize) -> usize {
+    debug!("in trap cx bottom from tid, the tid is : {}", tid);
     TRAP_CONTEXT_BASE - tid * PAGE_SIZE
 }
 /// Return the bottom addr (high addr) of the user stack for a task
 fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
-    ustack_base + tid * (HEAP_SIZE + PAGE_SIZE + USER_STACK_SIZE)
+    ustack_base + tid * (PAGE_SIZE + USER_STACK_SIZE)
+}
+
+fn uheap_bottom_from_tid(tid: usize) -> usize {
+    HEAP_BASE + tid * HEAP_SIZE
+}
+
+fn uheap_top_from_tid(tid: usize) -> usize {
+    uheap_bottom_from_tid(tid) - PAGE_SIZE - 1
 }
 
 impl TaskUserRes {
@@ -218,18 +251,38 @@ impl TaskUserRes {
         ustack_base: usize,
         alloc_user_res: bool,
     ) -> Self {
+        debug!("in task user res new");
         let tid = process.inner_exclusive_access().alloc_tid();
-        //debug!("in taskuserres new, ustack_base:{},tid:{}",ustack_base,tid);
-        let user_sp = ustack_bottom_from_tid(ustack_base, tid) + USER_STACK_SIZE;
+        debug!(
+            "in task user res new, ustack_base:{},tid:{}",
+            ustack_base, tid
+        );
+        let is_exec = alloc_user_res;
+        //let is_exec = true;
+        let user_hp = if is_exec {
+            uheap_bottom_from_tid(tid)
+        } else {
+            uheap_bottom_from_tid(tid - 1)
+        };
+        // let user_sp = if is_exec {
+        //     debug!("get user sp, give tid");
+        //     ustack_bottom_from_tid(ustack_base, tid) + USER_STACK_SIZE
+        // } else {
+        //     debug!("get user sp,give  tid");
+        //     ustack_bottom_from_tid(ustack_base, tid - 1) + USER_STACK_SIZE
+        // };
         //debug!("in taskuserres new,user_sp(brk):{}",user_sp);
+
         let mut task_user_res = Self {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
-            heap_bottom: user_sp,
-            program_brk: user_sp,
+            heap_bottom: user_hp,
+            program_brk: user_hp,
+            is_exec,
         };
         if alloc_user_res {
+            debug!("to alloc user res");
             task_user_res.alloc_user_res();
         }
         task_user_res
@@ -239,11 +292,14 @@ impl TaskUserRes {
     pub fn gettid(&self) -> usize {
         self.tid
     }
+
     /// Allocate user resource for a task
     pub fn alloc_user_res(&mut self) {
+        debug!("in alloc user res");
         let process = self.process.upgrade().unwrap();
         let mut process_inner = process.inner_exclusive_access();
         // alloc user stack
+        debug!("to get ustack bottom, give tid, tid is : {}", self.tid);
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
         self.heap_bottom = ustack_top + PAGE_SIZE;
@@ -268,12 +324,13 @@ impl TaskUserRes {
             MapPermission::default() | MapPermission::W,
             MapAreaType::Brk,
         );
-
         // alloc trap_cx
         #[cfg(target_arch = "riscv64")]
         {
+            debug!("to get trap cx bottom, give tid, like up");
             let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid);
             let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+            debug!("to map trap cx info");
             process_inner.memory_set.insert_framed_area(
                 trap_cx_bottom.into(),
                 trap_cx_top.into(),
@@ -300,10 +357,18 @@ impl TaskUserRes {
         // dealloc trap_cx manually
         #[cfg(target_arch = "riscv64")]
         {
-            let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
-            process_inner
-                .memory_set
-                .remove_area_with_start_vpn(trap_cx_bottom_va.into());
+            debug!("in dealloc user res");
+            if self.is_exec {
+                let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
+                process_inner
+                    .memory_set
+                    .remove_area_with_start_vpn(trap_cx_bottom_va.into());
+            } else {
+                let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid - 1).into();
+                process_inner
+                    .memory_set
+                    .remove_area_with_start_vpn(trap_cx_bottom_va.into());
+            }
         }
     }
 
@@ -327,31 +392,56 @@ impl TaskUserRes {
     #[cfg(target_arch = "riscv64")]
     /// The bottom usr vaddr (low addr) of the trap context for a task with tid
     pub fn trap_cx_user_va(&self) -> usize {
-        trap_cx_bottom_from_tid(self.tid)
+        debug!("in task user res, trap cx user va, to get trap cx bottom from tid");
+        if self.is_exec {
+            trap_cx_bottom_from_tid(self.tid)
+        } else {
+            trap_cx_bottom_from_tid(self.tid - 1)
+        }
     }
     #[cfg(target_arch = "riscv64")]
     /// The physical page number(ppn) of the trap context for a task with tid
     pub fn trap_cx_ppn(&self) -> PhysPageNum {
+        debug!("in task user res, trap cx ppn , self tid is : {}", self.tid);
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
-        let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
-        process_inner
-            .memory_set
-            .translate(trap_cx_bottom_va.into())
-            .unwrap()
-            .ppn()
+        //let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
+        if self.is_exec {
+            // get self trap cx
+            debug!("to get self trap cx, give tid");
+            let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid).into();
+            process_inner
+                .memory_set
+                .translate(trap_cx_bottom_va.into())
+                .unwrap()
+                .ppn()
+        } else {
+            // get parent trap cx
+            debug!("to get parent trap cx, give tid");
+            let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid - 1).into();
+            process_inner
+                .memory_set
+                .translate(trap_cx_bottom_va.into())
+                .unwrap()
+                .ppn()
+        }
     }
     /// the bottom addr (low addr) of the user stack for a task
     pub fn ustack_base(&self) -> usize {
         self.ustack_base
     }
     /// the top addr (high addr) of the user stack for a task
-    pub fn ustack_top(&self) -> usize {
+    pub fn ustack_top(&self, _get_self: bool) -> usize {
         debug!(
             "in ustack top, ustack base is :{}, tid is :{}",
             self.ustack_base, self.tid
         );
         ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
+        // if _get_self {
+        //     ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
+        // } else {
+        //     ustack_bottom_from_tid(self.ustack_base, self.tid - 1) + USER_STACK_SIZE
+        // }
     }
     /// change the location of the program break. return None if failed.
     pub fn change_program_brk(&mut self, path: isize) -> Option<usize> {

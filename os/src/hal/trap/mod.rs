@@ -171,11 +171,12 @@ pub fn trap_handler() -> ! {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway
+            debug!("in trap handler, before syscall, to get cx");
             let mut cx = current_trap_cx();
             cx.sepc += 4;
             // get system call return value
             debug!(
-                "genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
+                "before syscall ,genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
                 cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
             );
             let result = syscall(
@@ -183,8 +184,14 @@ pub fn trap_handler() -> ! {
                 [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
             );
             // cx is changed during sys_exec, so we have to call it again
+            debug!("after syscall, to get cx");
             cx = current_trap_cx();
+            debug!(
+                "after syscall, genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
+                cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
+            );
             cx.x[10] = result as usize;
+            debug!("return x10 is : {}", cx.x[10]);
         }
         Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::InstructionPageFault)

@@ -102,6 +102,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let mut task_inner = task.inner_exclusive_access();
     let process = task.process.upgrade().unwrap();
     let tid = task_inner.res.as_ref().unwrap().tid;
+    let num = process.get_task_len();
     // record exit code
     task_inner.exit_code = Some(exit_code);
     task_inner.res = None;
@@ -119,7 +120,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     drop(task);
     // however, if this is the main thread of current process
     // the process should terminate at once
-    if tid == 0 {
+    if num == 1 {
         let pid = process.getpid();
         if pid == IDLE_PID {
             println!(

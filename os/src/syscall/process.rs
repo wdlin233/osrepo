@@ -77,6 +77,7 @@ pub fn sys_fork(
     // modify trap context of new_task, because it returns immediately after switching
     let new_process_inner = new_process.inner_exclusive_access();
     let task = new_process_inner.tasks[0].as_ref().unwrap();
+    debug!("in sys fork, get trap cx, to set x[10] = 0");
     let trap_cx = task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0

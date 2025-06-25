@@ -22,18 +22,21 @@ pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 /// the virtual addr of trap context
 pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
+
+// heap base
+pub const HEAP_BASE: usize = 0x400_0000;
+///heap size
+pub const HEAP_SIZE: usize = 0x10_0000;
+
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
 pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
-///heap size
-pub const HEAP_SIZE: usize = 0x1000_000;
-
 #[cfg(target_arch = "riscv64")]
 /// physical memory end address
-pub const MEMORY_END: usize = 0x88000000;
+pub const MEMORY_END: usize = 0x8800_0000;
 #[cfg(target_arch = "riscv64")]
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;
