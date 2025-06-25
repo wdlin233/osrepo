@@ -17,6 +17,7 @@ use crate::mm::KERNEL_SPACE;
 use crate::mm::{translated_refmut, MemorySet, MemorySetInner};
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::task::current_process;
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -220,7 +221,7 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let (memory_set, ustack_base, entry_point) = MemorySetInner::from_elf(elf_data);
+        let (memory_set, ustack_base, entry_point, _) = MemorySetInner::from_elf(elf_data);
         info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
             elf_data.len(), ustack_base, entry_point);
         // allocate a pid
@@ -296,12 +297,12 @@ impl ProcessControlBlock {
     }
 
     /// Only support processes with a single thread.
-    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>, env: &mut Vec<String>) {
+    pub fn exec(self: &Arc<Self>, elf_data: &[u8], argv: Vec<String>, env: &mut Vec<String>) {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        let (memory_set, ustack_base, entry_point) = MemorySetInner::from_elf(elf_data);
-        let new_token = memory_set.token();
+        let (memory_set, ustack_base, entry_point, mut auxv) = MemorySetInner::from_elf(elf_data);
+        let token = memory_set.token();
 
         self.inner_exclusive_access().memory_set = Arc::new(MemorySet::new(memory_set));
         // then we alloc user resource for main thread again
@@ -324,153 +325,126 @@ impl ProcessControlBlock {
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top() as usize;
         info!("in pcb exec, initial user_sp = {:#x}", user_sp);
 
-        //      00000000000100b0 <main>:
-        //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
-        //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
-        //          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
-        //          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
-        //          100b8: aa 87        	mv	a5, a0          ; a5 = argc
-        //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
-        //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
+        // ref: https://articles.manugarg.com/aboutelfauxiliaryvectors.html
+        // build user stack and push arguments.
+        /* based on 32 bits, need to modify for 64 bits
+    stack pointer ->  [ argc = number of args ]     4
+                    [ argv[0] (pointer) ]         4   (program name)
+                    [ argv[1] (pointer) ]         4
+                    [ argv[..] (pointer) ]        4 * x
+                    [ argv[n - 1] (pointer) ]     4
+                    [ argv[n] (pointer) ]         4   (= NULL)
 
-        /*
-        -----------------------ustack top == sp(init)
-                .
-                .
-                .
-            ------------
-            env string 2
-            ------------
-            env string 1
-        ------------------------env_st
-            地址对齐
-        --------------------------
+                    [ envp[0] (pointer) ]         4
+                    [ envp[1] (pointer) ]         4
+                    [ envp[..] (pointer) ]        4
+                    [ envp[term] (pointer) ]      4   (= NULL)
 
-                .
-                .
-                .
-            -------------
-            args string 2
-            -------------
-            args string 1
-        ---------------------------args_st
-            地址对齐
-        ----------------------------
-            aux空间
-            以两个0为结束标志
-        ----------------------------
-                0(envp 结束)
-            ---------------------
-                .
-                .
-                .
-            ---------------------
-            envp2 -> env string 2
-            ---------------------
-            envp1 -> env string 1
-        -----------------------------env_base
-                0(argv 结束)
-            --------------------------
-                .
-                .
-                .
-            --------------------------
-                argv2 -> args string 2
-            --------------------------
-                argv1 -> args string 1
-        --------------------------------argv_base
-            argc
-        ---------------------------------sp(final)
-        */
+                    [ auxv[0] (Elf32_auxv_t) ]    8
+                    [ auxv[1] (Elf32_auxv_t) ]    8
+                    [ auxv[..] (Elf32_auxv_t) ]   8
+                    [ auxv[term] (Elf32_auxv_t) ] 8   (= AT_NULL vector)
 
-        //usize大小
-        let size = core::mem::size_of::<usize>();
+                    [ padding ]                   0 - 16
 
+                    [ argument ASCIIZ strings ]   >= 0
+                    [ environment ASCIIZ str. ]   >= 0
+
+  (0xbffffffc)      [ end marker ]                4   (= NULL)
+
+  (0xc0000000)      < bottom of stack >           0   (virtual)
+         */
+        
+        
         //环境变量内容入栈
         let mut envp = Vec::new();
         for env in env.iter() {
             user_sp -= env.len() + 1;
             envp.push(user_sp);
-            let mut p = user_sp;
-            //设置env字符串
-            for c in env.as_bytes() {
-                *translated_refmut(new_token, p as *mut u8) = *c;
-                p += 1;
+            for (j, c) in env.as_bytes().iter().enumerate() {
+                unsafe {
+                    *translated_refmut(token, (user_sp + j) as *mut u8) = *c;
+                }
             }
-            *translated_refmut(new_token, p as *mut u8) = 0;
+            unsafe {
+                *translated_refmut(token, (user_sp + env.len()) as *mut u8) = 0;
+            }
         }
         envp.push(0);
-        user_sp -= user_sp % size;
-        info!("in exec pcb, user_sp after envp = {:#x}", user_sp);
+        user_sp -= user_sp % size_of::<usize>();
+        info!("in pcb exec, user_sp after envp = {:#x}", user_sp);
 
-        //args
-        let mut argv = Vec::new();
-        for i in 0..args.len() {
-            user_sp -= args[i].len() + 1;
-            argv.push(user_sp);
-            let mut p = user_sp;
-            //讲args字符串内容写到栈空间中
-            for c in args[i].as_bytes() {
-                *translated_refmut(new_token, p as *mut u8) = *c;
-                p += 1;
+        //存放字符串首址的数组
+        let mut argvp = Vec::new();
+        for arg in argv.iter() {
+            // 计算字符串在栈上的地址
+            user_sp -= arg.len() + 1;
+            argvp.push(user_sp);
+            for (j, c) in arg.as_bytes().iter().enumerate() {
+                unsafe {
+                    *translated_refmut(token, (user_sp + j) as *mut u8) = *c;
+                }
             }
-            *translated_refmut(new_token, p as *mut u8) = 0;
+            // 添加字符串末尾的 null 字符
+            unsafe {
+                *translated_refmut(token, (user_sp + arg.len()) as *mut u8) = 0;
+            }
         }
-        argv.push(0);
-        user_sp -= user_sp % size;
-        info!("in exec pcb, user_sp after argv = {:#x}", user_sp);
+        user_sp -= user_sp % size_of::<usize>(); //以8字节对齐
+        argvp.push(0);
+        info!("in pcb exec, user_sp after argvp = {:#x}", user_sp);
 
-        //aux 16字节随机变量
-        let mut aux = Vec::new();
+        //需要随便放16个字节，不知道干嘛用的。
         user_sp -= 16;
-        aux.push(Aux::new(AuxType::RANDOM, user_sp));
+        auxv.push(Aux::new(AuxType::RANDOM, user_sp));
         for i in 0..0xf {
-            let mut p = user_sp + i;
-            *translated_refmut(new_token, p as *mut u8) = (i * 2) as u8;
+            unsafe {
+                *translated_refmut(token, (user_sp + i) as *mut u8) = i as u8;
+            }
         }
         user_sp -= user_sp % 16;
-        //aux
-        aux.push(Aux::new(AuxType::EXECFN, argv[0]));
-        aux.push(Aux::new(AuxType::NULL, 0));
-        for aux in aux.iter().rev() {
-            user_sp -= core::mem::size_of::<Aux>();
-            let mut p = user_sp;
-            let mut pp = user_sp + size;
-            *translated_refmut(new_token, p as *mut usize) = aux.aux_type as usize;
-            *translated_refmut(new_token, pp as *mut usize) = aux.value;
-        }
-        let aux_base = user_sp;
-        info!("in exec pcb, user_sp after aux = {:#x}", user_sp);
+        info!("in pcb exec, user_sp after auxv random = {:#x}", user_sp);
 
-        //env指针
-        //env指针空间
-        user_sp -= envp.len() * size;
-        let env_base = user_sp;
+        //将auxv放入栈中
+        auxv.push(Aux::new(AuxType::EXECFN, argvp[0]));
+        auxv.push(Aux::new(AuxType::NULL, 0));
+        for aux in auxv.iter().rev() {
+            user_sp -= size_of::<Aux>();
+            unsafe {
+                *translated_refmut(token, user_sp as *mut usize) = aux.aux_type as usize;
+                *translated_refmut(token, (user_sp + size_of::<usize>()) as *mut usize) = aux.value;
+            }
+        }
+        info!("in pcb exec, user_sp after auxv = {:#x}", user_sp);
+
+        //将环境变量指针数组放入栈中
+        user_sp -= envp.len() * size_of::<usize>();
+        let envp_base = user_sp;
         for i in 0..envp.len() {
-            let mut p = user_sp + i * size;
-            *translated_refmut(new_token, p as *mut usize) = envp[i];
+            unsafe {
+                *translated_refmut(token, (user_sp + i * size_of::<usize>()) as *mut usize) = envp[i];
+            }
         }
-        info!("in exec pcb, user_sp after env = {:#x}", user_sp);
 
-        //args 指针
-        //args指针空间
-        user_sp -= argv.len() * size;
+        // println!("arg pointers:");
+        user_sp -= argvp.len() * size_of::<usize>();
         let argv_base = user_sp;
-        for i in 0..argv.len() {
-            let mut p = user_sp + i * size;
-            *translated_refmut(new_token, p as *mut usize) = argv[i];
+        //将参数指针数组放入栈中
+        for i in 0..argvp.len() {
+            unsafe {
+                *translated_refmut(token, (user_sp + i * size_of::<usize>()) as *mut usize) = argvp[i];
+            }
         }
-        info!("in exec pcb, user_sp after argv = {:#x}", user_sp);
 
-        //获取argc
-        let args_len = args.len();
-        //debug!("the args len is :{}", args_len);
-        //设置argc
-        user_sp -= size;
-        let argc_ptr = user_sp;
-        *translated_refmut(new_token, user_sp as *mut usize) = args.len().into();
-        
-        user_sp = argc_ptr;
+        //将argc放入栈中
+        user_sp -= size_of::<usize>();
+        unsafe {
+            *translated_refmut(token, user_sp as *mut usize) = argv.len();
+        }
+
+        //以8字节对齐
+        user_sp -= user_sp % size_of::<usize>();
+        info!("in pcb exec, user_sp after argv = {:#x}", user_sp);
 
         // initialize trap_cx
         debug!("init context");
@@ -486,10 +460,10 @@ impl ProcessControlBlock {
         );
         #[cfg(target_arch = "riscv64")]
         {
-            trap_cx.x[10] = args_len; // a0, the same with previous stack frame
+            trap_cx.x[10] = argv.len(); // a0, the same with previous stack frame
             trap_cx.x[11] = argv_base; // a1
-            trap_cx.x[12] = env_base;
-            trap_cx.x[13] = aux_base;
+            trap_cx.x[12] = envp_base;
+            //trap_cx.x[13] = aux_base; 应该在栈上传递？
         }
         #[cfg(target_arch = "loongarch64")]
         {

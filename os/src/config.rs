@@ -75,3 +75,5 @@ pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
     - PAGE_SIZE;
 
 pub const USER_HEAP_SIZE: usize = 0x10_000_000; // 16MB
+/// Dynamic linked interpreter address range in user space
+pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;

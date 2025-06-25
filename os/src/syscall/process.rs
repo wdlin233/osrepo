@@ -107,16 +107,17 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let mut env = Vec::<String>::new();
     let mut path;
     let token = inner.get_user_token();
+    use alloc::vec;
     unsafe {
         //debug!("in unsafe");
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);
         if path.ends_with(".sh") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
-            debug!("push busybox");
-            argv.push(String::from("busybox"));
-            argv.push(String::from("sh"));
-            path = String::from("/busybox");
+            let mut new_args = vec![String::from("busybox"), String::from("sh")];
+            new_args.append(&mut argv); // 保留原始参数
+            argv = new_args;
+            path = String::from("/musl/busybox");
         }
 
         //处理argv参数

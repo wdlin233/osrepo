@@ -16,7 +16,6 @@ DISASM ?= -d
 
 # Tesecases
 TESTSUITS := $(wildcard ../testsuits/$(ARCH)/*)
-TESTCASES := $(filter-out, $(TESTSUITS))
 
 # debug
 GDB_PORT := 1238
@@ -83,14 +82,13 @@ $(KERNEL_BIN):
 #		
 ifeq ($(ARCH),riscv64)
 fs-img:
-	@sudo mkdir -p /mnt/image_part
+	sudo mkdir -p /mnt/image_part
 	@make -C ../user build
 	@sudo mount $(FS_IMG) /mnt/image_part
 	@sudo cp ../user/build/elf/* /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
-	@sudo cp -r ../test-riscv/musl/busybox /mnt/image_part/
 	@sudo ls /mnt/image_part/
-	@sudo umount /mnt/image_part
+	sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
 fs-img:
 	@sudo mkdir -p /mnt/image_part

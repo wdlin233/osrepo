@@ -5,7 +5,7 @@
 extern crate user_lib;
 
 const TESTS: &[&str] = &[
-    "run-all.sh\0",
+    "musl/basic_testcode.sh\0",
     //"mnt/test_mount\0",
     // "pipe\0", 
     // "munmap\0", 
@@ -52,7 +52,7 @@ pub fn main() -> i32 {
         println!("Usertests: Running {}", test);
         let pid = fork();
         if pid == 0 {
-            let args = ["run-all.sh\0"];
+            let args = ["musl/basic_testcode.sh\0"];
             let mut v= args.map(|arg| arg.as_ptr()).to_vec();
             v.push(0 as *const u8);
             println!("[initproc] exec busybox sh...");
