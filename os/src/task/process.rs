@@ -2,7 +2,7 @@
 
 use super::add_task;
 use super::aux::{Aux, AuxType};
-use super::id::{tid_alloc, RecycleAllocator, TidHandle};
+use super::id::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
@@ -10,7 +10,7 @@ use super::{pid_alloc, PidHandle};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 
-use crate::config::{PAGE_SIZE, USER_HEAP_SIZE};
+use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
@@ -86,6 +86,8 @@ pub struct ProcessControlBlockInner {
     pub sig_pending: SignalFlags,
     /// clear child tid
     pub clear_child_tid: usize,
+    //heap id
+    pub heap_id: usize,
     //heap bottom
     pub heap_bottom: usize,
     //heap top
@@ -315,19 +317,22 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data);
+        let heap_id = heap_id_alloc().0;
+        let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data, heap_id);
         //info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
         //    elf_data.len(), ustack_base, entry_point);
         // allocate a pid
         debug!("in pcb new, from elf ok");
         let user = current_user().unwrap();
         let pid_handle = pid_alloc().0;
+
         let process = Arc::new(Self {
             ppid: pid_handle,
             pid: pid_handle,
             user,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
+                    heap_id,
                     is_zombie: false,
                     memory_set: Arc::new(memory_set),
                     parent: None,
@@ -402,7 +407,9 @@ impl ProcessControlBlock {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        let (memory_set, user_heap_bottom, entry_point, mut aux) = MemorySet::from_elf(elf_data);
+        let heap_id = heap_id_alloc().0;
+        let (memory_set, user_heap_bottom, entry_point, mut aux) =
+            MemorySet::from_elf(elf_data, heap_id);
         let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
         if inner.clear_child_tid != 0 {
@@ -410,6 +417,7 @@ impl ProcessControlBlock {
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
         inner.memory_set = Arc::new(memory_set);
+        inner.heap_id = heap_id;
         inner.heap_bottom = user_heap_bottom;
         inner.heap_top = user_heap_bottom;
         drop(inner);
@@ -688,6 +696,7 @@ impl ProcessControlBlock {
                 user,
                 inner: unsafe {
                     UPSafeCell::new(ProcessControlBlockInner {
+                        heap_id: parent.heap_id,
                         is_zombie: false,
                         clear_child_tid,
                         memory_set: Arc::new(memory_set),
@@ -748,6 +757,7 @@ impl ProcessControlBlock {
                         sig_mask,
                         sig_pending,
                         sig_table,
+                        heap_id: parent.heap_id,
                         heap_bottom: parent.heap_bottom,
                         heap_top: parent.heap_top,
                     })

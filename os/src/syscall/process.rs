@@ -264,6 +264,10 @@ pub fn sys_getppid() -> isize {
 pub fn sys_getuid() -> isize {
     current_task().unwrap().process.upgrade().unwrap().getuid() as isize
 }
+///
+pub fn sys_geteuid() -> isize {
+    current_task().unwrap().process.upgrade().unwrap().getuid() as isize
+}
 /// getgid syscall
 pub fn sys_getgid() -> isize {
     current_task().unwrap().process.upgrade().unwrap().getgid() as isize

@@ -3,7 +3,9 @@ use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE};
+use crate::config::{
+    MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE,
+};
 use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
@@ -110,8 +112,9 @@ impl MemorySet {
         Self::new(MemorySetInner::new_kernel())
     }
     #[inline(always)]
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
-        let (memory_set, user_heap_bottom, entry_point, auxv) = MemorySetInner::from_elf(elf_data);
+    pub fn from_elf(elf_data: &[u8], heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
+        let (memory_set, user_heap_bottom, entry_point, auxv) =
+            MemorySetInner::from_elf(elf_data, heap_id);
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
@@ -380,7 +383,7 @@ impl MemorySetInner {
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8], heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
         let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
         #[cfg(target_arch = "riscv64")]
@@ -514,9 +517,9 @@ impl MemorySetInner {
         });
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_heap_bottom: usize = max_end_va.into();
+        let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
 
-        // guard page，用户栈
+        // guard page
         user_heap_bottom += PAGE_SIZE;
         info!(
             "user heap bottom: {:#x}, {}",

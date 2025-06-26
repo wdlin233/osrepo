@@ -84,6 +84,8 @@ pub const SYSCALL_GETPID: usize = 172;
 pub const SYSCALL_GETPPID: usize = 173;
 /// getuid syscall
 pub const SYSCALL_GETUID: usize = 174;
+/// geteuid syscall
+pub const SYSCALL_GETEUID: usize = 175;
 /// getgid syscall
 pub const SYSCALL_GETGID: usize = 176;
 /// gettid syscall
@@ -165,6 +167,7 @@ use crate::{
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
+        SYSCALL_GETEUID => sys_geteuid(),
         SYSCALL_FCNTL => sys_fcntl(args[0], args[1], args[2]),
         SYSCALL_SIGACTION => sys_sigaction(
             args[0],

@@ -61,6 +61,9 @@ lazy_static! {
         unsafe { UPSafeCell::new(RecycleAllocator::new()) };
         static ref TID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
         unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+
+        static ref HEAP_ID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
+        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
 }
 #[cfg(target_arch = "riscv64")]
 lazy_static! {
@@ -71,6 +74,13 @@ lazy_static! {
 
 /// The idle task's pid is 0
 pub const IDLE_PID: usize = 0;
+
+pub struct HeapidHandle(pub usize);
+
+/// Allocate a new PID
+pub fn heap_id_alloc() -> HeapidHandle {
+    HeapidHandle(HEAP_ID_ALLOCATOR.exclusive_access().alloc())
+}
 
 /// A handle to a pid
 pub struct PidHandle(pub usize);
@@ -390,7 +400,7 @@ impl TaskUserRes {
     #[cfg(target_arch = "riscv64")]
     /// The bottom usr vaddr (low addr) of the trap context for a task with tid
     pub fn trap_cx_user_va(&self) -> usize {
-        debug!("in task user res, trap cx user va, to get trap cx bottom from tid");
+        //debug!("in task user res, trap cx user va, to get trap cx bottom from tid");
         if self.is_exec {
             trap_cx_bottom_from_tid(self.tid)
         } else {
