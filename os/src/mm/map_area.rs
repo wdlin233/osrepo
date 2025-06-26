@@ -1,3 +1,5 @@
+use core::error;
+
 use crate::{
     config::PAGE_SIZE,
     fs::OSInode,

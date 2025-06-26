@@ -229,6 +229,7 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
+        info!("(before from_elf, new) elf_data size = {}", elf_data.len());
         let (memory_set, ustack_base, entry_point, _) = MemorySetInner::from_elf(elf_data);
         info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
             elf_data.len(), ustack_base, entry_point);
@@ -312,6 +313,7 @@ impl ProcessControlBlock {
         //trace!("kernel: exec");
         //debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
+        info!("(before from_elf, exec) elf_data size = {}", elf_data.len());
         let (memory_set, ustack_base, entry_point, mut auxv) = MemorySetInner::from_elf(elf_data);
         let token = memory_set.token();
         info!("kernel: exec, pid = {}, ustack_base = {:#x}, entry_point = {:#x}",

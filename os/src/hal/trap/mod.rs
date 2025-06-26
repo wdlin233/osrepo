@@ -195,7 +195,7 @@ pub fn trap_handler() -> ! {
                 let process = current_process();
                 let inner = process.inner_exclusive_access();
                 info!(
-                    "[kernel] trap_handler: {:?} at {:#x} as vpn",
+                    "[kernel] trap_handler: {:?} at {:#x} as stval",
                     scause.cause(),
                     stval,
                 );

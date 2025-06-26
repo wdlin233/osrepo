@@ -157,6 +157,7 @@ use crate::{
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
+    //info!("##### syscall: {} with args {:?} ######", syscall_id, args);
     match syscall_id {
         SYSCALL_MOUNT => sys_mount(
             args[0] as *const u8,

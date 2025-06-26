@@ -384,7 +384,8 @@ impl MemorySetInner {
         assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
         let mut entry_point = elf.header.pt2.entry_point() as usize;
-        
+        info!("(from_elf): elf entry point as beginning: {:#x}", entry_point);
+
         use crate::task::AuxType;
         let mut auxv = Vec::new();
         auxv.push(Aux::new(
@@ -650,7 +651,7 @@ impl MemorySetInner {
         file: Option<Arc<OSInode>>,
         off: usize,
     ) -> usize {
-        debug!("in memory set, mmap");
+        error!("in memory set, mmap");
         // 映射到固定地址
         // 如果已经映射的部分和需要固定映射的部分冲突,已经映射的部分将被拆分
         if flags.contains(MmapFlags::MAP_FIXED) {
@@ -1092,6 +1093,7 @@ impl MemorySetInner {
         }
     }
     fn map_elf(&mut self, elf: &ElfFile, offset: VirtAddr) -> (VirtPageNum, VirtAddr) {
+        info!("mapping elf with offset: {:#x}", offset.0);
         let elf_header = elf.header;
         let ph_count = elf_header.pt2.ph_count();
 
@@ -1102,7 +1104,8 @@ impl MemorySetInner {
             info!("mapping program header {}", i);
             let ph = elf.program_header(i).unwrap();
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-                let start_va: VirtAddr = (ph.virtual_addr() as usize + offset.0).into();
+                let start_va: VirtAddr = 
+                    (ph.virtual_addr() as usize + offset.0).into();
                 let end_va: VirtAddr =
                     ((ph.virtual_addr() + ph.mem_size()) as usize + offset.0).into();
                 if !has_found_header_va {
