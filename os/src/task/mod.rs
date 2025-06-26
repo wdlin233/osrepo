@@ -94,10 +94,10 @@ use crate::board::QEMUExit;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
-    // trace!(
-    //     "kernel: pid[{}] exit_current_and_run_next",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
+    info!(
+        "(exit_current_and_run_next) with pid[{}]",
+        current_task().unwrap().process.upgrade().unwrap().getpid()
+    );
     // take from Processor
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
@@ -198,7 +198,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
-    let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+    let initproc = open("/usertest", OpenFlags::O_RDONLY, NONE_MODE)
         .expect("open initproc error!")
         .file()
         .expect("initproc can not be abs file!");

@@ -201,56 +201,54 @@ pub fn sys_execve(pathp: *const u8, mut args: *const usize, mut envp: *const usi
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 /// block to wait
-pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize {
-    //debug!("kernel: sys_waitpid");
-    {
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: i32) -> isize {
+    debug!("(sys_waitpid) pid is {}, wstatus is {:p}, options is {}", pid, exit_code_ptr, options);
+    if (pid as i32) == i32::MIN {
+        return SysErrNo::ESRCH as isize;
+    }
+    if options < 0 || options > 100 {
+        return SysErrNo::EINVAL as isize;
+    }
+    loop {
         let process = current_process();
-        //debug!("{} is waiting child",process.getpid());
-        // find a child process
-        let inner = process.inner_exclusive_access();
+        let mut inner = process.inner_exclusive_access();
         if !inner
             .children
             .iter()
             .any(|p| pid == -1 || pid as usize == p.getpid())
         {
-            //debug!("can not find the child");
-            return -1;
-            // ---
-            //- release current PCB
+            warn!("kernel: sys_waitpid: no child process");
+            return SysErrNo::ECHILD as isize;
         }
-    }
-    if options == 0 {
-        loop {
-            let process = current_process();
-            let mut inner = process.inner_exclusive_access();
+        let pair = inner.children.iter().enumerate().find(|(_, p)| {
+            // ++++ temporarily access child PCB exclusively
+            p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
+            // ++++ release child PCB
+        });
+        if let Some((idx, _)) = pair {
+            let child = inner.children.remove(idx);
+            // confirm that child will be deallocated after being removed from children list
+            //assert_eq!(Arc::strong_count(&child), 1);
+            let found_pid = child.getpid();
+            // ++++ temporarily access child PCB exclusively
+            let exit_code = child.inner_exclusive_access().exit_code;
             debug!(
-                "in sys waitpid, inner fd table len is :{}",
-                inner.fd_table.len()
+                "sys_waitpid: found child pid {}, exit_code {}",
+                found_pid, exit_code
             );
-            let pair = inner.children.iter().enumerate().find(|(_, p)| {
-                // ++++ temporarily access child PCB exclusively
-                p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
-                // ++++ release child PCB
-            });
-            if let Some((idx, _)) = pair {
-                let child = inner.children.remove(idx);
-                // confirm that child will be deallocated after being removed from children list
-                assert_eq!(Arc::strong_count(&child), 1);
-                let found_pid = child.getpid();
-                // ++++ temporarily access child PCB exclusively
-                let exit_code = child.inner_exclusive_access().exit_code;
-                debug!(
-                    "sys_waitpid: found child pid {}, exit_code {}",
-                    found_pid, exit_code
-                );
-                // ++++ release child PCB
-                *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
-                return found_pid as isize;
-            } else {
-                drop(inner);
-                debug!("sys_waitpid: no child found, block current process");
-                block_current_and_run_next();
+            // ++++ release child PCB
+            if !exit_code_ptr.is_null() {
+                debug!("kernel:sys_waitpid: exit_code_ptr is not null");
+                unsafe {
+                    *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+                }
             }
+            return found_pid as isize;
+        } else {
+            drop(inner);
+            drop(process);
+            debug!("sys_waitpid: no child found, block current process");
+            suspend_current_and_run_next();
         }
     }
     -2
