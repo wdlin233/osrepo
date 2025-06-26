@@ -7,9 +7,9 @@ use crate::fs::{
 
 use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
-    translated_refmut, translated_str, PhysAddr, UserBuffer,
+    translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
-use crate::syscall::{process, FcntlCmd};
+use crate::syscall::{process, FcntlCmd, Iovec};
 use crate::task::{current_process, current_user_token};
 use crate::users::User;
 use crate::utils::SyscallRet;
@@ -692,4 +692,58 @@ pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
         }
     }
     0
+}
+
+//writev
+pub fn sys_writev(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    if (fd as isize) < 0 || fd >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if (iov as isize) <= 0 || is_bad_address(iov as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (iovcnt as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if let Some(file) = &inner.fd_table.try_get(fd) {
+        if let Ok(readfile) = file.file() {
+            if readfile.inode.is_dir() {
+                return SysErrNo::EISDIR as isize;
+            }
+        }
+        let file = file.any();
+        if !file.writable() {
+            return SysErrNo::EACCES as isize;
+        }
+        // release current task TCB manually to avoid multi-borrow
+        drop(inner);
+        drop(process);
+        let mut ret: usize = 0;
+        let iovec_size = core::mem::size_of::<Iovec>();
+
+        for i in 0..iovcnt {
+            // current iovec pointer
+            let current = unsafe { iov.add(iovec_size * i) };
+            //let iovinfo = data_flow!({ *(current as *mut Iovec) });
+            let iovinfo = *translated_refmut(token, current as *mut Iovec);
+            if (iovinfo.iov_len as isize) < 0 {
+                return SysErrNo::EINVAL as isize;
+            }
+            let buffer =
+                translated_byte_buffer(token, iovinfo.iov_base as *mut u8, iovinfo.iov_len);
+            let buf = UserBuffer::new(buffer);
+            let write_ret = file.write(buf).unwrap();
+            ret += write_ret as usize;
+        }
+        ret as isize
+    } else {
+        SysErrNo::EBADF as isize
+    }
 }
