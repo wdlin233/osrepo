@@ -350,7 +350,7 @@ impl ProcessControlBlock {
                 })
             },
         });
-        debug!("in pcb new, the heap bottom is : {}", heap_bottom);
+        info!("in pcb new, the heap bottom is : {}", heap_bottom);
         let ustack_base = 0;
         // create a main thread, we should allocate ustack and trap_cx here
         let task = Arc::new(TaskControlBlock::new(
@@ -407,6 +407,8 @@ impl ProcessControlBlock {
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
         inner.memory_set = Arc::new(memory_set);
+        inner.heap_bottom = user_heap_bottom;
+        inner.heap_top = user_heap_bottom;
         drop(inner);
         // then we alloc user resource for main thread again
         // since memory_set has been changed

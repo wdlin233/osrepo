@@ -224,7 +224,7 @@ pub struct TaskUserRes {
 #[cfg(target_arch = "riscv64")]
 /// Return the bottom addr (low addr) of the trap context for a task
 fn trap_cx_bottom_from_tid(tid: usize) -> usize {
-    debug!("in trap cx bottom from tid, the tid is : {}", tid);
+    //debug!("in trap cx bottom from tid, the tid is : {}", tid);
     USER_TRAP_CONTEXT_TOP - tid * PAGE_SIZE
 }
 /// Return the bottom addr (high addr) of the user stack for a task
@@ -291,21 +291,21 @@ impl TaskUserRes {
 
     /// Allocate user resource for a task
     pub fn alloc_user_res(&mut self) {
-        debug!("in alloc user res");
+        //debug!("in alloc user res");
         let process = self.process.upgrade().unwrap();
         let mut process_inner = process.inner_exclusive_access();
 
         // alloc user stack
-        debug!("to get ustack bottom, give tid, tid is : {}", self.tid);
+        //debug!("to get ustack bottom, give tid, tid is : {}", self.tid);
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
         // self.heap_bottom = ustack_top + PAGE_SIZE;
         // self.program_brk = ustack_top + PAGE_SIZE;
 
-        debug!(
-            "ustack_bottom = {},ustack_top = {}",
-            ustack_bottom, ustack_top
-        );
+        // debug!(
+        //     "ustack_bottom = {},ustack_top = {}",
+        //     ustack_bottom, ustack_top
+        // );
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
@@ -327,7 +327,7 @@ impl TaskUserRes {
             debug!("to get trap cx bottom, give tid, like up");
             let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid);
             let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-            debug!("to map trap cx info");
+            //debug!("to map trap cx info");
             process_inner.memory_set.insert_framed_area(
                 trap_cx_bottom.into(),
                 trap_cx_top.into(),
