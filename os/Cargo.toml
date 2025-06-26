@@ -23,7 +23,7 @@ hashbrown = "0.12.0"
 num_enum = { version = "0.7.2", default-features = false }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
+riscv = { version = "*", features = ["inline-asm"] }
 buddy_system_allocator = "0.6"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]

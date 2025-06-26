@@ -30,3 +30,5 @@ test-la/
 testcases/**
 testsuits/**
 qemu.log
+kernel-rv
+kernel-la

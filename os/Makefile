@@ -64,7 +64,7 @@ endif
 ifeq ($(ARCH),riscv64)
 build: env kernel config
 else ifeq ($(ARCH),loongarch64)
-build:env kernel config
+build: env kernel config
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
