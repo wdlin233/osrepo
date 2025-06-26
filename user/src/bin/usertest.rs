@@ -45,7 +45,7 @@ extern crate user_lib;
 
 // Basic 测例中除去 mnt 以外的
 const TESTS: &[&str] = &[
-    "pipe\0", // waiting forever
+    "run-all.sh\0", // waiting forever
 ];
 
 const TEST_NUM: usize = TESTS.len();
