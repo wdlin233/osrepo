@@ -24,7 +24,7 @@ endif
 APPS := $(wildcard $(APP_DIR)/*.rs)
 ELFS := $(patsubst $(APP_DIR)/%.rs, $(TARGET_DIR)/%, $(APPS))
 
-binary:
+binary: config
 	@echo $(ELFS)
 	cargo build $(MODE_ARG)
 	@$(foreach elf, $(ELFS), \
@@ -52,10 +52,15 @@ build:
 	@cargo build --release --target $(TARGET)
 endif
 
+config:
+	rustup target add riscv64gc-unknown-none-elf
+	@rm -rf .cargo
+	@cp -r cargo .cargo
+
 clean:
 	@cargo clean
 	@rm -rf $(BUILD_DIR)
 
 all: build
 
-.PHONY: elf binary build clean all
+.PHONY: elf binary build clean all config

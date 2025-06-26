@@ -7,11 +7,14 @@ OBJCOPY := loongarch64-unknown-linux-gnu-objcopy
 
 all: build
 
-build:
+build: config
 	cargo build --release --target $(TARGET)
+
+config:
+	rustup target add $(TARGET)
 
 clean:
 	@cargo clean
 
-.PHONY: clean build all
+.PHONY: clean build all config
 

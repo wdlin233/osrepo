@@ -25,3 +25,5 @@ testcases/loongarch64/*
 **/user.s
 **/sdcard-*.img
 test-riscv/**
+kernel-rv
+kernel-la
