@@ -34,6 +34,8 @@ use loongarch64::register::pgdl;
 
 /// Process Control Block
 pub struct ProcessControlBlock {
+    ///ppid
+    pub ppid: usize,
     /// immutable
     pub pid: usize,
     /// immutable default user
@@ -321,6 +323,7 @@ impl ProcessControlBlock {
         let user = current_user().unwrap();
         let pid_handle = pid_alloc().0;
         let process = Arc::new(Self {
+            ppid: pid_handle,
             pid: pid_handle,
             user,
             inner: unsafe {
@@ -680,6 +683,7 @@ impl ProcessControlBlock {
             //timer = Arc::clone(&parent_inner.timer);
             sig_mask = SignalFlags::empty();
             let child = Arc::new(Self {
+                ppid: pid,
                 pid,
                 user,
                 inner: unsafe {
@@ -719,6 +723,7 @@ impl ProcessControlBlock {
 
             // create child process pcb
             let child = Arc::new(Self {
+                ppid: self.pid,
                 pid,
                 user,
                 inner: unsafe {
@@ -818,9 +823,7 @@ impl ProcessControlBlock {
     }
     /// get parent pid
     pub fn getppid(&self) -> usize {
-        let inner = self.inner_exclusive_access();
-        let parent = inner.parent.clone().unwrap();
-        parent.upgrade().unwrap().getpid() + 1
+        self.ppid + 1
     }
     /// get default uid
     pub fn getuid(&self) -> usize {

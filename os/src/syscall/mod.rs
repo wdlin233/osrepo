@@ -59,13 +59,13 @@ pub const SYSCALL_YIELD: usize = 124;
 /// kill syscall
 pub const SYSCALL_KILL: usize = 129;
 /*
-/// sigaction syscall
-pub const SYSCALL_SIGACTION: usize = 134;
+
 
 /// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
 */
-
+/// sigaction syscall
+pub const SYSCALL_SIGACTION: usize = 134;
 /// sigprocmask syscall
 pub const SYSCALL_SIGPROCMASK: usize = 135;
 /// set priority syscall
@@ -163,6 +163,11 @@ use crate::{
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
+        SYSCALL_SIGACTION => sys_sigaction(
+            args[0],
+            args[1] as *const SigAction,
+            args[2] as *mut SigAction,
+        ),
         SYSCALL_SIGPROCMASK => sys_sigprocmask(
             args[0] as u32,
             args[1] as *const SignalFlags,
