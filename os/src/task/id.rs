@@ -72,7 +72,7 @@ lazy_static! {
     static ref PID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
         unsafe { UPSafeCell::new(RecycleAllocator::new(1)) };
         static ref TID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new(0)) };
+        unsafe { UPSafeCell::new(RecycleAllocator::new(1)) };
 
         static ref HEAP_ID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
         unsafe { UPSafeCell::new(RecycleAllocator::new(0)) };

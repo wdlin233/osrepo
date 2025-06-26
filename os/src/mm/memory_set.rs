@@ -191,6 +191,10 @@ impl MemorySet {
     pub fn cow_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
         self.inner.get_unchecked_mut().cow_page_fault(vpn, scause)
     }
+    #[inline(always)]
+    pub fn mprotect(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) {
+        self.inner.get_unchecked_mut().mprotect(start_vpn, end_vpn, map_perm);
+    }
 }
 
 /// address space

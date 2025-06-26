@@ -145,6 +145,8 @@ pub const SYSCALL_FSTATAT: usize = 79;
 pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 /// prlimit syscall
 pub const SYSCALL_PRLIMIT: usize = 261;
+/// mprotect syscall
+pub const SYSCALL_MPROTECT: usize = 226;
 
 mod fs;
 mod options;
@@ -288,6 +290,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[2] as *const RLimit,
             args[3] as *mut RLimit,
         ),
+        SYSCALL_MPROTECT => sys_mprotect(args[0], args[1], args[2] as u32),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }
