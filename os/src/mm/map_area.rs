@@ -91,6 +91,7 @@ impl MapArea {
             self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        //debug!("in map area, map one, to page table map");
         page_table.map(vpn, ppn, pte_flags);
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
@@ -123,6 +124,11 @@ impl MapArea {
     }
     /// Used in RV64
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
+        debug!("in map area, append to, the new end is : {}", new_end.0);
+        debug!(
+            "in map area, append to, the start is : {}",
+            self.vpn_range.get_start().0
+        );
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
             self.map_one(page_table, vpn)
         }

@@ -27,9 +27,9 @@ pub use frame_allocator::{frame_alloc, frame_alloc_contiguous, frame_dealloc, Fr
 #[cfg(target_arch = "riscv64")]
 pub use map_area::MapType;
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
-pub use memory_set::MemorySet;
 #[cfg(target_arch = "riscv64")]
 pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
+pub use memory_set::{MemorySet, MemorySetInner};
 use page_table::PTEFlags;
 pub use page_table::{
     safe_translated_byte_buffer, translated_byte_buffer, translated_ref, translated_refmut,

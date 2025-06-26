@@ -20,13 +20,22 @@ pub const MSEC_PER_SEC: usize = 1000;
 pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
 /// the virtual addr of trapoline
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
-/// the virtual addr of trap context
-pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 
-// heap base
-pub const HEAP_BASE: usize = 0x400_0000;
+pub const THREAD_MAX_NUM: usize = 3000;
+// 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
+pub const USER_SPACE_SIZE: usize = 0x30_0000_0000; // 192GiB
+
+pub const USER_TRAP_CONTEXT_TOP: usize = USER_SPACE_SIZE;
+
+pub const USER_STACK_TOP: usize = USER_TRAP_CONTEXT_TOP - PAGE_SIZE * THREAD_MAX_NUM;
+
+pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
+    - PAGE_SIZE * THREAD_MAX_NUM
+    - USER_STACK_SIZE * THREAD_MAX_NUM
+    - PAGE_SIZE;
+
 ///heap size
-pub const HEAP_SIZE: usize = 0x10_0000;
+pub const USER_HEAP_SIZE: usize = 0x1000_0000;
 
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
@@ -45,7 +54,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 #[cfg(target_arch = "riscv64")]
 /// user app's stack size
-pub const USER_STACK_SIZE: usize = 4096 * 2 * 1024;
+pub const USER_STACK_SIZE: usize = 4096 * 8;
 #[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
@@ -70,12 +79,3 @@ pub const YIELD_CHECK: usize = 90;
 pub const BLOCK_SIZE: usize = 4096;
 /// The io block size of the disk layer
 pub const IO_BLOCK_SIZE: usize = 512;
-
-pub const THREAD_MAX_NUM: usize = 3000;
-// 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
-pub const USER_SPACE_SIZE: usize = 0x30_0000_0000; // 192GiB
-pub const USER_TRAP_CONTEXT_TOP: usize = USER_SPACE_SIZE;
-pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
-    - PAGE_SIZE * THREAD_MAX_NUM
-    - USER_STACK_SIZE * THREAD_MAX_NUM
-    - PAGE_SIZE;

@@ -24,7 +24,7 @@ use crate::mm::page_table::flush_tlb;
 use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
-use crate::task::current_process;
+use crate::task::{current_process, Aux, AuxType};
 use crate::utils::SysErrNo;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -111,9 +111,9 @@ impl MemorySet {
         Self::new(MemorySetInner::new_kernel())
     }
     #[inline(always)]
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
-        let (memory_set, user_sp_base, entry_point) = MemorySetInner::from_elf(elf_data);
-        (Self::new(memory_set), user_sp_base, entry_point)
+    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
+        let (memory_set, user_heap_bottom, entry_point, auxv) = MemorySetInner::from_elf(elf_data);
+        (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
     pub fn from_existed_user(user_space: &MemorySet) -> Self {
@@ -381,8 +381,9 @@ impl MemorySetInner {
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
+    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
         let mut memory_set = Self::new_bare();
+        let mut auxv = Vec::new();
         #[cfg(target_arch = "riscv64")]
         // map trampoline
         memory_set.map_trampoline();
@@ -393,6 +394,38 @@ impl MemorySetInner {
         //assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
         let mut max_end_vpn = VirtPageNum(0);
+
+        auxv.push(Aux::new(
+            AuxType::PHENT,
+            elf.header.pt2.ph_entry_size() as usize,
+        )); // ELF64 header 64bytes
+        auxv.push(Aux::new(AuxType::PHNUM, ph_count as usize));
+        auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
+        // // 设置动态链接
+        // if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf) {
+        //     auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
+        //     entry_point = interp_entry_point;
+        // } else {
+        auxv.push(Aux::new(AuxType::BASE, 0));
+        //}
+        auxv.push(Aux::new(AuxType::FLAGS, 0 as usize));
+        auxv.push(Aux::new(
+            AuxType::ENTRY,
+            elf.header.pt2.entry_point() as usize,
+        ));
+        auxv.push(Aux::new(AuxType::UID, 0 as usize));
+        auxv.push(Aux::new(AuxType::EUID, 0 as usize));
+        auxv.push(Aux::new(AuxType::GID, 0 as usize));
+        auxv.push(Aux::new(AuxType::EGID, 0 as usize));
+        auxv.push(Aux::new(AuxType::PLATFORM, 0 as usize));
+        auxv.push(Aux::new(AuxType::HWCAP, 0 as usize));
+        auxv.push(Aux::new(AuxType::CLKTCK, 100 as usize));
+        auxv.push(Aux::new(AuxType::SECURE, 0 as usize));
+        auxv.push(Aux::new(AuxType::NOTELF, 0x112d as usize));
+
+        let mut head_va = 0;
+        let mut has_found_header_va = false;
+
         debug!("elf program header count: {}", ph_count);
         for i in 0..ph_count {
             let ph = elf.program_header(i).unwrap();
@@ -400,7 +433,10 @@ impl MemorySetInner {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
                 debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
-
+                if !has_found_header_va {
+                    head_va = start_va.0;
+                    has_found_header_va = true;
+                }
                 #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
                 #[cfg(target_arch = "loongarch64")]
@@ -441,10 +477,10 @@ impl MemorySetInner {
                     end_va,
                     MapType::Framed,
                     map_perm,
-                    MapAreaType::Brk,
+                    MapAreaType::Elf,
                 );
                 #[cfg(target_arch = "loongarch64")]
-                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Brk);
+                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
 
                 max_end_vpn = map_area.vpn_range.get_end();
                 debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
@@ -472,18 +508,34 @@ impl MemorySetInner {
                 }
             }
         }
+
+        auxv.push(Aux {
+            aux_type: AuxType::PHDR,
+            value: head_va + elf.header.pt2.ph_offset() as usize,
+        });
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_stack_base: usize = max_end_va.into(); // user_stack_bottom
+        let mut user_heap_bottom: usize = max_end_va.into();
 
         // guard page，用户栈
-        user_stack_base += PAGE_SIZE;
-        info!("user stack base: {:#x}", user_stack_base);
+        user_heap_bottom += PAGE_SIZE;
+        info!(
+            "user heap bottom: {:#x}, {}",
+            user_heap_bottom, user_heap_bottom
+        );
+        let user_heap_top: usize = user_heap_bottom;
+        memory_set.insert_framed_area(
+            user_heap_bottom.into(),
+            user_heap_top.into(),
+            MapPermission::R | MapPermission::W | MapPermission::U,
+            MapAreaType::Brk,
+        );
         // 返回 address空间,用户栈顶,入口地址
         (
             memory_set,
-            user_stack_base,
+            user_heap_bottom,
             elf.header.pt2.entry_point() as usize,
+            auxv,
         )
     }
     /// Create a new address space by copy code&data from a exited process's address space.

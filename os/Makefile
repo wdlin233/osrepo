@@ -143,7 +143,7 @@ QEMU_EXEC += -nographic \
 			 -drive file=$(FS_IMG),if=none,format=raw,id=x0 \
 			 -smp 1 \
 			 -D qemu.log \
-			 -monitor telnet:127.0.0.1:5555,server,nowait
+# -monitor telnet:127.0.0.1:5555,server,nowait
 
 # @qemu-system-riscv64 \
 # 	-M 128m \

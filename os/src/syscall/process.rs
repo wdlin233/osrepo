@@ -74,21 +74,7 @@ pub fn sys_fork(
     //debug!("sys_fork: current process pid is : {}",current_process.getpid());
     let new_pid = new_process.getpid();
     debug!("the new pid is :{}", new_pid);
-    // modify trap context of new_task, because it returns immediately after switching
-    let new_process_inner = new_process.inner_exclusive_access();
-    let task = new_process_inner.tasks[0].as_ref().unwrap();
-    debug!("in sys fork, get trap cx, to set x[10] = 0");
-    let trap_cx = task.inner_exclusive_access().get_trap_cx();
-    // we do not have to move to next instruction since we have done it before
-    // for child process, fork returns 0
-    #[cfg(target_arch = "riscv64")]
-    {
-        trap_cx.x[10] = 0;
-    }
-    #[cfg(target_arch = "loongarch64")]
-    {
-        trap_cx.x[4] = 0;
-    }
+
     //debug!("sys_fork: the new pid is : {}",new_pid);
     new_pid as isize
 }
@@ -117,24 +103,31 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         if path.ends_with(".sh") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
-            argv.push(String::from("sh"));
             argv.push(String::from("busybox"));
-            //argv.push(String::from("echo"));
-            //argv.push(String::from("aaa"));
-            //argv.push(path);
+            argv.push(String::from("sh"));
             path = String::from("/busybox");
         }
 
         //处理argv参数
         // loop {
-        //     let argv_ptr = *argvp;
+        //     let argv_ptr = *args;
         //     if argv_ptr == 0 {
         //         break;
         //     }
         //     argv.push(c_ptr_to_string(argv_ptr as *const u8));
-        //     argvp = argvp.add(1);
+        //     args = args.add(1);
         // }
-        //debug!("to deal the argv");
+        // debug!("to deal the argv");
+        // if !envp.is_null() {
+        //     loop {
+        //         let envp_ptr = *envp;
+        //         if envp_ptr == 0 {
+        //             break;
+        //         }
+        //         env.push(c_ptr_to_string(envp_ptr as *const u8));
+        //         envp = envp.add(1);
+        //     }
+        // }
 
         loop {
             let arg_str_ptr = *translated_ref(token, args);
@@ -145,7 +138,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             args = args.add(1);
         }
 
-        // 处理envp参数
+        //处理envp参数
         if !envp.is_null() {
             debug!("envp is not null");
             loop {
@@ -189,10 +182,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let elf_data = app_inode.inode.read_all().unwrap();
     drop(inner);
     let len = argv.len();
-    debug!("in sys exec,to pcb exec");
     current_process.exec(&elf_data, argv, &mut env);
     debug!("in sys exec, return argv len is :{}", len);
-    len as isize
+    0
 }
 
 /// waitpid syscall
@@ -424,19 +416,26 @@ pub fn sys_munmap(addr: usize, len: usize) -> isize {
 
 // change data segment size
 pub fn sys_brk(path: usize) -> isize {
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
-    if let Some(result) = inner
-        .res
-        .as_mut()
-        .unwrap()
-        .change_program_brk(path as isize)
-    {
-        debug!("to returning result : {}", result as isize);
-        result as isize
-    } else {
-        -1
+    debug!("in sys brk, the path is : {}", path);
+    let process = current_process();
+    let fromer_addr: usize = process.change_program_brk(0);
+    if path == 0 {
+        return fromer_addr as isize;
     }
+    let grow_size: isize = (path - fromer_addr) as isize;
+    process.change_program_brk(grow_size) as isize
+
+    // if let Some(result) = inner.res.as_mut().unwrap().change_program_brk(0) {
+    //     if path == 0 {
+    //         return result;
+    //     }
+    //     let grow_size: isize = (brk_addr - fromer_addr) as isize;
+
+    //     debug!("to returning result : {}", result as isize);
+    //     result as isize
+    // } else {
+    //     -1
+    // }
 }
 // like sys_spawn a unnecessary syscall
 

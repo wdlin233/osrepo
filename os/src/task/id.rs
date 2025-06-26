@@ -2,8 +2,8 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    HEAP_BASE, HEAP_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE,
-    USER_STACK_SIZE,
+    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
+    USER_TRAP_CONTEXT_TOP,
 };
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
@@ -128,7 +128,7 @@ pub fn kstack_alloc() -> KernelStack {
         kstack_bottom.into(),
         kstack_top.into(),
         MapPermission::R | MapPermission::W,
-        MapAreaType::Physical,
+        MapAreaType::Stack,
     );
     KernelStack(kstack_id)
 }
@@ -217,10 +217,6 @@ pub struct TaskUserRes {
     pub ustack_base: usize,
     /// process belongs to
     pub process: Weak<ProcessControlBlock>,
-    ///heap bottom
-    pub heap_bottom: usize,
-    ///program brk
-    pub program_brk: usize,
     //
     pub is_exec: bool,
 }
@@ -229,20 +225,20 @@ pub struct TaskUserRes {
 /// Return the bottom addr (low addr) of the trap context for a task
 fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     debug!("in trap cx bottom from tid, the tid is : {}", tid);
-    TRAP_CONTEXT_BASE - tid * PAGE_SIZE
+    USER_TRAP_CONTEXT_TOP - tid * PAGE_SIZE
 }
 /// Return the bottom addr (high addr) of the user stack for a task
-fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
-    ustack_base + tid * (PAGE_SIZE + USER_STACK_SIZE)
+fn ustack_bottom_from_tid(_ustack_base: usize, tid: usize) -> usize {
+    USER_STACK_TOP - tid * (PAGE_SIZE + USER_STACK_SIZE)
 }
 
-fn uheap_bottom_from_tid(tid: usize) -> usize {
-    HEAP_BASE + tid * HEAP_SIZE
-}
+// fn uheap_bottom_from_tid(tid: usize) -> usize {
+//     HEAP_BASE + tid * HEAP_SIZE
+// }
 
-fn uheap_top_from_tid(tid: usize) -> usize {
-    uheap_bottom_from_tid(tid) - PAGE_SIZE - 1
-}
+// fn uheap_top_from_tid(tid: usize) -> usize {
+//     uheap_bottom_from_tid(tid) - PAGE_SIZE - 1
+// }
 
 impl TaskUserRes {
     /// Create a new TaskUserRes (Task User Resource)
@@ -257,13 +253,13 @@ impl TaskUserRes {
             "in task user res new, ustack_base:{},tid:{}",
             ustack_base, tid
         );
-        let is_exec = alloc_user_res;
-        //let is_exec = true;
-        let user_hp = if is_exec {
-            uheap_bottom_from_tid(tid)
-        } else {
-            uheap_bottom_from_tid(tid - 1)
-        };
+        //let is_exec = alloc_user_res;
+        let is_exec = true;
+        // let user_hp = if is_exec {
+        //     uheap_bottom_from_tid(tid)
+        // } else {
+        //     uheap_bottom_from_tid(tid - 1)
+        // };
         // let user_sp = if is_exec {
         //     debug!("get user sp, give tid");
         //     ustack_bottom_from_tid(ustack_base, tid) + USER_STACK_SIZE
@@ -277,8 +273,8 @@ impl TaskUserRes {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
-            heap_bottom: user_hp,
-            program_brk: user_hp,
+            // heap_bottom: user_hp,
+            // program_brk: user_hp,
             is_exec,
         };
         if alloc_user_res {
@@ -298,12 +294,13 @@ impl TaskUserRes {
         debug!("in alloc user res");
         let process = self.process.upgrade().unwrap();
         let mut process_inner = process.inner_exclusive_access();
+
         // alloc user stack
         debug!("to get ustack bottom, give tid, tid is : {}", self.tid);
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
-        self.heap_bottom = ustack_top + PAGE_SIZE;
-        self.program_brk = ustack_top + PAGE_SIZE;
+        // self.heap_bottom = ustack_top + PAGE_SIZE;
+        // self.program_brk = ustack_top + PAGE_SIZE;
 
         debug!(
             "ustack_bottom = {},ustack_top = {}",
@@ -318,12 +315,12 @@ impl TaskUserRes {
 
         // alloc user heap
         // debug!("heap_bottom = {},program_brk = {}",self.heap_bottom,self.program_brk);
-        process_inner.memory_set.insert_framed_area(
-            self.heap_bottom.into(),
-            self.program_brk.into(),
-            MapPermission::default() | MapPermission::W,
-            MapAreaType::Brk,
-        );
+        // process_inner.memory_set.insert_framed_area(
+        //     self.heap_bottom.into(),
+        //     self.program_brk.into(),
+        //     MapPermission::default() | MapPermission::W,
+        //     MapAreaType::Brk,
+        // );
         // alloc trap_cx
         #[cfg(target_arch = "riscv64")]
         {
@@ -339,6 +336,7 @@ impl TaskUserRes {
             );
         }
     }
+
     /// Deallocate user resource for a task
     fn dealloc_user_res(&self) {
         // dealloc tid
@@ -350,10 +348,10 @@ impl TaskUserRes {
             .memory_set
             .remove_area_with_start_vpn(ustack_bottom_va.into());
         // dealloc user heap manually
-        let heap_bottom_va: VirtAddr = self.heap_bottom.into();
-        process_inner
-            .memory_set
-            .remove_area_with_start_vpn(heap_bottom_va.into());
+        // let heap_bottom_va: VirtAddr = self.heap_bottom.into();
+        // process_inner
+        //     .memory_set
+        //     .remove_area_with_start_vpn(heap_bottom_va.into());
         // dealloc trap_cx manually
         #[cfg(target_arch = "riscv64")]
         {
@@ -442,63 +440,6 @@ impl TaskUserRes {
         // } else {
         //     ustack_bottom_from_tid(self.ustack_base, self.tid - 1) + USER_STACK_SIZE
         // }
-    }
-    /// change the location of the program break. return None if failed.
-    pub fn change_program_brk(&mut self, path: isize) -> Option<usize> {
-        debug!("in change brk,path = {}", path);
-        debug!(
-            "self.brk = {},self.bottom = {}",
-            self.program_brk, self.heap_bottom
-        );
-        if path == 0 {
-            return Some(self.program_brk);
-        }
-        let process = self.process.upgrade().unwrap();
-        let mut inner = process.inner_exclusive_access();
-
-        let area = inner
-            .memory_set
-            .get_mut()
-            .areas
-            .iter_mut()
-            .find(|area| area.area_type == MapAreaType::Brk)
-            .unwrap();
-
-        let heap_bottom = self.heap_bottom;
-        let new_brk = path;
-        let heap_alloc = new_brk - heap_bottom as isize;
-        if new_brk < heap_bottom as isize || heap_alloc as usize > HEAP_SIZE {
-            debug!("in change brk, return none");
-            return None;
-        }
-        let growed_vpn: VirtPageNum = ((new_brk as usize) / PAGE_SIZE + 1).into();
-        let result = if new_brk < self.program_brk as isize {
-            area.vpn_range =
-                VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
-            while !area.data_frames.is_empty() {
-                let page = area.data_frames.pop_last().unwrap();
-                if page.0 < growed_vpn {
-                    area.data_frames.insert(page.0, page.1);
-                    break;
-                }
-                inner.memory_set.get_mut().page_table.unmap(page.0);
-            }
-            true
-            // inner
-            //     .memory_set
-            //     .shrink_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
-        } else {
-            area.vpn_range =
-                VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
-            true
-        };
-        if result {
-            debug!("to modify self brk,new brk is :{}", new_brk);
-            self.program_brk = new_brk as usize;
-            Some(self.program_brk)
-        } else {
-            None
-        }
     }
 }
 

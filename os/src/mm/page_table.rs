@@ -339,6 +339,7 @@ impl PageTable {
         //     "map vpn {:?} to ppn {:?} with flags {:?}",
         //     vpn, ppn, flags
         // );
+        //debug!("in page table map, find pte create ok");
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         #[cfg(target_arch = "riscv64")]
         {
