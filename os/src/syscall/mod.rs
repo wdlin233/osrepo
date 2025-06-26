@@ -61,11 +61,13 @@ pub const SYSCALL_KILL: usize = 129;
 /*
 /// sigaction syscall
 pub const SYSCALL_SIGACTION: usize = 134;
-/// sigprocmask syscall
-pub const SYSCALL_SIGPROCMASK: usize = 135;
+
 /// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
 */
+
+/// sigprocmask syscall
+pub const SYSCALL_SIGPROCMASK: usize = 135;
 /// set priority syscall
 pub const SYSCALL_SET_PRIORITY: usize = 140;
 /// times
@@ -135,6 +137,7 @@ pub const SYSCALL_STATX: usize = 291;
 mod fs;
 mod options;
 mod process;
+mod signal;
 mod sync;
 mod thread;
 //mod tid;
@@ -143,6 +146,7 @@ mod uname;
 
 use fs::*;
 use process::*;
+use signal::*;
 use sync::*;
 use thread::*;
 //use tid::*;
@@ -151,6 +155,7 @@ use uname::*;
 
 use crate::{
     fs::{Kstat, Statx},
+    signal::{SigAction, SigInfo, SignalFlags},
     system::UTSname,
     task::TmsInner,
 };
@@ -158,6 +163,11 @@ use crate::{
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
+        SYSCALL_SIGPROCMASK => sys_sigprocmask(
+            args[0] as u32,
+            args[1] as *const SignalFlags,
+            args[2] as *mut SignalFlags,
+        ),
         SYSCALL_MOUNT => sys_mount(
             args[0] as *const u8,
             args[1] as *const u8,

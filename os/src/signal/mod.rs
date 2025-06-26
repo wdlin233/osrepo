@@ -8,16 +8,18 @@ use log::debug;
 pub use sigact::*;
 pub use signal::*;
 
-#[cfg(target_arch = "riscv64")]
-use riscv::register::scause::{self, Exception, Trap};
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::{Exception, Trap};
+#[cfg(target_arch = "riscv64")]
+use riscv::register::scause::{self, Exception, Trap};
 
 use crate::{
     config::USER_STACK_SIZE,
-    data_flow,
-    task::{current_task, exit_current_and_run_next, TaskControlBlock, 
-    //    THREAD_GROUP, TID_TO_TASK
+    task::{
+        current_task,
+        exit_current_and_run_next,
+        TaskControlBlock,
+        //    THREAD_GROUP, TID_TO_TASK
     },
     //hal::trap::{MachineContext, UserContext},
     utils::{SysErrNo, SyscallRet},

@@ -37,11 +37,3 @@ pub fn page_round_up(v: usize) -> usize {
         v - (v % PAGE_SIZE) + PAGE_SIZE
     }
 }
-/// 从内核空间写入数据到用户空间或从用户空间读取数据
-/// 实际上只是用unsafe块包裹
-#[macro_export]
-macro_rules! data_flow {
-    ($code:block) => {
-        unsafe { $code }
-    };
-}

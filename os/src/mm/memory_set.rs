@@ -4,7 +4,6 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE};
-use crate::data_flow;
 use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
