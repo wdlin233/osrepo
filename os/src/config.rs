@@ -28,24 +28,16 @@ pub use crate::board::{CLOCK_FREQ, MMIO};
 pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
-///heap size
-pub const HEAP_SIZE: usize = 0x1000_000;
-
 #[cfg(target_arch = "riscv64")]
-/// physical memory end address
 pub const MEMORY_END: usize = 0x88000000;
 #[cfg(target_arch = "riscv64")]
-/// page size : 4KB
-pub const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SIZE: usize = 0x1000; // 4kB
 #[cfg(target_arch = "riscv64")]
-/// page size bits: 12
-pub const PAGE_SIZE_BITS: usize = 0xc;
+pub const PAGE_SIZE_BITS: usize = 0xc; // 12
 #[cfg(target_arch = "riscv64")]
-/// user app's stack size
 pub const USER_STACK_SIZE: usize = 4096 * 2; // 0x1000 * 2
 #[cfg(target_arch = "riscv64")]
-/// kernel heap size
-pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
+pub const KERNEL_HEAP_SIZE: usize = 0x300_0000;
 
 #[cfg(target_arch = "loongarch64")]
 pub const MEMORY_END: usize = 0x000000000_1000_0000 + VIRT_BIAS;
@@ -60,14 +52,6 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE * 2;
 #[cfg(target_arch = "loongarch64")]
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 
-/// yield wakeup task
-pub const YIELD_CHECK: usize = 90;
-#[allow(unused)]
-/// Use a fs block size of 512 bytes
-pub const BLOCK_SIZE: usize = 4096;
-/// The io block size of the disk layer
-pub const IO_BLOCK_SIZE: usize = 512;
-
 pub const THREAD_MAX_NUM: usize = 3000;
 // 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
 pub const USER_SPACE_SIZE: usize = 0x30_0000_0000; // 192GiB
@@ -80,3 +64,6 @@ pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
 pub const USER_HEAP_SIZE: usize = 0x10_000_000; // 16MB
 /// Dynamic linked interpreter address range in user space
 pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;
+
+//pub const KERNEL_ADDR_OFFSET: usize = 0xffff_ffc0_0000_0000;
+//pub const KERNEL_PGNUM_OFFSET: usize = KERNEL_ADDR_OFFSET >> PAGE_SIZE_BITS;

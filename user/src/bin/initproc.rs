@@ -10,7 +10,7 @@ use user_lib::{exec, fork, sched_yield, wait};
 fn main() -> i32 {
     println!("[initproc] Init process started");
     if fork() == 0 {
-        exec("usertest\0", &[core::ptr::null::<u8>()]);
+        exec("musl/basic_testcode.sh\0", &[core::ptr::null::<u8>()]);
     } else {
         loop {
             let mut exit_code: i32 = 0;

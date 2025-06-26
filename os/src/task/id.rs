@@ -2,7 +2,7 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    HEAP_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_SIZE,
+    USER_HEAP_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
 };
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
@@ -204,7 +204,7 @@ fn trap_cx_bottom_from_tid(tid: usize) -> usize {
 }
 /// Return the bottom addr (high addr) of the user stack for a task
 fn ustack_bottom_from_tid(ustack_base: usize, tid: usize) -> usize {
-    ustack_base + tid * (HEAP_SIZE + PAGE_SIZE + USER_STACK_SIZE)
+    ustack_base + tid * (USER_HEAP_SIZE + PAGE_SIZE + USER_STACK_SIZE)
 }
 
 impl TaskUserRes {
