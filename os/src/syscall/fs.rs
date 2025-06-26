@@ -9,7 +9,7 @@ use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
     translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
-use crate::syscall::process;
+use crate::syscall::{process, FcntlCmd};
 use crate::task::{current_process, current_user_token};
 use crate::users::User;
 use crate::utils::SyscallRet;
@@ -620,5 +620,76 @@ pub fn sys_statx(
 
 //ioctl
 pub fn sys_ioctl(_fd: usize, _cmd: usize, _arg: usize) -> isize {
+    0
+}
+
+//fcntl
+pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
+    const FD_CLOEXEC: usize = 1;
+
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+
+    if fd >= inner.fd_table.len() || (fd as isize) < 0 {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if inner.fd_table.try_get(fd).is_none() {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    let mut file = inner.fd_table.get(fd);
+    let cmd = FcntlCmd::from_bits(cmd).unwrap();
+
+    match cmd {
+        FcntlCmd::F_DUPFD => {
+            let fd_new = inner.fd_table.alloc_fd_larger_than(arg).unwrap();
+            inner.fd_table.set(fd_new, file);
+            inner.fs_info.insert_with_glue(fd, fd_new);
+            return fd_new as isize;
+        }
+        FcntlCmd::F_DUPFD_CLOEXEC => {
+            let fd_new = inner.fd_table.alloc_fd_larger_than(arg).unwrap();
+            file.set_cloexec();
+            inner.fd_table.set(fd_new, file);
+            inner.fs_info.insert_with_glue(fd, fd_new);
+            return fd_new as isize;
+        }
+        FcntlCmd::F_GETFD => {
+            return if inner.fd_table.get(fd).cloexec() {
+                1
+            } else {
+                0
+            };
+        }
+        FcntlCmd::F_SETFD => {
+            if arg & FD_CLOEXEC == 0 {
+                inner.fd_table.unset_cloexec(fd);
+            } else {
+                inner.fd_table.set_cloexec(fd);
+            }
+        }
+        FcntlCmd::F_GETFL => {
+            let mut res = OpenFlags::O_RDWR.bits() as usize;
+            if file.non_block() {
+                res |= OpenFlags::O_NONBLOCK.bits() as usize;
+            }
+            return res as isize;
+        }
+        FcntlCmd::F_SETFL => {
+            // 目前只启用nonblock
+            let flags = OpenFlags::from_bits_truncate(arg as u32);
+            if flags.contains(OpenFlags::O_NONBLOCK) {
+                inner.fd_table.set_nonblock(fd);
+            } else {
+                inner.fd_table.unset_nonblock(fd);
+            }
+            // task_inner.fd_table.set_flags(fd, Some(flags));
+            // todo!()
+        }
+        _ => {
+            return SysErrNo::EINVAL as isize;
+        }
+    }
     0
 }

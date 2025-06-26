@@ -16,6 +16,8 @@ pub const SYSCALL_GETCWD: usize = 17;
 pub const SYSCALL_DUP: usize = 23;
 /// dup3 syscall
 pub const SYSCALL_DUP3: usize = 24;
+/// fcntl syscall
+pub const SYSCALL_FCNTL: usize = 25;
 /// ioctl syscall
 pub const SYSCALL_IOCTL: usize = 29;
 /// mkdirat syscall
@@ -163,6 +165,7 @@ use crate::{
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
+        SYSCALL_FCNTL => sys_fcntl(args[0], args[1], args[2]),
         SYSCALL_SIGACTION => sys_sigaction(
             args[0],
             args[1] as *const SigAction,
