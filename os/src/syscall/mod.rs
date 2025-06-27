@@ -46,6 +46,8 @@ pub const SYSCALL_READ: usize = 63;
 pub const SYSCALL_WRITE: usize = 64;
 /// writev syscall
 pub const SYSCALL_WRITEV: usize = 66;
+/// sendfile syscall
+pub const SYSCALL_SENDFILE: usize = 71;
 /// fstat syscall
 pub const SYSCALL_FSTAT: usize = 80;
 /// exit syscall
@@ -142,7 +144,6 @@ pub const SYSCALL_PPOLL: usize = 73;
 /// fstatat syscall
 pub const SYSCALL_FSTATAT: usize = 79;
 
-
 mod fs;
 mod options;
 mod process;
@@ -173,6 +174,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
         SYSCALL_GETEUID => sys_geteuid(),
         SYSCALL_FCNTL => sys_fcntl(args[0], args[1], args[2]),
         SYSCALL_SIGACTION => sys_sigaction(

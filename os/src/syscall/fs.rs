@@ -10,14 +10,17 @@ use crate::mm::{
     translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
 use crate::syscall::{process, FcntlCmd, Iovec, PollEvents, PollFd};
-use crate::task::{current_process, current_user_token, suspend_current_and_run_next, block_current_and_run_next};
+use crate::task::{
+    block_current_and_run_next, current_process, current_user_token, suspend_current_and_run_next,
+};
 use crate::timer::{get_time_ms, TimeSpec};
 use crate::users::User;
-use crate::utils::{trim_start_slash, SyscallRet};
 use crate::utils::{get_abs_path, SysErrNo};
+use crate::utils::{trim_start_slash, SyscallRet};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 
 /// write syscall
@@ -759,7 +762,7 @@ pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isiz
     if fds_ptr == 0 {
         return SysErrNo::EINVAL as isize;
     }
-    
+
     let mut fds = Vec::new();
     let ptr = fds_ptr as *mut PollFd;
 
@@ -826,9 +829,9 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     }
 
     let file = match open(
-        &abs_path, 
-        OpenFlags::O_RDONLY | OpenFlags::O_ASK_SYMLINK, 
-        NONE_MODE
+        &abs_path,
+        OpenFlags::O_RDONLY | OpenFlags::O_ASK_SYMLINK,
+        NONE_MODE,
     ) {
         Ok(file) => file,
         Err(_) => {
@@ -837,4 +840,103 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     };
     *translated_refmut(token, kst) = file.fstat();
     return 0;
+}
+
+//send file
+pub fn sys_sendfile(outfd: usize, infd: usize, offset_ptr: usize, count: usize) -> isize {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    if (infd as isize) < 0
+        || infd >= inner.fd_table.len()
+        || (outfd as isize) < 0
+        || outfd >= inner.fd_table.len()
+    {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if (offset_ptr as isize) < 0 || is_bad_address(offset_ptr as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (count as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if inner.fd_table.try_get(outfd).is_none() || inner.fd_table.try_get(infd).is_none() {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    let outinode = inner.fd_table.get(outfd);
+    if let Ok(_) = outinode.file() {
+        if !outinode.flags.contains(OpenFlags::O_WRONLY)
+            && !outinode.flags.contains(OpenFlags::O_RDWR)
+        {
+            return SysErrNo::EBADF as isize;
+        }
+    }
+    let outfile = outinode.any();
+    if !outfile.writable() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    let infile = inner.fd_table.get(infd).file().unwrap();
+    if !infile.readable() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    drop(inner);
+    drop(process);
+
+    //构造输入缓冲池
+    let mut buf = vec![0u8; count];
+    let mut inbufv = Vec::new();
+    unsafe {
+        inbufv.push(core::slice::from_raw_parts_mut(
+            buf.as_mut_slice().as_mut_ptr(),
+            buf.as_slice().len(),
+        ));
+    }
+    //输入缓冲池
+    let inbuffer = UserBuffer::new(inbufv);
+
+    let cur_off = infile.lseek(0, SEEK_CUR).unwrap();
+
+    let readcount;
+    if offset_ptr == 0 {
+        readcount = infile.read(inbuffer).unwrap();
+    } else {
+        //let offset = data_flow!({ *(offset_ptr as *const isize) });
+        let offset = *translated_ref(token, offset_ptr as *const isize);
+        if offset < 0 {
+            return SysErrNo::EINVAL as isize;
+        }
+        infile.lseek(offset, SEEK_SET).unwrap();
+        readcount = infile.read(inbuffer).unwrap();
+        // data_flow!({
+        //     *(offset_ptr as *mut isize) += readcount as isize;
+        //});
+        *translated_refmut(token, offset_ptr as *mut isize) += readcount as isize;
+        infile.lseek(cur_off as isize, SEEK_SET).unwrap();
+    }
+
+    if readcount == 0 {
+        return 0;
+    }
+
+    //构造输出缓冲池
+    let mut outbufv = Vec::new();
+    unsafe {
+        outbufv.push(core::slice::from_raw_parts_mut(
+            buf.as_mut_slice().as_mut_ptr(),
+            readcount,
+        ));
+    }
+    //输出缓冲池
+    let outbuffer = UserBuffer::new(outbufv);
+    //写数据
+    let retcount = outfile.write(outbuffer).unwrap();
+
+    retcount as isize
 }
