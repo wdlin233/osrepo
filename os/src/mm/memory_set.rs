@@ -743,7 +743,7 @@ impl MemorySetInner {
         file: Option<Arc<OSInode>>,
         off: usize,
     ) -> usize {
-        debug!("in memory set, mmap");
+        debug!("(MemorySetInner, mmap) addr:{:#x}, len:{}", addr, len);
         // 映射到固定地址
         // 如果已经映射的部分和需要固定映射的部分冲突,已经映射的部分将被拆分
         if flags.contains(MmapFlags::MAP_FIXED) {
@@ -794,7 +794,7 @@ impl MemorySetInner {
         // 自行选择地址,计算已经使用的MMap地址
         let addr = self.find_insert_addr(MMAP_TOP, len);
         debug!(
-            "[sys_mmap] start_va:{:#x},end_va:{:#x}",
+            "(MemorySetInner, mmap) start_va:{:#x},end_va:{:#x}",
             VirtAddr::from(addr).0,
             VirtAddr::from(addr + len).0
         );
@@ -948,6 +948,10 @@ impl MemorySetInner {
         map_perm: MapPermission,
     ) {
         //因修改而新增的Area
+        debug!(
+            "(MemorySetInner, mprotect) start_vpn:{:#x}, end_vpn:{:#x}, map_perm:{:?}",
+            start_vpn.0, end_vpn.0, map_perm
+        );
         let mut new_areas = Vec::new();
         for area in self.areas.iter_mut() {
             let (start, end) = area.vpn_range.range();
@@ -1033,13 +1037,13 @@ impl MemorySetInner {
         flush_tlb();
     }
     pub fn find_insert_addr(&self, hint: usize, size: usize) -> usize {
-        info!("find_insert_addr: hint = {:#x}, size = {}", hint, size);
+        info!("(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}", hint, size);
         let end_vpn = VirtAddr::from(hint).floor();
         let start_vpn = VirtAddr::from(hint - size).floor();
         let start_va: VirtAddr = start_vpn.into();
         //for test let start_va: VirtAddr = (start_va.0 - PAGE_SIZE).into();
         info!(
-            "find_insert_addr: start_vpn = {:#x}, end_vpn = {:#x}, start_va = {:#x}",
+            "(MemorySetInner, find_insert_addr) start_vpn = {:#x}, end_vpn = {:#x}, start_va = {:#x}",
             start_vpn.0, end_vpn.0, start_va.0
         );
         for area in self.areas.iter() {

@@ -28,19 +28,27 @@ pub struct RecycleAllocator {
 
 impl RecycleAllocator {
     /// Create a new allocator
-    pub fn new() -> Self {
+    pub fn new(start: usize) -> Self {
         RecycleAllocator {
-            current: 0,
+            current: start,
             recycled: Vec::new(),
         }
     }
     /// allocate a new item
     pub fn alloc(&mut self) -> usize {
+        info!(
+            "(RecycleAllocator, alloc) recycle allocator alloc: current id {}, recycled {:?}",
+            self.current, self.recycled
+        );
         if let Some(id) = self.recycled.pop() {
+            info!(
+                "(RecycleAllocator, alloc) recycle allocator alloc: recycled id {}",
+                id
+            );
             id
         } else {
             self.current += 1;
-            self.current - 1
+            return self.current - 1;
         }
     }
     /// deallocate an item
@@ -51,6 +59,10 @@ impl RecycleAllocator {
             "id {} has been deallocated!",
             id
         );
+        info!(
+            "(RecycleAllocator, dealloc) recycle allocator dealloc: id {}",
+            id
+        );
         self.recycled.push(id);
     }
 }
@@ -58,18 +70,18 @@ impl RecycleAllocator {
 lazy_static! {
     /// Glocal allocator for pid
     static ref PID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+        unsafe { UPSafeCell::new(RecycleAllocator::new(1)) };
         static ref TID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+        unsafe { UPSafeCell::new(RecycleAllocator::new(0)) };
 
         static ref HEAP_ID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+        unsafe { UPSafeCell::new(RecycleAllocator::new(0)) };
 }
 #[cfg(target_arch = "riscv64")]
 lazy_static! {
     /// Global allocator for kernel stack
     static ref KSTACK_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+        unsafe { UPSafeCell::new(RecycleAllocator::new(0)) };
 }
 
 /// The idle task's pid is 0
@@ -110,10 +122,10 @@ pub fn tid_dealloc(id: usize) {
 #[cfg(target_arch = "riscv64")]
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
-    debug!("in kernel stack position, app id is : {}", app_id);
+    //debug!("in kernel stack position, app id is : {}", app_id);
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
-    debug!("kstack bottom is : {}, top is : {}", bottom, top);
+    //debug!("kstack bottom is : {}, top is : {}", bottom, top);
     (bottom, top)
 }
 
@@ -129,11 +141,11 @@ pub struct KernelStack {
 #[cfg(target_arch = "riscv64")]
 /// Allocate a kernel stack for a task
 pub fn kstack_alloc() -> KernelStack {
-    debug!("in kstack alloc");
+    //debug!("in kstack alloc");
     let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
-    debug!("kstack id is : {}", kstack_id);
+    //debug!("kstack id is : {}", kstack_id);
     let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
-    debug!("to map kernel space");
+    //debug!("to map kernel space");
     KERNEL_SPACE.exclusive_access().insert_framed_area(
         kstack_bottom.into(),
         kstack_top.into(),
@@ -257,12 +269,12 @@ impl TaskUserRes {
         ustack_base: usize,
         alloc_user_res: bool,
     ) -> Self {
-        debug!("in task user res new");
+        //debug!("in task user res new");
         let tid = process.inner_exclusive_access().alloc_tid();
-        debug!(
-            "in task user res new, ustack_base:{},tid:{}",
-            ustack_base, tid
-        );
+        // debug!(
+        //     "in task user res new, ustack_base:{},tid:{}",
+        //     ustack_base, tid
+        // );
         //let is_exec = alloc_user_res;
         let is_exec = true;
         // let user_hp = if is_exec {
@@ -288,7 +300,7 @@ impl TaskUserRes {
             is_exec,
         };
         if alloc_user_res {
-            debug!("to alloc user res");
+            //debug!("to alloc user res");
             task_user_res.alloc_user_res();
         }
         task_user_res

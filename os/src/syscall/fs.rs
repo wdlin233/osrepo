@@ -183,7 +183,7 @@ pub fn sys_close(fd: usize) -> isize {
 pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
-    //debug!("[sys_pipe2] fd is {:x},flags is {}", fd as usize, flags);
+    info!("[sys_pipe2] fd is {:x},flags is {}", fd as usize, flags);
 
     let mut pipe_flags = OpenFlags::empty();
     if flags == 0x80000 {

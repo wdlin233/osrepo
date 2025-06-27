@@ -171,6 +171,7 @@ use crate::{
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
+    info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
         SYSCALL_GETEUID => sys_geteuid(),
         SYSCALL_FCNTL => sys_fcntl(args[0], args[1], args[2]),
