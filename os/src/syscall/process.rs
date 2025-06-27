@@ -1,5 +1,6 @@
 use super::sys_gettid;
 use crate::alloc::string::ToString;
+use crate::task::exit_current_group_and_run_next;
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
@@ -479,4 +480,10 @@ pub fn sys_set_priority(prio: isize) -> isize {
     } else {
         -1
     }
+}
+
+pub fn sys_exit_group(exit_code: i32) -> isize {
+    exit_current_group_and_run_next(exit_code);
+    unreachable!()
+    -1
 }

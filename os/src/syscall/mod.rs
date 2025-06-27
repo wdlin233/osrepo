@@ -262,7 +262,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_TID_ADDRESS => sys_set_tid_addr(args[0]),
         SYSCALL_IOCTL => sys_ioctl(args[0], args[1], args[2]),
         SYSCALL_WRITEV => sys_writev(args[0], args[1] as *const u8, args[2]),
-        SYSCALL_EXIT_GROUP => sys_exit(0),
+        SYSCALL_EXIT_GROUP => sys_exit_group(args[0] as i32),
         SYSCALL_STATX => sys_statx(
             args[0] as isize,
             args[1] as *const u8,

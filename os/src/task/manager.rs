@@ -7,7 +7,9 @@ use super::{ProcessControlBlock, TaskControlBlock, TaskStatus};
 use crate::sync::UPSafeCell;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use lazy_static::*;
+use spin::{Lazy, Mutex};
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
@@ -77,7 +79,7 @@ impl TaskManager {
                 inner.task_status = TaskStatus::Ready;
                 drop(inner);
                 self.add(task);
-                debug!("add task ok : {}", pid);
+                debug!("(remove_block_by_pid) Add task ok : {}", pid);
             }
         }
     }
@@ -145,13 +147,27 @@ pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
 /// Remove item(pid, _some_pcb) from PDI2PCB map (called by exit_current_and_run_next)
 pub fn remove_from_pid2process(pid: usize) {
     info!("(remove_from_pid2process) pid: {}", pid);
-    let mut map = PID2PCB.exclusive_access();
-    if map.remove(&pid).is_none() {
-        panic!("cannot find pid {} in pid2task!", pid);
-    }
+    PID2PCB.exclusive_access().remove(&pid);
 }
 /// Take a process out of the ready queue
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     //debug!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
+}
+
+/// 线程组
+pub static THREAD_GROUP: Lazy<Mutex<BTreeMap<usize, Vec<Arc<ProcessControlBlock>>>>> =
+    Lazy::new(|| Mutex::new(BTreeMap::new()));
+
+pub fn insert_into_thread_group(pid: usize, process: &Arc<ProcessControlBlock>) {
+    THREAD_GROUP
+        .lock()
+        .entry(pid)
+        .or_insert_with(Vec::new)
+        .push(process.clone());
+}
+/// 删除整个线程组,同时将线程从pid2process移除
+/// 实际上这里和 pid2process 是有联系的，先都存放着. TODO!(wdlin)
+pub fn remove_all_from_thread_group(pid: usize) {
+    THREAD_GROUP.lock().remove(&pid);
 }

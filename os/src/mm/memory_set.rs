@@ -1099,7 +1099,7 @@ impl MemorySetInner {
         // }
     }
     pub fn cow_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
-        info!("cow_page_fault: vpn = {:#x}", vpn.0);
+        //info!("cow_page_fault: vpn = {:#x}", vpn.0);
         #[cfg(target_arch = "riscv64")]
         {
             if scause == Trap::Exception(Exception::LoadPageFault)

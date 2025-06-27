@@ -201,11 +201,11 @@ pub fn trap_handler() -> ! {
             {
                 let process = current_process();
                 let inner = process.inner_exclusive_access();
-                info!(
-                    "[kernel] trap_handler: {:?} at {:#x} as vpn",
-                    scause.cause(),
-                    stval,
-                );
+                // info!(
+                //     "[kernel] trap_handler: {:?} at {:#x} as vpn",
+                //     scause.cause(),
+                //     stval,
+                // );
                 res = inner
                     .memory_set
                     .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());

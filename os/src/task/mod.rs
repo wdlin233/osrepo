@@ -30,19 +30,19 @@ use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
-use process::ProcessControlBlock;
 use spin::Lazy;
 use switch::__switch;
 
-use crate::signal::SignalFlags;
+use crate::signal::{send_signal_to_thread_group, SignalFlags};
 pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,
     wakeup_task_by_pid,
+    THREAD_GROUP,
 };
-pub use process::{CloneFlags, Tms, TmsInner};
+pub use process::{CloneFlags, Tms, TmsInner, ProcessControlBlock, ProcessControlBlockInner};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
 #[cfg(target_arch = "riscv64")]
@@ -196,6 +196,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);
 }
+
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
 
@@ -253,20 +254,20 @@ pub fn current_token() -> usize {
 }
 
 pub fn exit_current_group_and_run_next(exit_code: i32) {
-    let task = current_task().unwrap();
-    let task_inner = task.inner_lock();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
     let mut exit_code = exit_code;
-    if task_inner.sig_table.not_exited() {
+    if inner.sig_table.not_exited() {
         //设置进程的SIGNAL_GROUP_EXIT标志并把终止代号放到current->signal->group_exit_code字段
-        task_inner.sig_table.set_exit_code(exit_code);
-        let pid = task.pid();
-        drop(task_inner);
-        drop(task);
-        send_signal_to_thread_group(pid, SigSet::SIGKILL);
+        inner.sig_table.set_exit_code(exit_code);
+        let pid = process.getpid();
+        drop(inner);
+        drop(process);
+        send_signal_to_thread_group(pid, SignalFlags::SIGKILL);
     } else {
-        exit_code = task_inner.sig_table.exit_code();
-        drop(task_inner);
-        drop(task);
+        exit_code = inner.sig_table.exit_code();
+        drop(inner);
+        drop(process);
     }
 
     exit_current_and_run_next(exit_code);

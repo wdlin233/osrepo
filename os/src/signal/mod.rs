@@ -18,7 +18,7 @@ use crate::{
     task::{
         current_task,
         exit_current_and_run_next,
-        TaskControlBlock,
+        ProcessControlBlock, THREAD_GROUP,
         //    THREAD_GROUP, TID_TO_TASK
     },
     //hal::trap::{MachineContext, UserContext},
@@ -201,24 +201,24 @@ pub const SIG_IGN: usize = 1;
 //     // Ok(trap_cx.gp.x[10])
 // }
 
-// pub fn add_signal(task: Arc<TaskControlBlock>, signal: SignalFlags) {
-//     let mut task_inner = task.inner_lock();
-//     task_inner.sig_pending |= signal;
-//     // if task_inner.task_status == TaskStatus::Stopped {
-//     //     task_inner.task_status = TaskStatus::Ready
-//     // }
-//     // drop(task_inner);
-//     // wakeup_stopped_task(task);
-// }
+pub fn add_signal(process: Arc<ProcessControlBlock>, signal: SignalFlags) {
+    let mut inner = process.inner_exclusive_access();
+    inner.sig_pending |= signal;
+    // if task_inner.task_status == TaskStatus::Stopped {
+    //     task_inner.task_status = TaskStatus::Ready
+    // }
+    // drop(task_inner);
+    // wakeup_stopped_task(task);
+}
 
-// pub fn send_signal_to_thread_group(pid: usize, sig: SignalFlags) {
-//     let thread_group = THREAD_GROUP.lock();
-//     if let Some(tasks) = thread_group.get(&pid) {
-//         for task in tasks.iter() {
-//             add_signal(task.clone(), sig);
-//         }
-//     }
-// }
+pub fn send_signal_to_thread_group(pid: usize, sig: SignalFlags) {
+    let thread_group = THREAD_GROUP.lock();
+    if let Some(processes) = thread_group.get(&pid) {
+        for process in processes.iter() {
+            add_signal(process.clone(), sig);
+        }
+    }
+}
 
 pub fn send_signal_to_thread(_tid: usize, _sig: SignalFlags) {
     unimplemented!()
