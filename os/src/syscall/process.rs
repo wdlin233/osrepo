@@ -11,7 +11,7 @@ use crate::{
     syscall::{process, MmapFlags, MmapProt},
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
-        exit_current_and_run_next, mmap, munmap, pid2process, suspend_current_and_run_next,
+        exit_current_and_run_next, mmap, munmap, suspend_current_and_run_next,
         CloneFlags, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
@@ -291,6 +291,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
     //     "kernel:pid[{}] sys_kill",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
+    use crate::task::pid2process;
     if let Some(process) = pid2process(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal as usize) {
             process.inner_exclusive_access().signals |= flag;

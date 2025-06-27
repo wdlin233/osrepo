@@ -26,31 +26,29 @@ impl SuperBlock for Ext4SuperBlock {
         self.root.clone()
     }
     fn fs_stat(&self) -> Statfs {
-        unimplemented!()
-        // let stat = self.inner.get_unchecked_ref().get_lwext4_mp_stats();
-        // Statfs {
-        //     f_type: 0xEF53,
-        //     f_bsize: stat.block_size as i64,
-        //     f_blocks: stat.blocks_count as i64,
-        //     f_bfree: stat.free_blocks_count as i64,
-        //     f_bavail: stat.free_blocks_count as i64,
-        //     f_files: stat.inodes_count as i64,
-        //     f_ffree: stat.free_inodes_count as i64,
-        //     f_name_len: 255,
-        //     ..Default::default()
-        // }
+        let stat = self.inner.get_unchecked_ref().get_lwext4_mp_stats();
+        Statfs {
+            f_type: 0xEF53,
+            f_bsize: stat.block_size as i64,
+            f_blocks: stat.blocks_count as i64,
+            f_bfree: stat.free_blocks_count as i64,
+            f_bavail: stat.free_blocks_count as i64,
+            f_files: stat.inodes_count as i64,
+            f_ffree: stat.free_inodes_count as i64,
+            f_name_len: 255,
+            ..Default::default()
+        }
     }
     fn sync(&self) {
-        unimplemented!()
-        //self.inner.get_unchecked_mut().sync();
+        self.inner.get_unchecked_mut().sync();
     }
     fn ls(&self) {
-        unimplemented!()
-        // self.inner
-        //     .get_unchecked_ref()
-        //     .lwext4_dir_ls()
-        //     .into_iter()
-        //     .for_each(|s| println!("{}", s));
+        use crate::println;
+        self.inner
+            .get_unchecked_ref()
+            .lwext4_dir_ls()
+            .into_iter()
+            .for_each(|s| { println!("{}", s);});
     }
 }
 

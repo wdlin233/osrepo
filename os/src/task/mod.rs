@@ -122,7 +122,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if num == 1 {
         let pid = process.getpid();
-        if pid == IDLE_PID {
+        if pid == 1 { // to shutdown
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
                 exit_code

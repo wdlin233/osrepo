@@ -87,7 +87,7 @@ pub fn main(cpu: usize) -> ! {
     hal::trap::enable_timer_interrupt();
     #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
 
-    //fs::list_apps();
+    fs::list_apps();
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable section for kernel!");
