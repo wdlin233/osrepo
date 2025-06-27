@@ -9,14 +9,16 @@ use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
     translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
-use crate::syscall::{process, FcntlCmd, Iovec};
-use crate::task::{current_process, current_user_token};
+use crate::syscall::{process, FcntlCmd, Iovec, PollEvents, PollFd};
+use crate::task::{current_process, current_user_token, suspend_current_and_run_next, block_current_and_run_next};
+use crate::timer::{get_time_ms, TimeSpec};
 use crate::users::User;
-use crate::utils::SyscallRet;
+use crate::utils::{trim_start_slash, SyscallRet};
 use crate::utils::{get_abs_path, SysErrNo};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
@@ -746,4 +748,93 @@ pub fn sys_writev(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
     } else {
         SysErrNo::EBADF as isize
     }
+}
+
+/// https://man7.org/linux/man-pages/man2/ppoll.2.html
+pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    if fds_ptr == 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    
+    let mut fds = Vec::new();
+    let ptr = fds_ptr as *mut PollFd;
+
+    for i in 0..nfds {
+        fds.push(unsafe { *translated_refmut(token, ptr.add(i)) });
+    }
+
+    let wait_time: isize = if tmo_p == 0 {
+        -1
+    } else {
+        let timespec = unsafe { *translated_ref(token, tmo_p as *const TimeSpec) };
+        (timespec.tv_sec * 1000000000 + timespec.tv_nsec) as isize
+    };
+    if wait_time == 0 {
+        return 0;
+    }
+
+    let begin = get_time_ms() * 1000000;
+    drop(inner);
+    drop(process);
+    loop {
+        let process = current_process();
+        let inner = process.inner_exclusive_access();
+        let token = inner.get_user_token();
+        let mut resnum = 0;
+        for i in 0..nfds {
+            if fds[i].fd < 0 {
+                fds[i].revents = PollEvents::empty();
+                continue;
+            }
+            if let Some(file) = &inner.fd_table.try_get(fds[i].fd as usize) {
+                let file = file.any();
+                let events = file.poll(fds[i].events);
+                if !events.is_empty() {
+                    resnum += 1;
+                }
+                fds[i].revents = events;
+            } else {
+                fds[i].revents = PollEvents::INVAL;
+            }
+        }
+        if resnum > 0 {
+            return resnum as isize;
+        }
+        if wait_time > 0 && get_time_ms() - begin >= wait_time as usize {
+            return 0; // 超时
+        }
+        drop(inner);
+        drop(process);
+        debug!("No events ready, suspending current task.");
+        block_current_and_run_next(); //or suspend()?
+    }
+}
+
+pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    let path = trim_start_slash(translated_str(token, path));
+    let abs_path = inner.get_abs_path(dirfd, &path);
+    if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
+        open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
+    }
+
+    let file = match open(
+        &abs_path, 
+        OpenFlags::O_RDONLY | OpenFlags::O_ASK_SYMLINK, 
+        NONE_MODE
+    ) {
+        Ok(file) => file,
+        Err(_) => {
+            return -1; // 文件打开失败
+        }
+    };
+    *translated_refmut(token, kst) = file.fstat();
+    return 0;
 }

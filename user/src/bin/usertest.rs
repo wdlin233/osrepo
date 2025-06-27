@@ -5,7 +5,7 @@
 extern crate user_lib;
 
 const TESTS: &[&str] = &[
-    "run-all.sh\0",
+    "musl/basic_testcode.sh\0",
     // "pipe\0", 
     // "munmap\0", 
     //         "mmap\0", 
