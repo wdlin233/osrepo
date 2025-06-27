@@ -198,6 +198,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
+
     let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
         .expect("open initproc error!")
         .file()

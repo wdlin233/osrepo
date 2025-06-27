@@ -335,8 +335,10 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
 /// `flags` determins whether updates mapping,
 /// `fd` as file descriptor, `off` as offset in file
 pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: usize) -> isize {
-    debug!("[sys_mmap] addr={:#x}, len={:#x}, port={:#x}, flags={:#x}, fd={}, off={:#x}",
-        addr, len, port, flags, fd, off);
+    debug!(
+        "[sys_mmap] addr={:#x}, len={:#x}, port={:#x}, flags={:#x}, fd={}, off={:#x}",
+        addr, len, port, flags, fd, off
+    );
     if flags == 0 {
         return SysErrNo::EINVAL as isize;
     }
@@ -395,7 +397,10 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     let ret = inner
         .memory_set
         .mmap(addr, len, permission, flags, Some(file), off);
-    info!("[sys_mmap] alloc addr={:#x}, return from MemorySetInner mmap", ret);
+    info!(
+        "[sys_mmap] alloc addr={:#x}, return from MemorySetInner mmap",
+        ret
+    );
     return ret as isize;
 }
 
@@ -416,10 +421,12 @@ pub fn sys_brk(path: usize) -> isize {
     debug!("in sys brk, the path is : {}", path);
     let process = current_process();
     let fromer_addr: usize = process.change_program_brk(0);
+    debug!("in sys brk, the fromer addr is : {}", fromer_addr);
     if path == 0 {
         return fromer_addr as isize;
     }
     let grow_size: isize = (path - fromer_addr) as isize;
+    debug!("in sys brk, the grow size is : {}", grow_size);
     process.change_program_brk(grow_size) as isize
 
     // if let Some(result) = inner.res.as_mut().unwrap().change_program_brk(0) {
