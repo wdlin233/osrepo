@@ -3,12 +3,12 @@
 
 #[macro_use]
 extern crate user_lib;
+/*
 
-const TESTS: &[&str] = &[
-    //"mnt/test_mount\0",
-    "pipe\0", 
-    "munmap\0", 
-            "mmap\0", 
+ //"mnt/test_mount\0",
+    "pipe\0",
+    "munmap\0",
+            "mmap\0",
 
                 "dup2\0",
     "clone\0",
@@ -25,20 +25,21 @@ const TESTS: &[&str] = &[
     "uname\0",
     "getppid\0",
     "exit\0",
-    "close\0",    
-    "dup\0",      
-    "fstat\0",    
-    "getcwd\0",   
-    "chdir\0",    
-    "getdents\0", 
-        "mkdir_\0", 
-    "mount\0",  
-    "openat\0", 
-    "open\0",   
-    "read\0",   
+    "close\0",
+    "dup\0",
+    "fstat\0",
+    "getcwd\0",
+    "chdir\0",
+    "getdents\0",
+        "mkdir_\0",
+    "mount\0",
+    "openat\0",
+    "open\0",
+    "read\0",
     "umount\0",
-    "unlink\0", 
-];
+    "unlink\0",
+*/
+const TESTS: &[&str] = &["run-all.sh\0"];
 
 const TEST_NUM: usize = TESTS.len();
 

@@ -154,6 +154,29 @@ pub fn sys_linkat(
     )
 }
 
+pub fn sys_busyboxsh() -> isize {
+    syscall6(
+        SYSCALL_EXEC,
+        [
+            "/busybox\0".as_ptr() as usize,
+            [
+                "busybox\0".as_ptr() as isize,
+                "sh\0".as_ptr() as isize,
+                "run-all.sh\0".as_ptr() as isize,
+                //"./test-ltp.sh\0".as_ptr() as isize,
+                //"ltp/testcases/bin/abort01\0".as_ptr() as isize,
+                // "libctest_testcode.sh\0".as_ptr() as isize,
+                0,
+            ]
+            .as_ptr() as usize,
+            0,
+            0,
+            0,
+            0,
+        ],
+    )
+}
+
 pub fn sys_unlinkat(dirfd: usize, path: &str, flags: usize) -> isize {
     syscall(SYSCALL_UNLINKAT, [dirfd, path.as_ptr() as usize, flags])
 }
@@ -208,7 +231,7 @@ pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
     )
 }
 
-pub fn sys_waitpid(pid: isize, xstatus: *mut i32,options:usize) -> isize {
+pub fn sys_waitpid(pid: isize, xstatus: *mut i32, options: usize) -> isize {
     syscall(SYSCALL_WAITPID, [pid as usize, xstatus as usize, options])
 }
 
@@ -221,7 +244,7 @@ pub fn sys_sbrk(size: i32) -> isize {
 }
 
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
-    syscall(SYSCALL_MMAP, [start, len, prot])
+    syscall6(SYSCALL_MMAP, [start, len, prot, 0, 0, 0])
 }
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
