@@ -2,10 +2,7 @@ use log::debug;
 
 use super::options::SignalMaskFlag;
 use crate::{
-    mm::{translated_ref, translated_refmut},
-    signal::{KSigAction, SigAction, SignalFlags, SIG_MAX_NUM},
-    task::{current_process, exit_current_and_run_next},
-    utils::SysErrNo,
+    mm::{translated_ref, translated_refmut}, signal::{KSigAction, SigAction, SigInfo, SignalFlags, SIG_MAX_NUM}, task::{current_process, exit_current_and_run_next}, timer::TimeSpec, utils::SysErrNo
 };
 
 pub fn sys_sigprocmask(how: u32, set: *const SignalFlags, old_set: *mut SignalFlags) -> isize {
@@ -65,4 +62,13 @@ pub fn sys_sigaction(signo: usize, act: *const SigAction, old_act: *mut SigActio
         inner.sig_table.set_action(signo, new_sig);
     }
     0
+}
+
+pub fn sys_sigtimedwait(
+    _sig: *const SignalFlags,
+    _info: *const SigInfo,
+    _timeout: *const TimeSpec,
+) -> isize {
+    // fake implementation
+    return 0;
 }

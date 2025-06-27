@@ -9,7 +9,7 @@ use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
     translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
-use crate::syscall::{process, FcntlCmd, Iovec, PollEvents, PollFd};
+use crate::syscall::{process, FcntlCmd, Iovec, PollEvents, PollFd, RLimit};
 use crate::task::{current_process, current_user_token, suspend_current_and_run_next, block_current_and_run_next};
 use crate::timer::{get_time_ms, TimeSpec};
 use crate::users::User;
@@ -836,5 +836,39 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
         }
     };
     *translated_refmut(token, kst) = file.fstat();
+    return 0;
+}
+
+pub fn sys_prlimit(
+    pid: usize,
+    resource: u32,
+    new_limit: *const RLimit,
+    old_limit: *mut RLimit,
+) -> isize {
+    const RLIMIT_NOFILE: u32 = 7;
+    if resource != RLIMIT_NOFILE {
+        return 0;
+    }
+
+    if pid == 0 {
+        let process = current_process();
+        let mut inner = process.inner_exclusive_access();
+        let token = inner.get_user_token();
+        let fd_table = &mut inner.fd_table;
+        if !old_limit.is_null() {
+            // 说明是get
+            (*translated_refmut(token, old_limit)).rlim_cur = fd_table.get_soft_limit();
+            (*translated_refmut(token, old_limit)).rlim_max = fd_table.get_hard_limit();
+        }
+        if !new_limit.is_null() {
+            // 说明是set
+            let limit;
+            limit = *translated_ref(token, new_limit);
+            fd_table.set_limit(limit.rlim_cur, limit.rlim_max);
+        }
+    } else {
+        unimplemented!("pid must equal zero");
+    }
+
     return 0;
 }

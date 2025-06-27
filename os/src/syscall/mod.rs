@@ -141,7 +141,10 @@ pub const SYSCALL_STATX: usize = 291;
 pub const SYSCALL_PPOLL: usize = 73;
 /// fstatat syscall
 pub const SYSCALL_FSTATAT: usize = 79;
-
+/// SigTimedWait syscall
+pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
+/// prlimit syscall
+pub const SYSCALL_PRLIMIT: usize = 261;
 
 mod fs;
 mod options;
@@ -166,7 +169,7 @@ use crate::{
     fs::{Kstat, Statx},
     signal::{SigAction, SigInfo, SignalFlags},
     system::UTSname,
-    task::TmsInner,
+    task::TmsInner, timer::TimeSpec,
 };
 
 /// handle syscall exception with `syscall_id` and other arguments
@@ -273,6 +276,17 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[1] as *const u8,
             args[2] as *mut Kstat,
             args[3],
+        ),
+        SYSCALL_SIGTIMEDWAIT => sys_sigtimedwait(
+            args[0] as *const SignalFlags,
+            args[1] as *const SigInfo,
+            args[2] as *const TimeSpec,
+        ),
+        SYSCALL_PRLIMIT => sys_prlimit(
+            args[0],
+            args[1] as u32,
+            args[2] as *const RLimit,
+            args[3] as *mut RLimit,
         ),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }

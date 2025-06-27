@@ -88,9 +88,15 @@ fs-img:
 	@sudo mount $(FS_IMG) /mnt/image_part
 	@sudo cp ../user/build/elf/* /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
-	-sudo cp ../testcases/riscv64/busybox_testcode.sh /mnt/image_part/
-	-sudo cp ../testcases/riscv64/busybox_cmd.txt /mnt/image_part/
-	-sudo cp ../testcases/riscv64/busybox /mnt/image_part/
+	-sudo cp ../test-riscv/musl/busybox_testcode.sh /mnt/image_part/
+	-sudo cp ../test-riscv/musl/busybox_cmd.txt /mnt/image_part/
+	-sudo cp ../test-riscv/musl/busybox /mnt/image_part/
+	-sudo mkdir -p /mnt/image_part/lib
+	-sudo cp ../test-riscv/musl/lib/* /mnt/image_part/lib/
+	-sudo cp ../test-riscv/musl/libctest_testcode.sh /mnt/image_part/
+	-sudo cp ../test-riscv/musl/run-static.sh /mnt/image_part/
+	-sudo cp ../test-riscv/musl/run-dynamic.sh /mnt/image_part/
+	-sudo cp ../test-riscv/musl/*.exe /mnt/image_part/
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)

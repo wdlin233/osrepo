@@ -251,3 +251,23 @@ pub fn current_token() -> usize {
 
     unimplemented!()
 }
+
+pub fn exit_current_group_and_run_next(exit_code: i32) {
+    let task = current_task().unwrap();
+    let task_inner = task.inner_lock();
+    let mut exit_code = exit_code;
+    if task_inner.sig_table.not_exited() {
+        //设置进程的SIGNAL_GROUP_EXIT标志并把终止代号放到current->signal->group_exit_code字段
+        task_inner.sig_table.set_exit_code(exit_code);
+        let pid = task.pid();
+        drop(task_inner);
+        drop(task);
+        send_signal_to_thread_group(pid, SigSet::SIGKILL);
+    } else {
+        exit_code = task_inner.sig_table.exit_code();
+        drop(task_inner);
+        drop(task);
+    }
+
+    exit_current_and_run_next(exit_code);
+}
