@@ -89,13 +89,13 @@ impl TaskControlBlock {
         ustack_base: usize,
         alloc_user_res: bool,
     ) -> Self {
-        debug!("in tcb new");
+        //debug!("in tcb new");
         let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
         let (kstack, kstack_top, _trap_cx_ppn) = {
             #[cfg(target_arch = "riscv64")]
             {
                 let trap_cx_ppn = res.trap_cx_ppn();
-                debug!("in tcb new, trap cx ppn is : {}", trap_cx_ppn.0);
+                debug!("(TaskControlBlock, new) trap cx ppn is : {}", trap_cx_ppn.0);
                 let kstack = kstack_alloc();
                 let kstack_top = kstack.get_top();
                 (Some(kstack), kstack_top, Some(trap_cx_ppn))

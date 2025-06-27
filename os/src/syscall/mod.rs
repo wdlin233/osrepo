@@ -137,6 +137,11 @@ pub const SYSCALL_CONDVAR_SIGNAL: usize = 472;
 pub const SYSCALL_CONDVAR_WAIT: usize = 473;
 /// statx syscall
 pub const SYSCALL_STATX: usize = 291;
+/// ppoll syscall
+pub const SYSCALL_PPOLL: usize = 73;
+/// fstatat syscall
+pub const SYSCALL_FSTATAT: usize = 79;
+
 
 mod fs;
 mod options;
@@ -166,6 +171,7 @@ use crate::{
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
+    info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
         SYSCALL_GETEUID => sys_geteuid(),
         SYSCALL_FCNTL => sys_fcntl(args[0], args[1], args[2]),
@@ -261,22 +267,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as u32,
             args[4] as *mut Statx,
         ),
+        SYSCALL_PPOLL => sys_ppoll(args[0], args[1], args[2], args[3]),
+        SYSCALL_FSTATAT => sys_fstatat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *mut Kstat,
+            args[3],
+        ),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
-    }
-}
-
-bitflags! {
-    //表示对应在文件上等待或者发生过的事件
-    pub struct PollEvents: u16 {
-        /// 可读
-        const IN = 0x0001;
-        /// 可写
-        const OUT = 0x0004;
-        /// 报错
-        const ERR = 0x0008;
-        /// 已终止，如 pipe 的另一端已关闭连接的情况
-        const HUP = 0x0010;
-        /// 无效的 fd
-        const INVAL = 0x0020;
     }
 }

@@ -131,17 +131,20 @@ pub fn add_stopping_task(task: Arc<TaskControlBlock>) {
 
 /// Get process by pid
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
+    info!("(pid2process) pid: {}", pid);
     let map = PID2PCB.exclusive_access();
     map.get(&pid).map(Arc::clone)
 }
 
 /// Insert item(pid, pcb) into PID2PCB map (called by do_fork AND ProcessControlBlock::new)
 pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
+    info!("(insert_into_pid2process) pid: {}", pid);
     PID2PCB.exclusive_access().insert(pid, process);
 }
 
 /// Remove item(pid, _some_pcb) from PDI2PCB map (called by exit_current_and_run_next)
 pub fn remove_from_pid2process(pid: usize) {
+    info!("(remove_from_pid2process) pid: {}", pid);
     let mut map = PID2PCB.exclusive_access();
     if map.remove(&pid).is_none() {
         panic!("cannot find pid {} in pid2task!", pid);

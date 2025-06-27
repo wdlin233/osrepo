@@ -5,7 +5,8 @@
 extern crate user_lib;
 /*
 
- //"mnt/test_mount\0",
+const TESTS: &[&str] = &[
+    //"mnt/test_mount\0",
     "pipe\0",
     "munmap\0",
             "mmap\0",

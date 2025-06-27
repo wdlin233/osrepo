@@ -324,11 +324,11 @@ impl ProcessControlBlock {
         // allocate a pid
         debug!("in pcb new, from elf ok");
         let user = current_user().unwrap();
-        let pid_handle = pid_alloc().0;
+        //let pid_handle = pid_alloc().0;
 
         let process = Arc::new(Self {
-            ppid: pid_handle,
-            pid: pid_handle,
+            ppid: 0,
+            pid: 0,
             user,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
@@ -342,7 +342,7 @@ impl ProcessControlBlock {
                     fs_info: Arc::new(FsInfo::new(String::from("/"))),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
-                    task_res_allocator: RecycleAllocator::new(),
+                    task_res_allocator: RecycleAllocator::new(0),
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
@@ -643,14 +643,11 @@ impl ProcessControlBlock {
         assert_eq!(parent.thread_count(), 1);
 
         // 检查是否共享虚拟内存
-        let memory_set = MemorySet::from_existed_user(&parent.memory_set);
-        // let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
-        //     Arc::clone(&parent.memory_set)
-        // } else {
-        //     Arc::new(MemorySet::new(MemorySetInner::from_existed_user(
-        //         &parent.memory_set,
-        //     )))
-        // };
+        let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
+            Arc::clone(&parent.memory_set)
+        } else {
+            Arc::new(MemorySet::from_existed_user(&parent.memory_set))
+        };
         // 检查是否共享文件系统信息
         //filesystem information.  This includes the root
         //of the filesystem, the current working directory, and the umask
@@ -685,7 +682,9 @@ impl ProcessControlBlock {
         let creat_thread = flags.contains(CloneFlags::CLONE_THREAD);
 
         if creat_thread {
-            info!("creat thread, need tcb, not need pcb, to implement");
+            debug!(
+                "(ProcessControlBlock, fork) creat thread, need tcb, not need pcb, to implement"
+            );
             pid = self.pid;
             //ppid = self.ppid;
             //timer = Arc::clone(&parent_inner.timer);
@@ -699,7 +698,7 @@ impl ProcessControlBlock {
                         heap_id: parent.heap_id,
                         is_zombie: false,
                         clear_child_tid,
-                        memory_set: Arc::new(memory_set),
+                        memory_set: memory_set,
                         fs_info,
                         parent: Some(Arc::downgrade(self)),
                         children: Vec::new(),
@@ -707,7 +706,7 @@ impl ProcessControlBlock {
                         fd_table: new_fd_table,
                         signals: SignalFlags::empty(),
                         tasks: Vec::new(),
-                        task_res_allocator: RecycleAllocator::new(),
+                        task_res_allocator: RecycleAllocator::new(0),
                         mutex_list: Vec::new(),
                         semaphore_list: Vec::new(),
                         condvar_list: Vec::new(),
@@ -724,12 +723,12 @@ impl ProcessControlBlock {
             });
             child
         } else {
-            info!("fork");
+            info!("(ProcessControlBlock, fork) forking...");
             pid = pid_alloc().0;
             //ppid = self.pid;
             //timer = Arc::new(Timer::new());
             sig_mask = parent.sig_mask.clone();
-
+            info!("(ProcessControlBlock, fork) pid = {}", pid);
             // create child process pcb
             let child = Arc::new(Self {
                 ppid: self.pid,
@@ -739,7 +738,7 @@ impl ProcessControlBlock {
                     UPSafeCell::new(ProcessControlBlockInner {
                         is_zombie: false,
                         clear_child_tid,
-                        memory_set: Arc::new(memory_set),
+                        memory_set: memory_set,
                         fs_info,
                         parent: Some(Arc::downgrade(self)),
                         children: Vec::new(),
@@ -747,7 +746,7 @@ impl ProcessControlBlock {
                         fd_table: new_fd_table,
                         signals: SignalFlags::empty(),
                         tasks: Vec::new(),
-                        task_res_allocator: RecycleAllocator::new(),
+                        task_res_allocator: RecycleAllocator::new(0),
                         mutex_list: Vec::new(),
                         semaphore_list: Vec::new(),
                         condvar_list: Vec::new(),
@@ -833,7 +832,7 @@ impl ProcessControlBlock {
     }
     /// get parent pid
     pub fn getppid(&self) -> usize {
-        self.ppid + 1
+        self.ppid
     }
     /// get default uid
     pub fn getuid(&self) -> usize {

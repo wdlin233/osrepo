@@ -60,7 +60,8 @@ pub fn sys_fork(
     //     "kernel:pid[{}] sys_fork",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    debug!("in sys fork");
+    debug!("(sys_fork) flags: {}, stack_ptr: {:#x}, parent_tid_ptr: {:#x}, tls_ptr: {:#x}, child_tid_ptr: {:#x}",
+        flags, stack_ptr, parent_tid_ptr, tls_ptr, child_tid_ptr);
     let flags = CloneFlags::from_bits(flags as u32).unwrap();
     let current_process = current_process();
     //current_process.inner_exclusive_access().is_blocked+=1;
@@ -73,7 +74,7 @@ pub fn sys_fork(
     );
     //debug!("sys_fork: current process pid is : {}",current_process.getpid());
     let new_pid = new_process.getpid();
-    debug!("the new pid is :{}", new_pid);
+    debug!("(sys_fork) the new pid is :{}", new_pid);
 
     //debug!("sys_fork: the new pid is : {}",new_pid);
     new_pid as isize
@@ -105,7 +106,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             debug!("push busybox");
             argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
-            path = String::from("/busybox");
+            path = String::from("/musl/busybox");
         }
 
         //处理argv参数
@@ -333,31 +334,23 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
 /// `flags` determins whether updates mapping,
 /// `fd` as file descriptor, `off` as offset in file
 pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: usize) -> isize {
-    debug!("in sys mmap");
+    debug!("[sys_mmap] addr={:#x}, len={:#x}, port={:#x}, flags={:#x}, fd={}, off={:#x}",
+        addr, len, port, flags, fd, off);
     if flags == 0 {
         return SysErrNo::EINVAL as isize;
     }
-    debug!("flags != 0");
     let flags = MmapFlags::from_bits(flags).unwrap();
     if fd == usize::MAX && !flags.contains(MmapFlags::MAP_ANONYMOUS) {
         return SysErrNo::EBADF as isize;
     }
-    debug!("fd  ok");
     if len == 0 {
         return SysErrNo::EINVAL as isize;
     }
-    debug!("len != 0");
     let mmap_prot = MmapProt::from_bits(port).unwrap();
-    debug!("mmap prot ok");
     let permission: MapPermission = mmap_prot.into();
-    debug!("perm ok");
     if flags.contains(MmapFlags::MAP_FIXED) && addr == 0 {
         return SysErrNo::EPERM as isize;
     }
-    info!(
-        "[sys_mmap]: addr {:#x}, len {:#x}, fd {}, offset {:#x}, flags {:?}, prot is {:?}, map_perm {:?}",
-        addr, len, fd as isize, off, flags,mmap_prot, permission
-    );
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
@@ -373,7 +366,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
             .memory_set
             .mmap(0, 1, MapPermission::empty(), flags, None, usize::MAX);
         insert_bad_address(ret);
-        debug!("bad address is {:x}", ret);
+        debug!("[sys_mmap] bad address is {:x}", ret);
         return ret as isize;
     }
     // file mapping
@@ -401,8 +394,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     let ret = inner
         .memory_set
         .mmap(addr, len, permission, flags, Some(file), off);
-    debug!("[sys_mmap] alloc addr={:#x}", ret);
-    debug!("[sys_mmap] alloc addr={:#x} as isize", ret as isize);
+    info!("[sys_mmap] alloc addr={:#x}, return from MemorySetInner mmap", ret);
     return ret as isize;
 }
 
