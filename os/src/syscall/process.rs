@@ -319,6 +319,16 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     copy_to_virt(&time_val, ts);
     0
 }
+//
+pub fn sys_clockgettime(clockid: usize, tp: *mut TimeVal) -> isize {
+    let ms = crate::timer::get_time_ms();
+    let time = TimeVal {
+        sec: ms / 1000,
+        usec: (ms % 1000) * 1000000,
+    };
+    copy_to_virt(&time, tp);
+    0
+}
 
 /// get times
 pub fn sys_tms(tms: *mut TmsInner) -> isize {
@@ -478,4 +488,9 @@ pub fn sys_set_priority(prio: isize) -> isize {
     } else {
         -1
     }
+}
+
+//伪实现
+pub fn sys_log(_logtype: isize, _bufp: *const u8, _len: usize) -> isize {
+    0
 }

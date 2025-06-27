@@ -30,6 +30,8 @@ pub const SYSCALL_LINKAT: usize = 37;
 pub const SYSCALL_UNMOUNT2: usize = 39;
 /// mount syscall
 pub const SYSCALL_MOUNT: usize = 40;
+/// faccessat syscall
+pub const SYSCALL_FACCESSAT: usize = 48;
 /// chdir syscall
 pub const SYSCALL_CHDIR: usize = 49;
 /// openat syscall
@@ -50,6 +52,8 @@ pub const SYSCALL_WRITEV: usize = 66;
 pub const SYSCALL_SENDFILE: usize = 71;
 /// fstat syscall
 pub const SYSCALL_FSTAT: usize = 80;
+/// utimesat sysall
+pub const SYSCALL_UTIMENSAT: usize = 88;
 /// exit syscall
 pub const SYSCALL_EXIT: usize = 93;
 /// exit_group
@@ -58,13 +62,15 @@ pub const SYSCALL_EXIT_GROUP: usize = 94;
 pub const SYSCALL_TID_ADDRESS: usize = 96;
 /// sleep syscall
 pub const SYSCALL_SLEEP: usize = 101;
+/// clock_get_time syscall
+pub const SYSCALL_CLOCKGETTIME: usize = 113;
+/// log syscall
+pub const SYSCALL_LOG: usize = 116;
 /// yield syscall
 pub const SYSCALL_YIELD: usize = 124;
 /// kill syscall
 pub const SYSCALL_KILL: usize = 129;
 /*
-
-
 /// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
 */
@@ -76,10 +82,11 @@ pub const SYSCALL_SIGPROCMASK: usize = 135;
 pub const SYSCALL_SET_PRIORITY: usize = 140;
 /// times
 pub const SYSCALL_TIMES: usize = 153;
-/// gettimeofday syscall
-pub const SYSCALL_GETTIMEOFDAY: usize = 169;
 /// get system name
 pub const SYSCALL_UNAME: usize = 160;
+/// gettimeofday syscall
+pub const SYSCALL_GETTIMEOFDAY: usize = 169;
+
 /// getpid syscall
 pub const SYSCALL_GETPID: usize = 172;
 /// getppid syscall
@@ -174,6 +181,20 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_UTIMENSAT => sys_utimensat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *const TimeVal,
+            args[3],
+        ),
+        SYSCALL_FACCESSAT => sys_faccessat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as u32,
+            args[3],
+        ),
+        SYSCALL_LOG => sys_log(args[0] as isize, args[1] as *const u8, args[2]),
+        SYSCALL_CLOCKGETTIME => sys_clockgettime(args[0], args[1] as *mut TimeVal),
         SYSCALL_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
         SYSCALL_GETEUID => sys_geteuid(),
         SYSCALL_FCNTL => sys_fcntl(args[0], args[1], args[2]),

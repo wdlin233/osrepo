@@ -89,8 +89,6 @@ fs-img:
 	@sudo cp ../user/build/elf/* /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
 	-sudo cp ../testcases/riscv64/busybox /mnt/image_part/
-	@sudo cp ../testcases/musl/busybox_cmd.txt /mnt/image_part/
-	@sudo cp ../testcases/musl/busybox_testcode.sh /mnt/image_part/
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
