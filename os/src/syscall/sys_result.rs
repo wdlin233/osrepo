@@ -1,4 +1,4 @@
-#![allow(missing_docs)] 
+#![allow(missing_docs)]
 
 //! Error Codes
 pub type SysResult<T> = Result<T, SysError>;
@@ -118,9 +118,9 @@ impl SysError {
     pub const fn as_str(&self) -> &'static str {
         use self::SysError::*;
         match self {
-            EALREADY=>"Operation already in progress",
-            EAFNOSUPPORT=>"Address family not supported by protocol",
-            ETIMEDOUT=>"Time out",
+            EALREADY => "Operation already in progress",
+            EAFNOSUPPORT => "Address family not supported by protocol",
+            ETIMEDOUT => "Time out",
             EPERM => "Operation not permitted",
             ENOENT => "No such file or directory",
             ESRCH => "No such process",
@@ -170,6 +170,57 @@ impl SysError {
             ECONNRESET => "Connection reset",
             ECONNREFUSED => "Connection refused",
             EINPROGRESS => "Operation now in progress",
+        }
+    }
+}
+
+extern "C" {
+    fn ekernel();
+}
+
+#[derive(Debug)]
+pub struct SysInfo {
+    ///  系统自启动以来的总时间（秒）
+    pub uptime: usize,
+    /// 1分钟、5分钟和15分钟的平均负载
+    pub loads: [usize; 3],
+    /// 物理内存总量（字节）
+    pub totalram: usize,
+    /// 空闲的物理内存量（字节）
+    pub freeram: usize,
+    /// 共享内存的物理内存量（字节）
+    pub sharedram: usize,
+    /// 用作缓冲区的物理内存量（字节）
+    pub bufferram: usize,
+    /// 交换空间总量（字节）
+    pub totalswap: usize,
+    /// 空闲的交换空间量（字节）
+    pub freeswap: usize,
+    /// 当前运行的进程数
+    pub procs: u16,
+    /// 高内存区的物理内存总量（字节）
+    pub totalhigh: usize,
+    /// 高内存区的空闲物理内存量（字节）
+    pub freehigh: usize,
+    /// 内存单位大小（字节）
+    pub mem_unit: u32,
+}
+
+impl SysInfo {
+    pub fn new(newuptime: usize, newtotalram: usize, newprocs: usize) -> Self {
+        Self {
+            uptime: newuptime,
+            loads: [0; 3],
+            totalram: newtotalram,
+            freeram: newtotalram - ekernel as usize,
+            sharedram: 0,
+            bufferram: 0,
+            totalswap: 0,
+            freeswap: 0,
+            procs: newprocs as u16,
+            totalhigh: 0,
+            freehigh: 0,
+            mem_unit: 1,
         }
     }
 }

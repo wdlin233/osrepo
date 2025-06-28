@@ -1,5 +1,6 @@
 use super::sys_gettid;
 use crate::alloc::string::ToString;
+use crate::timer::get_time_ms;
 use crate::mm::MemorySet;
 use crate::task::exit_current_group_and_run_next;
 use crate::{
@@ -10,11 +11,11 @@ use crate::{
         translated_refmut, translated_str, MapPermission, VirtAddr, PhysAddr,
     },
     signal::SignalFlags,
-    syscall::{process, MmapFlags, MmapProt},
+    syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
-        exit_current_and_run_next, mmap, munmap, suspend_current_and_run_next,
-        CloneFlags, TmsInner,
+        exit_current_and_run_next, mmap, munmap, pid2process, process_num,
+        suspend_current_and_run_next, CloneFlags, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -25,6 +26,13 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 pub struct TimeVal {
     pub sec: usize,
     pub usec: usize,
+}
+
+//sys info
+pub fn sys_sysinfo(info: *mut SysInfo) -> isize {
+    let token = current_process().inner_exclusive_access().get_user_token();
+    *translated_refmut(token, info) = SysInfo::new(get_time_ms() / 1000, 1 << 56, process_num());
+    0
 }
 
 /// exit syscall
@@ -321,6 +329,16 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     copy_to_virt(&time_val, ts);
     0
 }
+//
+pub fn sys_clockgettime(clockid: usize, tp: *mut TimeVal) -> isize {
+    let ms = crate::timer::get_time_ms();
+    let time = TimeVal {
+        sec: ms / 1000,
+        usec: (ms % 1000) * 1000000,
+    };
+    copy_to_virt(&time, tp);
+    0
+}
 
 /// get times
 pub fn sys_tms(tms: *mut TmsInner) -> isize {
@@ -481,6 +499,12 @@ pub fn sys_set_priority(prio: isize) -> isize {
         -1
     }
 }
+
+//伪实现
+pub fn sys_log(_logtype: isize, _bufp: *const u8, _len: usize) -> isize {
+    0
+}
+
 
 pub fn sys_exit_group(exit_code: i32) -> isize {
     exit_current_group_and_run_next(exit_code);

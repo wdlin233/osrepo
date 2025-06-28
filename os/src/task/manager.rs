@@ -180,6 +180,11 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     //debug!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
 }
+
+// process num
+pub fn process_num() -> usize {
+    PID2PCB.exclusive_access().len()
+}
 /// 
 pub fn wakeup_parent(pid: usize) {
     TASK_MANAGER.exclusive_access().wakeup_parent(pid);

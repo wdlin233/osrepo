@@ -39,7 +39,7 @@ pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,
-    wakeup_task_by_pid,
+    wakeup_task_by_pid, process_num,
     THREAD_GROUP,
 };
 pub use process::{CloneFlags, Tms, TmsInner, ProcessControlBlock, ProcessControlBlockInner};
