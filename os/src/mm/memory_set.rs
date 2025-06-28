@@ -572,11 +572,15 @@ impl MemorySetInner {
         //guard page
         user_heap_bottom += PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom;
+        #[cfg(target_arch = "riscv64")]
+        let perm = MapPermission::R | MapPermission::W | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")]
+        let perm = MapPermission::W | MapPermission::PLVL;
         memory_set.push_lazily(MapArea::new(
             user_heap_bottom.into(),
             user_heap_top.into(),
             #[cfg(target_arch = "riscv64")]MapType::Framed,
-            MapPermission::R | MapPermission::W | MapPermission::U,
+            perm,
             MapAreaType::Brk,
         ));
 
@@ -601,16 +605,34 @@ impl MemorySetInner {
                     header_va = start_va.0;
                     has_found_header_va = true;
                 }
+                #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
+                #[cfg(target_arch = "loongarch64")]
+                let mut map_perm = MapPermission::PLVL;
                 let ph_flags = ph.flags();
-                if ph_flags.is_read() {
-                    map_perm |= MapPermission::R;
+                #[cfg(target_arch = "riscv64")]
+                {
+                    if ph_flags.is_read() {
+                        map_perm |= MapPermission::R;
+                    }
+                    if ph_flags.is_write() {
+                        map_perm |= MapPermission::W;
+                    }
+                    if ph_flags.is_execute() {
+                        map_perm |= MapPermission::X;
+                    }
                 }
-                if ph_flags.is_write() {
-                    map_perm |= MapPermission::W;
-                }
-                if ph_flags.is_execute() {
-                    map_perm |= MapPermission::X;
+                #[cfg(target_arch = "loongarch64")]
+                {
+                    if !ph_flags.is_read() {
+                        map_perm |= MapPermission::NR;
+                    }
+                    if ph_flags.is_write() {
+                        map_perm |= MapPermission::W;
+                    }
+                    if !ph_flags.is_execute() {
+                        map_perm |= MapPermission::NX;
+                    }
                 }
                 let map_area = MapArea::new(
                     start_va,

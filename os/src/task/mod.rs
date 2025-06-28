@@ -213,9 +213,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         debug!("(exit_current_and_run_next) wakeup parent pid={}", pid);
         //wakeup_parent(parent.upgrade().unwrap().getpid());
     }
-    unsafe {
-        asm!("sfence.vma");
-    }
     drop(process);
     // we do not have to save task context
     let mut _unused = TaskContext::zero_init();
