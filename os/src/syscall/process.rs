@@ -77,7 +77,6 @@ pub fn sys_fork(
     let new_pid = new_process.getpid();
     debug!("(sys_fork) the new pid is :{}", new_pid);
 
-    //debug!("sys_fork: the new pid is : {}",new_pid);
     new_pid as isize
 }
 /// exec syscall
@@ -484,6 +483,6 @@ pub fn sys_set_priority(prio: isize) -> isize {
 
 pub fn sys_exit_group(exit_code: i32) -> isize {
     exit_current_group_and_run_next(exit_code);
-    unreachable!()
-    -1
+    unreachable!();
+    0
 }

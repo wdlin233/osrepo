@@ -35,6 +35,7 @@ const MICRO_PER_SEC: usize = 1_000_000;
 /// # *CAUTION*
 /// tv_sec & tv_usec should be usize.
 /// SaZiKK impl TimeSpec ToT
+#[repr(C)]
 pub struct TimeSpec {
     /// The tv_sec member represents the elapsed time, in whole seconds.
     pub tv_sec:  usize,
@@ -172,6 +173,7 @@ pub fn set_next_trigger() {
 }
 
 /// condvar for timer
+#[repr(C)]
 pub struct TimerCondVar {
     /// The time when the timer expires, in milliseconds
     pub expire_ms: usize,

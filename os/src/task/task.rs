@@ -61,7 +61,7 @@ impl TaskControlBlockInner {
         #[cfg(target_arch = "riscv64")]
         {
             debug!(
-                "in tcb inner, get trap cx, trap cx ppn is : {}",
+                "(TaskControlBlockInner) get trap cx, trap cx ppn is : {}",
                 self.trap_cx_ppn.0
             );
             self.trap_cx_ppn.get_mut()

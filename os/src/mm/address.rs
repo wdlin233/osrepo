@@ -288,7 +288,7 @@ impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         //let kernel_va = KernelAddr::from(pa).0;
-        debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
+        //debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
         //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
         //debug!("Kernel virtual address: {:#x}", kernel_va);
         // No kernel address translation.

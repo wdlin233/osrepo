@@ -25,7 +25,7 @@ use self::id::TaskUserRes;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
-use crate::task::manager::add_stopping_task;
+use crate::task::manager::{add_stopping_task, wakeup_parent};
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
@@ -93,6 +93,7 @@ use crate::board::QEMUExit;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
+    info!("(exit_current_and_run_next) beginning, exit_code: {}", exit_code);
     // trace!(
     //     "kernel: pid[{}] exit_current_and_run_next",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
@@ -122,6 +123,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if num == 1 {
         let pid = process.getpid();
+        info!("(exit_current_and_run_next) pid={}, tid={}, exit_code={}", pid, tid, exit_code);
         if pid == 1 { // to shutdown
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
@@ -190,6 +192,29 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         unsafe {
             asm!("invtlb 0x4,{},$r0",in(reg) pid);
         }
+        {
+        //debug!("work at exit for {} {}", task.pid(), task.tid());
+        let thread_group = THREAD_GROUP.lock();
+        if let Some(tasks) = thread_group.get(&process.getpid()) {
+            if tasks.iter().all(|task| task.inner_exclusive_access().is_zombie == true) {
+                drop(thread_group);
+                send_signal_to_thread_group(parent.upgrade().unwrap().getpid(), SignalFlags::SIGCHLD);
+                let inner = process.inner_exclusive_access();
+                inner.memory_set.recycle_data_pages();
+                inner.fd_table.clear();
+                inner.fs_info.clear();
+                if inner.sig_table.not_exited() {
+                    inner.sig_table.set_exit_code(exit_code);
+                }
+                //wakeup_parent(task.ppid());
+            }
+        }
+    }
+        debug!("(exit_current_and_run_next) wakeup parent pid={}", pid);
+        //wakeup_parent(parent.upgrade().unwrap().getpid());
+    }
+    unsafe {
+        asm!("sfence.vma");
     }
     drop(process);
     // we do not have to save task context

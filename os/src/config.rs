@@ -73,10 +73,4 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE;
 #[cfg(target_arch = "loongarch64")]
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 
-/// yield wakeup task
-pub const YIELD_CHECK: usize = 90;
-#[allow(unused)]
-/// Use a fs block size of 512 bytes
-pub const BLOCK_SIZE: usize = 4096;
-/// The io block size of the disk layer
-pub const IO_BLOCK_SIZE: usize = 512;
+pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;
