@@ -136,25 +136,21 @@ impl MapArea {
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
-    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8], offset: usize) {
+    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
         #[cfg(target_arch = "riscv64")]
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
-        let mut page_offset: usize = offset;
         let mut current_vpn = self.vpn_range.get_start();
         let len = data.len();
         loop {
-            let src = &data[start..len.min(start + PAGE_SIZE - page_offset)];
+            let src = &data[start..len.min(start + PAGE_SIZE)];
             let dst = &mut page_table
                 .translate(current_vpn)
                 .unwrap()
                 .ppn()
-                .bytes_array_mut()[page_offset..(page_offset + src.len())];
+                .get_bytes_array()[..src.len()];
             dst.copy_from_slice(src);
-
-            start += PAGE_SIZE - page_offset;
-
-            page_offset = 0;
+            start += PAGE_SIZE;
             if start >= len {
                 break;
             }

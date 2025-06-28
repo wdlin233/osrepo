@@ -327,8 +327,8 @@ impl ProcessControlBlock {
         //let pid_handle = pid_alloc().0;
 
         let process = Arc::new(Self {
-            ppid: 1,
-            pid: 1,
+            ppid: 0,
+            pid: 0,
             user,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
@@ -374,7 +374,7 @@ impl ProcessControlBlock {
         #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
-        //info!("(ProcessControlBlock, new) ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
+        //info!("ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
 
         // debug!("kernel: create main thread, pid = {}", process.getpid());
         // la 在内核栈上压入trap上下文，与rcore实现不同
@@ -414,6 +414,7 @@ impl ProcessControlBlock {
         let mut inner = self.inner_exclusive_access();
         if inner.clear_child_tid != 0 {
             *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
+            //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
         inner.memory_set = Arc::new(memory_set);
         inner.heap_id = heap_id;
@@ -520,7 +521,6 @@ impl ProcessControlBlock {
         }
         envp.push(0);
         user_sp -= user_sp % size;
-        //info!("(ProcessControlBlock, exec) user_sp after envp = {:x}", user_sp);
 
         //args
         let mut argv = Vec::new();
@@ -537,7 +537,6 @@ impl ProcessControlBlock {
         }
         argv.push(0);
         user_sp -= user_sp % size;
-        //info!("(ProcessControlBlock, exec) user_sp after argv = {:x}", user_sp);
 
         //aux 16字节随机变量
         user_sp -= 16;
@@ -558,7 +557,6 @@ impl ProcessControlBlock {
             *translated_refmut(new_token, pp as *mut usize) = aux.value;
         }
         let aux_base = user_sp;
-        //info!("(ProcessControlBlock, exec) user_sp after aux = {:x}", user_sp);
 
         //env指针
         //env指针空间
@@ -568,7 +566,6 @@ impl ProcessControlBlock {
             let mut p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = envp[i];
         }
-        //info!("(ProcessControlBlock, exec) user_sp after envp = {:x}", user_sp);
 
         //args 指针
         //args指针空间
@@ -578,7 +575,6 @@ impl ProcessControlBlock {
             let mut p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = argv[i];
         }
-        //info!("(ProcessControlBlock, exec) user_sp after argv = {:x}", user_sp);
 
         //获取argc
         let args_len = args.len();
@@ -587,7 +583,6 @@ impl ProcessControlBlock {
         *translated_refmut(new_token, (user_sp - size) as *mut usize) = args.len().into();
         //对齐地址
         user_sp -= user_sp % size;
-        //info!("(ProcessControlBlock, exec) user_sp after argc = {:x}", user_sp);
 
         // initialize trap_cx
         debug!("init context");
@@ -642,7 +637,7 @@ impl ProcessControlBlock {
         _tls: usize,
         child_tid: *mut u32,
     ) -> Arc<Self> {
-        info!("(ProcessControlBlock, fork) flags = {:?}", flags);
+        //unimplemented!()
         let user = self.user.clone();
         let mut parent = self.inner_exclusive_access();
         assert_eq!(parent.thread_count(), 1);
@@ -680,13 +675,8 @@ impl ProcessControlBlock {
         } else {
             0
         };
-
-        // if flags.contains(CloneFlags::CLONE_PARENT) {
-        //     ppid = self.ppid;
-        // }
         // alloc a pid
         let pid: usize;
-        let ppid: usize;
         let sig_mask: SignalFlags;
 
         let creat_thread = flags.contains(CloneFlags::CLONE_THREAD);
@@ -696,11 +686,11 @@ impl ProcessControlBlock {
                 "(ProcessControlBlock, fork) creat thread, need tcb, not need pcb, to implement"
             );
             pid = self.pid;
-            ppid = self.ppid;
+            //ppid = self.ppid;
             //timer = Arc::clone(&parent_inner.timer);
             sig_mask = SignalFlags::empty();
             let child = Arc::new(Self {
-                ppid,
+                ppid: pid,
                 pid,
                 user,
                 inner: unsafe {
@@ -735,7 +725,7 @@ impl ProcessControlBlock {
         } else {
             info!("(ProcessControlBlock, fork) forking...");
             pid = pid_alloc().0;
-            ppid = self.pid;
+            //ppid = self.pid;
             //timer = Arc::new(Timer::new());
             sig_mask = parent.sig_mask.clone();
             info!("(ProcessControlBlock, fork) pid = {}", pid);

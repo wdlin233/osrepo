@@ -101,17 +101,24 @@ fs-img:
 	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
 fs-img:
-	@sudo mkdir -p /mnt/image_part
-	@sudo mount $(FS_IMG) /mnt/image_part
+	@sudo mkdir -p /mnt/image_part2
+	-sudo mount $(FS_IMG) /mnt/image_part2
 	@make build -C ../user_la
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/initproc /mnt/image_part/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part/
-	@sudo cp -r $(TESTSUITS) /mnt/image_part/
-	@sudo cp ../testcases/riscv64/busybox /mnt/image_part/
-	@sudo cp ../test-riscv/musl/* /mnt/image_part/
-	@sudo ls /mnt/image_part/
-	@sudo umount /mnt/image_part
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/initproc /mnt/image_part2/
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part2/
+	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part2/
+	@sudo cp -r $(TESTSUITS) /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/busybox_testcode.sh /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/busybox_cmd.txt /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/busybox /mnt/image_part2/
+	-sudo mkdir -p /mnt/image_part2/lib
+	-sudo cp ../testcases/loongarch/musl/lib/* /mnt/image_part2/lib/
+	-sudo cp ../testcases/loongarch/musl/libctest_testcode.sh /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/run-static.sh /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/run-dynamic.sh /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/*.exe /mnt/image_part2/
+	@sudo ls /mnt/image_part2/
+	@sudo umount /mnt/image_part2
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif

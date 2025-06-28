@@ -1,14 +1,14 @@
 use super::sys_gettid;
 use crate::alloc::string::ToString;
-use crate::timer::get_time_ms;
 use crate::mm::MemorySet;
 use crate::task::exit_current_group_and_run_next;
+use crate::timer::get_time_ms;
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
     mm::{
         copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
-        translated_refmut, translated_str, MapPermission, VirtAddr, PhysAddr,
+        translated_refmut, translated_str, MapPermission, PhysAddr, VirtAddr,
     },
     signal::SignalFlags,
     syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
@@ -86,6 +86,7 @@ pub fn sys_fork(
     let new_pid = new_process.getpid();
     debug!("(sys_fork) the new pid is :{}", new_pid);
 
+    //debug!("sys_fork: the new pid is : {}",new_pid);
     new_pid as isize
 }
 /// exec syscall
@@ -505,11 +506,10 @@ pub fn sys_log(_logtype: isize, _bufp: *const u8, _len: usize) -> isize {
     0
 }
 
-
 pub fn sys_exit_group(exit_code: i32) -> isize {
     exit_current_group_and_run_next(exit_code);
     unreachable!();
-    0
+    -1
 }
 
 pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
@@ -530,7 +530,7 @@ pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
 
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
-    let memory_set= inner.memory_set.get_mut();
+    let memory_set = inner.memory_set.get_mut();
     let start_vpn = VirtAddr::from(addr).floor();
     let end_vpn = VirtAddr::from(addr + len).ceil();
     //修改各段的mappermission

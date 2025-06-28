@@ -13,7 +13,6 @@ use crate::hal::trap::TrapContext;
 use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
-use crate::task::add_task;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
 use core::arch::asm;

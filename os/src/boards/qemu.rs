@@ -1,7 +1,7 @@
 //! QEMU riscv-64 virt machine
 
 /// clock frequency
-pub const CLOCK_FREQ: usize = 12500000;
+pub const CLOCK_FREQ: usize = 12520000;
 //pub const MEMORY_END: usize = 0x801000000;
 
 /// The base address of control registers in VIRT_TEST/RTC/Virtio_Block device
@@ -37,7 +37,6 @@ pub trait QEMUExit {
 }
 
 /// RISCV64 configuration
-#[repr(C)]
 pub struct RISCV64 {
     /// Address of the sifive_test mapped device.
     addr: u64,

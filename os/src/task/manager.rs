@@ -73,7 +73,6 @@ impl TaskManager {
     /// remove block by pid
     pub fn remove_block_by_pid(&mut self, pid: usize) {
         //debug!("remove block by pid:{}",pid);
-        info!("(remove_block_by_pid) manager blocked map len {}, stoped {}", self.block_map.len(), self.stop_task.is_some());
         if let Some(task) = self.block_map.remove(&pid) {
             let mut inner = task.inner_exclusive_access();
             if inner.task_status != TaskStatus::Ready {
@@ -81,31 +80,6 @@ impl TaskManager {
                 drop(inner);
                 self.add(task);
                 debug!("(remove_block_by_pid) Add task ok : {}", pid);
-            }
-        }
-    }
-    pub fn wakeup_parent(&mut self, pid: usize) {
-        // let 
-        //             //&& task.inner_exclusive_access().task_status == TaskStatus::Ready
-        //     })
-        //     .map(|(idx, _)| idx);
-        if let Some((_, (_, task))) = self
-            .block_map
-            .iter()
-            .enumerate()
-            .find(|(_, (_, task))| {
-                task.tid() == pid  }) {
-            // log::info!("wake up parent {}", pid);
-            
-            //let p = self.ready_queue.remove(idx).unwrap();
-            self.ready_queue.push_front(task.clone());
-            self.remove_block_by_pid(pid);
-        } else {
-            info!("(wakeup_parent) no parent pid=={}", pid);
-            // 父进程已被回收,被添加到了initproc下
-            if pid != 1 {
-                // log::info!("wake up parent {}", 0);
-                self.wakeup_parent(1);
             }
         }
     }
@@ -184,10 +158,6 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
 // process num
 pub fn process_num() -> usize {
     PID2PCB.exclusive_access().len()
-}
-/// 
-pub fn wakeup_parent(pid: usize) {
-    TASK_MANAGER.exclusive_access().wakeup_parent(pid);
 }
 
 /// 线程组

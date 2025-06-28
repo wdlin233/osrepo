@@ -201,14 +201,11 @@ pub fn trap_handler() -> ! {
             {
                 let process = current_process();
                 let inner = process.inner_exclusive_access();
-                use crate::task::current_task;
-                info!(
-                        "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, pid = {}, kernel killed it.",
-                        scause.cause(),
-                        stval,
-                        current_trap_cx().sepc,
-                        current_task().map(|t| t.process.upgrade().unwrap().getpid()).unwrap_or(0)
-                    );
+                // info!(
+                //     "[kernel] trap_handler: {:?} at {:#x} as vpn",
+                //     scause.cause(),
+                //     stval,
+                // );
                 res = inner
                     .memory_set
                     .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
@@ -220,13 +217,11 @@ pub fn trap_handler() -> ! {
                 // drop to avoid deadlock and exit exception
             }
             if !res {
-                use crate::task::current_task;
                 error!(
-                        "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, pid = {}, kernel killed it.",
+                        "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
                         scause.cause(),
                         stval,
                         current_trap_cx().sepc,
-                        current_task().map(|t| t.process.upgrade().unwrap().getpid()).unwrap_or(0)
                     );
                 current_add_signal(SignalFlags::SIGSEGV);
             }

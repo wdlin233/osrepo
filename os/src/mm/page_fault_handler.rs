@@ -102,7 +102,7 @@ pub fn cow_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut MapAre
     // 只有一个，不用复制
     let vpn = va.floor();
     let frame = vma.data_frames.get(&vpn).unwrap();
-    //debug!("handle va {:#x}, count={}", va.0, Arc::strong_count(frame));
+    // debug!("handle va {:#x}, count={}", va.0, Arc::strong_count(frame));
     if Arc::strong_count(frame) == 1 {
         page_table.reset_cow(vpn);
         page_table.set_w(vpn);
