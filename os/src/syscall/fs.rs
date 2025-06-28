@@ -26,6 +26,80 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+//lseek
+pub fn sys_lseek(fd: usize, offset: isize, whence: usize) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+
+    if fd >= inner.fd_table.len() || inner.fd_table.try_get(fd).is_none() {
+        return SysErrNo::EINVAL as isize;
+    }
+    let file = match inner.fd_table.get(fd).file() {
+        Ok(fi) => fi,
+        Err(num) => return num as isize,
+    };
+    match file.lseek(offset, whence) {
+        Ok(i) => i as isize,
+        Err(n) => n as isize,
+    }
+}
+
+//readv
+pub fn sys_readv(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    if (fd as isize) < 0 || fd >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if (iov as isize) <= 0 || is_bad_address(iov as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (iovcnt as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    if let Some(file) = &inner.fd_table.try_get(fd) {
+        if let Ok(readfile) = file.file() {
+            if readfile.inode.is_dir() {
+                return SysErrNo::EISDIR as isize;
+            }
+        }
+        let file = file.any();
+        if !file.readable() {
+            return SysErrNo::EACCES as isize;
+        }
+        // release current task TCB manually to avoid multi-borrow
+        drop(inner);
+        drop(process);
+        let mut ret: usize = 0;
+        let iovec_size = core::mem::size_of::<Iovec>();
+
+        for i in 0..iovcnt {
+            // current iovec pointer
+            let current = unsafe { iov.add(iovec_size * i) };
+            //let iovinfo = data_flow!({ *(current as *mut Iovec) });
+            let iovinfo = *translated_refmut(token, current as *mut Iovec);
+            if (iovinfo.iov_len as isize) < 0 {
+                return SysErrNo::EINVAL as isize;
+            }
+            let buffer =
+                translated_byte_buffer(token, iovinfo.iov_base as *mut u8, iovinfo.iov_len);
+            let buf = UserBuffer::new(buffer);
+            let read_ret = match file.read(buf) {
+                Ok(rr) => rr,
+                Err(num) => return num as isize,
+            };
+            ret += read_ret as usize;
+        }
+        ret as isize
+    } else {
+        SysErrNo::EBADF as isize
+    }
+}
+
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     debug!("in sys write with buf: {:x?}, len: {}", buf, len);
@@ -93,7 +167,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     // let token = current_user_token();
     let process = current_process();
     debug!("current pid is :{}", process.getpid());
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.clone();
     if fd >= inner.fd_table.len() || (fd as isize) < 0 || (buf as isize) <= 0 {
         return -1;
@@ -422,10 +496,10 @@ pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
         return -1;
     }
     debug!("to open,the abs path is :{}", abs_path);
-    let osfile = open(&abs_path, OpenFlags::O_ASK_SYMLINK, NONE_MODE)
-        .unwrap()
-        .file()
-        .unwrap();
+    let osfile = match open(&abs_path, OpenFlags::O_ASK_SYMLINK, NONE_MODE) {
+        Ok(of) => of.file().unwrap(),
+        Err(num) => return num as isize,
+    };
     if osfile.inode.link_cnt().unwrap() == 1 && inner.fs_info.has_fd(&path) {
         osfile.inode.delay();
         remove_inode_idx(&abs_path);
@@ -983,10 +1057,10 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
 
     let abs_path = inner.get_abs_path(dirfd, &path);
     let (parent_path, _) = rsplit_once(abs_path.as_str(), "/");
-    let parent_inode = open(&parent_path, OpenFlags::O_RDWR, NONE_MODE)
-        .unwrap()
-        .file()
-        .unwrap();
+    let parent_inode = match open(&parent_path, OpenFlags::O_RDWR, NONE_MODE) {
+        Ok(pi) => pi.file().unwrap(),
+        Err(num) => return num as isize,
+    };
     let parent_mode = parent_inode.inode.fmode().unwrap() & 0xfff;
     let parent_mode = FaccessatFileMode::from_bits_truncate(parent_mode);
     if !parent_inode.inode.is_dir() {
@@ -1001,10 +1075,13 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
         return SysErrNo::EACCES as isize;
     }
     info!("in sys faccessat , the abs path is : {}", abs_path);
-    let inode = open(&abs_path, OpenFlags::O_RDWR, NONE_MODE)
-        .unwrap()
-        .file()
-        .unwrap();
+    let inode = match open(&abs_path, OpenFlags::O_RDWR, NONE_MODE) {
+        Ok(i) => i.file().unwrap(),
+        Err(num) => {
+            return num as isize;
+        }
+    };
+
     let file_mode = inode.inode.fmode().unwrap() & 0xfff;
     let file_mode = FaccessatFileMode::from_bits_truncate(file_mode);
     if mode.contains(FaccessatMode::R_OK)
@@ -1080,11 +1157,11 @@ pub fn sys_utimensat(dirfd: isize, path: *const u8, times: *const TimeVal, _flag
     }
 
     let abs_path = inner.get_abs_path(dirfd, &path);
-    debug!("in sys utimensat , the abs path is : {}", abs_path);
-    let osfile = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
-        .unwrap()
-        .file()
-        .unwrap();
+    info!("in sys utimensat , the abs path is : {}", abs_path);
+    let osfile = match open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE) {
+        Ok(of) => of.file().unwrap(),
+        Err(num) => return num as isize,
+    };
     osfile
         .inode
         .set_timestamps(atime_sec, mtime_sec, None)

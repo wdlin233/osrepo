@@ -155,3 +155,8 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     //debug!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
 }
+
+// process num
+pub fn process_num() -> usize {
+    PID2PCB.exclusive_access().len()
+}

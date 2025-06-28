@@ -42,10 +42,14 @@ pub const SYSCALL_CLOSE: usize = 57;
 pub const SYSCALL_PIPE: usize = 59;
 /// getdents syscall
 pub const SYSCALL_GETDENTS64: usize = 61;
+///lseek syscall
+pub const SYSCALL_LSEEK: usize = 62;
 /// read syscall
 pub const SYSCALL_READ: usize = 63;
 /// write syscall
 pub const SYSCALL_WRITE: usize = 64;
+/// readv syscall
+pub const SYSCALL_READV: usize = 65;
 /// writev syscall
 pub const SYSCALL_WRITEV: usize = 66;
 /// sendfile syscall
@@ -99,6 +103,8 @@ pub const SYSCALL_GETEUID: usize = 175;
 pub const SYSCALL_GETGID: usize = 176;
 /// gettid syscall
 pub const SYSCALL_GETTID: usize = 178;
+/// sysinfo syscall
+pub const SYSCALL_SYSINFO: usize = 179;
 /// fork syscall
 pub const SYSCALL_FORK: usize = 220;
 /// exec syscall
@@ -170,6 +176,7 @@ use thread::*;
 pub use options::*;
 use uname::*;
 
+use crate::syscall::sys_result::SysInfo;
 use crate::{
     fs::{Kstat, Statx},
     signal::{SigAction, SigInfo, SignalFlags},
@@ -181,6 +188,9 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
+        SYSCALL_SYSINFO => sys_sysinfo(args[0] as *mut SysInfo),
+        SYSCALL_READV => sys_readv(args[0], args[1] as *const u8, args[2]),
         SYSCALL_UTIMENSAT => sys_utimensat(
             args[0] as isize,
             args[1] as *const u8,

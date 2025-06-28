@@ -1,5 +1,6 @@
 use super::sys_gettid;
 use crate::alloc::string::ToString;
+use crate::timer::get_time_ms;
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
@@ -8,11 +9,11 @@ use crate::{
         translated_refmut, translated_str, MapPermission,
     },
     signal::SignalFlags,
-    syscall::{process, MmapFlags, MmapProt},
+    syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
-        exit_current_and_run_next, mmap, munmap, pid2process, suspend_current_and_run_next,
-        CloneFlags, TmsInner,
+        exit_current_and_run_next, mmap, munmap, pid2process, process_num,
+        suspend_current_and_run_next, CloneFlags, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -23,6 +24,13 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 pub struct TimeVal {
     pub sec: usize,
     pub usec: usize,
+}
+
+//sys info
+pub fn sys_sysinfo(info: *mut SysInfo) -> isize {
+    let token = current_process().inner_exclusive_access().get_user_token();
+    *translated_refmut(token, info) = SysInfo::new(get_time_ms() / 1000, 1 << 56, process_num());
+    0
 }
 
 /// exit syscall
