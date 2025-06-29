@@ -795,11 +795,7 @@ impl ProcessControlBlock {
                 trap_cx.x[10] = 0;
                 trap_cx.kernel_sp = task.kstack.get_top();
             }
-            #[cfg(target_arch = "loongarch64")]
-            {
-                let trap_cx = task_inner.get_trap_cx();
-                trap_cx.x[4] = 0;
-            }
+
             // modify kstack_top in trap_cx of this thread
 
             // #[cfg(target_arch = "riscv64")]
@@ -812,6 +808,8 @@ impl ProcessControlBlock {
             let mut task_inner = task.inner_exclusive_access();
             #[cfg(target_arch = "loongarch64")]
             {
+                let trap_cx = task_inner.get_trap_cx();
+                trap_cx.x[4] = 0;
                 // 修改trap_cx的内容，使其保持与父进程相同
                 // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
                 task_inner

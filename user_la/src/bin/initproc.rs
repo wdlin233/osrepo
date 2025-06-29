@@ -1,19 +1,17 @@
 #![no_std]
 #![no_main]
 
+#[macro_use]
 extern crate user_lib;
-use user_lib::println;
-use user_lib::{exec, fork, wait, yield_};
+
+use user_lib::{exec, fork, run_busyboxsh, wait, yield_};
 
 #[no_mangle]
 fn main() -> i32 {
     println!("[initproc] Init process started");
     if fork() == 0 {
-        //println!("[initproc] Forked child process, executing user_shell");
-        exec("usertest\0", &[core::ptr::null::<u8>()]);
-        //exec("user_shell\0", &[core::ptr::null::<u8>()]);
+        run_busyboxsh();
     } else {
-        //println!("[initproc] Parent process waiting for child to finish");
         loop {
             let mut exit_code: i32 = 0;
             let pid = wait(&mut exit_code);
@@ -23,8 +21,7 @@ fn main() -> i32 {
             }
             println!(
                 "[initproc] Released a zombie process, pid={}, exit_code={}",
-                pid,
-                exit_code,
+                pid, exit_code,
             );
         }
     }

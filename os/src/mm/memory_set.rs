@@ -526,10 +526,14 @@ impl MemorySetInner {
             user_heap_bottom, user_heap_bottom
         );
         let user_heap_top: usize = user_heap_bottom;
+        #[cfg(target_arch = "riscv64")]
+        let prem = MapPermission::R | MapPermission::W | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")]
+        let perm = MapPermission::W | MapPermission::PLVL;
         memory_set.insert_framed_area(
             user_heap_bottom.into(),
             user_heap_top.into(),
-            MapPermission::R | MapPermission::W | MapPermission::U,
+            perm,
             MapAreaType::Brk,
         );
         // 返回 address空间,用户栈顶,入口地址
@@ -1037,7 +1041,10 @@ impl MemorySetInner {
         flush_tlb();
     }
     pub fn find_insert_addr(&self, hint: usize, size: usize) -> usize {
-        info!("(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}", hint, size);
+        info!(
+            "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
+            hint, size
+        );
         let end_vpn = VirtAddr::from(hint).floor();
         let start_vpn = VirtAddr::from(hint - size).floor();
         let start_va: VirtAddr = start_vpn.into();

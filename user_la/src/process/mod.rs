@@ -8,7 +8,9 @@ pub fn fork() -> isize {
 pub fn exec(path: &str, args: &[*const u8]) -> isize {
     sys_exec(path, args)
 }
-
+pub fn run_busyboxsh() -> isize {
+    sys_busyboxsh()
+}
 /// 等待任意一个子进程结束
 pub fn wait(exit_code: &mut i32) -> isize {
     loop {

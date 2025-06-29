@@ -109,27 +109,27 @@ impl From<MmapProt> for MapPermission {
 impl From<MmapProt> for MapPermission {
     fn from(prot: MmapProt) -> Self {
         // 基础权限：设置用户态访问 (PLV=3) 和 RPLV 限制
-        let mut map_permission = MapPermission::PLVL | MapPermission::PLVH | MapPermission::RPLV;
-        
+        let mut map_permission = MapPermission::PLVH | MapPermission::RPLV;
+
         // 读权限：PROT_READ 对应清除 NR 位 (可读)
         if prot.contains(MmapProt::PROT_READ) {
             // 不设置 NR 位表示可读
         } else {
             map_permission |= MapPermission::NR; // 设置 NR 表示不可读
         }
-        
+
         // 写权限：PROT_WRITE 对应设置 W 位
         if prot.contains(MmapProt::PROT_WRITE) {
             map_permission |= MapPermission::W;
         }
-        
+
         // 执行权限：PROT_EXEC 对应清除 NX 位 (可执行)
         if prot.contains(MmapProt::PROT_EXEC) {
             // 不设置 NX 位表示可执行
         } else {
             map_permission |= MapPermission::NX; // 设置 NX 表示不可执行
         }
-        
+
         map_permission
     }
 }
