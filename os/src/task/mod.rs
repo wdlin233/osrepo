@@ -223,18 +223,12 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 
+#[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("initproc_rv.S"));
+#[cfg(target_arch = "loongarch64")]
+global_asm!(include_str!("initproc_la.S"));
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     // debug!("kernel: INITPROC is being initialized");
-
-    // let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
-    //     .expect("open initproc error!")
-    //     .file()
-    //     .expect("initproc can not be abs file!");
-    // debug!("kernel: INITPROC opened successfully");
-    // let elf_data = initproc.inode.read_all().unwrap();
-    // let res = ProcessControlBlock::new(&elf_data);
-    // res
     unsafe {
         extern "C" {
             fn initproc_rv_start();

@@ -9,8 +9,8 @@ pub fn exec(path: &str, args: &[*const u8]) -> isize {
     sys_exec(path, args)
 }
 
-pub fn run_busyboxsh() -> isize {
-    sys_busyboxsh()
+pub fn run_busyboxsh(test: &str) -> isize {
+    sys_busyboxsh(test)
 }
 
 /// 等待任意一个子进程结束

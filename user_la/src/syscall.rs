@@ -38,14 +38,14 @@ pub fn syscall(id: usize, args0: usize, args1: usize, args2: usize) -> isize {
     }
     unsafe { do_syscall(id, args0, args1, args2) }
 }
-pub fn sys_busyboxsh() -> isize {
+pub fn sys_busyboxsh(test: &str) -> isize {
     syscall(
         SYSCALL_EXEC,
         "/busybox\0".as_ptr() as usize,
         [
             "busybox\0".as_ptr() as isize,
             "sh\0".as_ptr() as isize,
-            "basic_testcode.sh\0".as_ptr() as isize,
+            test.as_ptr() as isize,
             //"./test-ltp.sh\0".as_ptr() as isize,
             //"ltp/testcases/bin/abort01\0".as_ptr() as isize,
             // "libctest_testcode.sh\0".as_ptr() as isize,
