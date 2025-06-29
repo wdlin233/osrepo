@@ -243,7 +243,7 @@ impl Default for MapPermission {
         #[cfg(target_arch = "riscv64")]
         return MapPermission::R | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return MapPermission::PLVL | MapPermission::PLVH;
+        return MapPermission::PLVH;
     }
 }
 
@@ -304,13 +304,6 @@ impl MapPermission {
         #[cfg(target_arch = "riscv64")]
         return self | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return self | MapPermission::PLVL | MapPermission::PLVH;
-    }
-
-    #[allow(unused)]
-    #[cfg(target_arch = "loongarch64")]
-    pub fn without_user(self) -> Self {
-        // 清除用户模式位，设置为内核模式 (PLV0)
-        self & !(MapPermission::PLVL | MapPermission::PLVH)
+        return self | MapPermission::PLVH;
     }
 }

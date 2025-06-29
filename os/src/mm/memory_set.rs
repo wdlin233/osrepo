@@ -530,7 +530,7 @@ impl MemorySetInner {
         #[cfg(target_arch = "riscv64")]
         let perm = MapPermission::R | MapPermission::W | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        let perm = MapPermission::W | MapPermission::PLVL;
+        let perm = MapPermission::W | MapPermission::PLVH;
 
         memory_set.insert_framed_area(
             user_heap_bottom.into(),

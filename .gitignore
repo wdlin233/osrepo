@@ -28,3 +28,4 @@ test-riscv/**
 testcases/**
 testsuits/**
 qemu.log
+test-la/**
