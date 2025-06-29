@@ -25,3 +25,8 @@ testcases/loongarch64/*
 **/user.s
 **/sdcard-*.img
 test-riscv/**
+test-la/
+**/os.log
+testcases/**
+testsuits/**
+qemu.log

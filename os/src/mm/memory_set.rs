@@ -40,6 +40,7 @@ use riscv::register::{
     satp,
     scause::{Exception, Trap},
 };
+use xmas_elf::ElfFile;
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
@@ -190,8 +191,15 @@ impl MemorySet {
         self.inner.get_unchecked_mut().cow_page_fault(vpn, scause)
     }
     #[inline(always)]
-    pub fn mprotect(&mut self, start_vpn: VirtPageNum, end_vpn: VirtPageNum, map_perm: MapPermission) {
-        self.inner.get_unchecked_mut().mprotect(start_vpn, end_vpn, map_perm);
+    pub fn mprotect(
+        &mut self,
+        start_vpn: VirtPageNum,
+        end_vpn: VirtPageNum,
+        map_perm: MapPermission,
+    ) {
+        self.inner
+            .get_unchecked_mut()
+            .mprotect(start_vpn, end_vpn, map_perm);
     }
 }
 
@@ -429,6 +437,166 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::SECURE, 0 as usize));
         auxv.push(Aux::new(AuxType::NOTELF, 0x112d as usize));
 
+        // let mut head_va = 0;
+        // let mut has_found_header_va = false;
+
+        // debug!("elf program header count: {}", ph_count);
+        // for i in 0..ph_count {
+        //     let ph = elf.program_header(i).unwrap();
+        //     if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
+        //         let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
+        //         let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+        //         debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
+        //         if !has_found_header_va {
+        //             head_va = start_va.0;
+        //             has_found_header_va = true;
+        //         }
+        //         #[cfg(target_arch = "riscv64")]
+        //         let mut map_perm = MapPermission::U;
+        //         #[cfg(target_arch = "loongarch64")]
+        //         let mut map_perm = MapPermission::default();
+
+        //         let ph_flags = ph.flags();
+        //         #[cfg(target_arch = "riscv64")]
+        //         {
+        //             if ph_flags.is_read() {
+        //                 map_perm |= MapPermission::R;
+        //             }
+        //             if ph_flags.is_write() {
+        //                 map_perm |= MapPermission::W;
+        //             }
+        //             if ph_flags.is_execute() {
+        //                 map_perm |= MapPermission::X;
+        //             }
+        //         }
+        //         #[cfg(target_arch = "loongarch64")]
+        //         {
+        //             if !ph_flags.is_read() {
+        //                 map_perm |= MapPermission::NR;
+        //             }
+        //             if ph_flags.is_write() {
+        //                 map_perm |= MapPermission::W;
+        //             }
+        //             if !ph_flags.is_execute() {
+        //                 map_perm |= MapPermission::NX;
+        //             }
+        //         }
+        //         debug!(
+        //             "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
+        //             start_va, end_va, map_perm
+        //         );
+        //         #[cfg(target_arch = "riscv64")]
+        //         let map_area = MapArea::new(
+        //             start_va,
+        //             end_va,
+        //             MapType::Framed,
+        //             map_perm,
+        //             MapAreaType::Elf,
+        //         );
+        //         #[cfg(target_arch = "loongarch64")]
+        //         let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
+
+        // A optimization for mapping data, keep aligned
+        // if start_va.page_offset() == 0 {
+        //     debug!("page offset == 0");
+        //     memory_set.push(
+        //         map_area,
+        //         Some(
+        //             &elf.input
+        //                 [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
+        //         ),
+        //     );
+        // } else {
+        //     debug!("page offset != 0");
+        //     //error!("start_va page offset is not zero, start_va: {:?}", start_va);
+        //     let data_len = start_va.page_offset() + ph.file_size() as usize;
+        //     let mut data: Vec<u8> = Vec::with_capacity(data_len);
+        //     data.resize(data_len, 0);
+        //     data[start_va.page_offset()..].copy_from_slice(
+        //         &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
+        //     );
+        //     debug!("to mem set push");
+        //     memory_set.push(map_area, Some(data.as_slice()));
+        // }
+        //}
+        //}
+
+        //     let data_offset = start_va.0 - start_va.floor().0 * PAGE_SIZE;
+        //     max_end_vpn = map_area.vpn_range.get_end();
+        //     debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
+        //     memory_set.push_with_offset(
+        //         map_area,
+        //         data_offset,
+        //         Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
+        //     );
+        // auxv.push(Aux {
+        //     aux_type: AuxType::PHDR,
+        //     value: head_va + elf.header.pt2.ph_offset() as usize,
+        // });
+        // // map user stack with U flags
+        // let max_end_va: VirtAddr = max_end_vpn.into();
+        // let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
+
+        // // guard page
+        // user_heap_bottom += PAGE_SIZE;
+        // info!(
+        //     "user heap bottom: {:#x}, {}",
+        //     user_heap_bottom, user_heap_bottom
+        // );
+        // let user_heap_top: usize = user_heap_bottom;
+        // memory_set.insert_framed_area(
+        //     user_heap_bottom.into(),
+        //     user_heap_top.into(),
+        //     MapPermission::R | MapPermission::W | MapPermission::U,
+        //     MapAreaType::Brk,
+        // );
+        // // 返回 address空间,用户栈顶,入口地址
+        // (
+        //     memory_set,
+        //     user_heap_bottom,
+        //     elf.header.pt2.entry_point() as usize,
+        //     auxv,
+        // )
+        // Get ph_head addr for auxv
+        let (max_end_vpn, head_va) = memory_set.map_elf(&elf, VirtAddr(0));
+        auxv.push(Aux {
+            aux_type: AuxType::PHDR,
+            value: head_va.0 + elf.header.pt2.ph_offset() as usize,
+        });
+        // map user stack with U flags
+        let max_end_va: VirtAddr = max_end_vpn.into();
+        let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
+
+        // guard page
+        user_heap_bottom += PAGE_SIZE;
+        info!(
+            "user heap bottom: {:#x}, {}",
+            user_heap_bottom, user_heap_bottom
+        );
+        let user_heap_top: usize = user_heap_bottom;
+        #[cfg(target_arch = "riscv64")]
+        let perm = MapPermission::R | MapPermission::W | MapPermission::U;
+        #[cfg(target_arch = "loongarch64")]
+        let perm = MapPermission::W | MapPermission::PLVL;
+        memory_set.insert_framed_area(
+            user_heap_bottom.into(),
+            user_heap_top.into(),
+            perm,
+            MapAreaType::Brk,
+        );
+        // 返回 address空间,用户栈顶,入口地址
+        (
+            memory_set,
+            user_heap_bottom,
+            elf.header.pt2.entry_point() as usize,
+            auxv,
+        )
+    }
+    fn map_elf(&mut self, elf: &ElfFile, offset: VirtAddr) -> (VirtPageNum, VirtAddr) {
+        let elf_header = elf.header;
+        let ph_count = elf_header.pt2.ph_count();
+
+        let mut max_end_vpn = offset.floor();
         let mut head_va = 0;
         let mut has_found_header_va = false;
 
@@ -446,8 +614,7 @@ impl MemorySetInner {
                 #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
                 #[cfg(target_arch = "loongarch64")]
-                let mut map_perm = MapPermission::default();
-
+                let mut map_perm = MapPermission::PLVL;
                 let ph_flags = ph.flags();
                 #[cfg(target_arch = "riscv64")]
                 {
@@ -473,18 +640,7 @@ impl MemorySetInner {
                         map_perm |= MapPermission::NX;
                     }
                 }
-                debug!(
-                    "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-                    start_va, end_va, map_perm
-                );
-                #[cfg(target_arch = "riscv64")]
-                let map_area = MapArea::new(
-                    start_va,
-                    end_va,
-                    MapType::Framed,
-                    map_perm,
-                    MapAreaType::Elf,
-                );
+                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
 
@@ -493,7 +649,7 @@ impl MemorySetInner {
                 // A optimization for mapping data, keep aligned
                 if start_va.page_offset() == 0 {
                     debug!("page offset == 0");
-                    memory_set.push(
+                    self.push(
                         map_area,
                         Some(
                             &elf.input
@@ -510,39 +666,11 @@ impl MemorySetInner {
                         &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
                     );
                     debug!("to mem set push");
-                    memory_set.push(map_area, Some(data.as_slice()));
+                    self.push(map_area, Some(data.as_slice()));
                 }
             }
         }
-
-        auxv.push(Aux {
-            aux_type: AuxType::PHDR,
-            value: head_va + elf.header.pt2.ph_offset() as usize,
-        });
-        // map user stack with U flags
-        let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
-
-        // guard page
-        user_heap_bottom += PAGE_SIZE;
-        info!(
-            "user heap bottom: {:#x}, {}",
-            user_heap_bottom, user_heap_bottom
-        );
-        let user_heap_top: usize = user_heap_bottom;
-        memory_set.insert_framed_area(
-            user_heap_bottom.into(),
-            user_heap_top.into(),
-            MapPermission::R | MapPermission::W | MapPermission::U,
-            MapAreaType::Brk,
-        );
-        // 返回 address空间,用户栈顶,入口地址
-        (
-            memory_set,
-            user_heap_bottom,
-            elf.header.pt2.entry_point() as usize,
-            auxv,
-        )
+        (max_end_vpn, head_va.into())
     }
     /// Create a new address space by copy code&data from a exited process's address space.
     pub fn from_existed_user(user_space: &Self) -> Self {
@@ -1041,7 +1169,10 @@ impl MemorySetInner {
         flush_tlb();
     }
     pub fn find_insert_addr(&self, hint: usize, size: usize) -> usize {
-        info!("(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}", hint, size);
+        info!(
+            "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
+            hint, size
+        );
         let end_vpn = VirtAddr::from(hint).floor();
         let start_vpn = VirtAddr::from(hint - size).floor();
         let start_va: VirtAddr = start_vpn.into();

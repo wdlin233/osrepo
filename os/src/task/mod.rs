@@ -38,11 +38,10 @@ pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
-    add_block_task, add_task, pid2process, remove_from_pid2process, remove_task, wakeup_task,
-    wakeup_task_by_pid, process_num,
-    THREAD_GROUP,
+    add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
+    wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
 };
-pub use process::{CloneFlags, Tms, TmsInner, ProcessControlBlock, ProcessControlBlockInner};
+pub use process::{CloneFlags, ProcessControlBlock, ProcessControlBlockInner, Tms, TmsInner};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
 #[cfg(target_arch = "riscv64")]
@@ -122,7 +121,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if num == 1 {
         let pid = process.getpid();
-        if pid == 1 { // to shutdown
+        if pid == 1 {
+            // to shutdown
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
                 exit_code
@@ -190,6 +190,32 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         unsafe {
             asm!("invtlb 0x4,{},$r0",in(reg) pid);
         }
+        {
+            //debug!("work at exit for {} {}", task.pid(), task.tid());
+            let thread_group = THREAD_GROUP.lock();
+            if let Some(tasks) = thread_group.get(&process.getpid()) {
+                if tasks
+                    .iter()
+                    .all(|task| task.inner_exclusive_access().is_zombie == true)
+                {
+                    drop(thread_group);
+                    send_signal_to_thread_group(
+                        parent.upgrade().unwrap().getpid(),
+                        SignalFlags::SIGCHLD,
+                    );
+                    let inner = process.inner_exclusive_access();
+                    inner.memory_set.recycle_data_pages();
+                    inner.fd_table.clear();
+                    inner.fs_info.clear();
+                    if inner.sig_table.not_exited() {
+                        inner.sig_table.set_exit_code(exit_code);
+                    }
+                    //wakeup_parent(task.ppid());
+                }
+            }
+        }
+        debug!("(exit_current_and_run_next) wakeup parent pid={}", pid);
+        //wakeup_parent(parent.upgrade().unwrap().getpid());
     }
     drop(process);
     // we do not have to save task context

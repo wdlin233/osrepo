@@ -222,9 +222,13 @@ bitflags! {
     }
 }
 
-//  PTEFlags 的一个子集
-// 主要含有几个读写标志位和存在位，对于其它控制位
-// 在后面的映射中将会固定为同一种
+///  PTEFlags 的一个子集
+/// 主要含有几个读写标志位和存在位，对于其它控制位
+/// 在后面的映射中将会固定为同一种
+/// 特权等级（PLV），2 比特。该页表项对应的特权等级。
+/// 当 RPLV=0 时，该页表项可以被任何特权等级不低于 PLV 的程序访问；
+/// 当 RPLV=1 时，该页表项仅可以被特权等级等于 PLV 的程序访问
+/// 受限特权等级使能（RPLV），1 比特。页表项是否仅被对应特权等级的程序访问的控制位。
 #[cfg(target_arch = "loongarch64")]
 bitflags! {
     pub struct MapPermission: usize {
@@ -243,7 +247,7 @@ impl Default for MapPermission {
         #[cfg(target_arch = "riscv64")]
         return MapPermission::R | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return MapPermission::PLVL | MapPermission::PLVH;
+        return MapPermission::PLVL;
     }
 }
 
@@ -304,13 +308,6 @@ impl MapPermission {
         #[cfg(target_arch = "riscv64")]
         return self | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return self | MapPermission::PLVL | MapPermission::PLVH;
-    }
-
-    #[allow(unused)]
-    #[cfg(target_arch = "loongarch64")]
-    pub fn without_user(self) -> Self {
-        // 清除用户模式位，设置为内核模式 (PLV0)
-        self & !(MapPermission::PLVL | MapPermission::PLVH)
+        return self | MapPermission::PLVL;
     }
 }

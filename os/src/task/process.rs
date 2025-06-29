@@ -277,41 +277,6 @@ impl ProcessControlBlock {
             inner.heap_top = append;
         }
         inner.heap_top
-        // let heap_bottom = inner.heap_bottom;
-        // let new_brk = path;
-        // let heap_alloc = new_brk - heap_bottom as isize;
-        // if new_brk < heap_bottom as isize || heap_alloc as usize > HEAP_SIZE {
-        //     debug!("in change brk, return none");
-        //     return None;
-        // }
-        // let growed_vpn: VirtPageNum = ((new_brk as usize) / PAGE_SIZE + 1).into();
-        // let result = if new_brk < self.program_brk as isize {
-        //     area.vpn_range =
-        //         VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
-        //     while !area.data_frames.is_empty() {
-        //         let page = area.data_frames.pop_last().unwrap();
-        //         if page.0 < growed_vpn {
-        //             area.data_frames.insert(page.0, page.1);
-        //             break;
-        //         }
-        //         inner.memory_set.get_mut().page_table.unmap(page.0);
-        //     }
-        //     true
-        //     // inner
-        //     //     .memory_set
-        //     //     .shrink_to(VirtAddr(heap_bottom), VirtAddr(new_brk as usize))
-        // } else {
-        //     area.vpn_range =
-        //         VPNRange::new((heap_bottom / PAGE_SIZE).into(), (new_brk as usize).into());
-        //     true
-        // };
-        // if result {
-        //     debug!("to modify self brk,new brk is :{}", new_brk);
-        //     self.program_brk = new_brk as usize;
-        //     self.program_brk
-        // } else {
-        //     -1
-        // }
     }
     /// new process from elf file
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
@@ -606,7 +571,7 @@ impl ProcessControlBlock {
         #[cfg(target_arch = "loongarch64")]
         {
             trap_cx.x[4] = args_len;
-            trap_cx.x[5] = argv_base; // maybe, or user_sp + 8
+            trap_cx.x[5] = argv_base;
             trap_cx.x[6] = env_base;
             trap_cx.x[7] = aux_base;
         }
@@ -625,7 +590,7 @@ impl ProcessControlBlock {
             // Pgdl::read().set_val(pgd).write(); //设置新的页基址
             pgdl::set_base(pgd); //设置新的页基址
         }
-        debug!("in pcb, exec ok");
+        debug!("(ProecessControlBlock, exec) return, ok");
     }
 
     /// Only support processes with a single thread.
@@ -783,43 +748,25 @@ impl ProcessControlBlock {
             child_inner.tasks.push(Some(Arc::clone(&task)));
             drop(child_inner);
 
-            // modify trap context of new_task, because it returns immediately after switching
-            #[cfg(target_arch = "riscv64")]
-            let task_inner = task.inner_exclusive_access();
-
-            // we do not have to move to next instruction since we have done it before
-            // for child process, fork returns 0
             #[cfg(target_arch = "riscv64")]
             {
+                let task_inner = task.inner_exclusive_access();
                 let trap_cx = task_inner.get_trap_cx();
                 trap_cx.x[10] = 0;
                 trap_cx.kernel_sp = task.kstack.get_top();
+                drop(task_inner);
             }
+            
             #[cfg(target_arch = "loongarch64")]
             {
-                let trap_cx = task_inner.get_trap_cx();
-                trap_cx.x[4] = 0;
-            }
-            // modify kstack_top in trap_cx of this thread
-
-            // #[cfg(target_arch = "riscv64")]
-            // {
-            //     let trap_cx = task_inner.get_trap_cx();
-            //     trap_cx.kernel_sp = task.kstack.get_top();
-            // }
-
-            #[cfg(target_arch = "loongarch64")]
-            let mut task_inner = task.inner_exclusive_access();
-            #[cfg(target_arch = "loongarch64")]
-            {
+                let mut kstack = &mut task.inner_exclusive_access().kstack;
                 // 修改trap_cx的内容，使其保持与父进程相同
                 // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
-                task_inner
-                    .kstack
-                    .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+                let trap_cx = kstack.get_trap_cx();
+                trap_cx.x[4] = 0; // a0, the same with
+                kstack.copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
             }
-
-            drop(task_inner);
+            
             insert_into_pid2process(child.getpid(), Arc::clone(&child));
             // add this thread to scheduler
             add_task(task);
