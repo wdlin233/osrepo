@@ -378,6 +378,10 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if fd == usize::MAX {
+        // info!(
+        //     "[sys_mmap] fd is MAX, addr={:#x}, len={:#x}, permission={:?}, flags={:?}",
+        //     addr, len, permission, flags
+        // );
         let ret = inner
             .memory_set
             .mmap(addr, len, permission, flags, None, usize::MAX);

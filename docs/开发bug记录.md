@@ -324,6 +324,30 @@ if (array == MAP_FAILED) {
 
 但不是很确定 LA 下的 `LoadPageFault` 和 `FetchPageFault` 是否也需要 COW 的处理，也没什么资料能佐证这一点，虽然测例通过了...会是 LA 的 TLB 重填中遇到的一些页面权限的问题吗？不是很确定架构上是否存在着这个差异，感觉代码也写的没什么问题.
 
+## 
+
+```shell
+[34m[ INFO] ##### syscall with id 222 #####[0m
+[32m[DEBUG] [sys_mmap] addr=0x4d228000, len=0x4000, port=0x0, flags=0x32, fd=18446744073709551615, off=0x0[0m
+[32m[DEBUG] (MemorySetInner, mmap) addr:0x4d228000, len:16384[0m
+[32m[DEBUG] (MemorySetInner, mprotect) start_vpn:0x1348a, end_vpn:0x1348b, map_perm:NX | NR | PLVL | PLVH[0m
+[34m[ INFO] ##### syscall with id 222 #####[0m
+[32m[DEBUG] [sys_mmap] addr=0x0, len=0x4000, port=0x3, flags=0x22, fd=18446744073709551615, off=0x0[0m
+[32m[DEBUG] (MemorySetInner, mmap) addr:0x0, len:16384[0m
+[34m[ INFO] (MemorySetInner, find_insert_addr) hint = 0x4a23c000, size = 16384[0m
+[34m[ INFO] (MemorySetInner, find_insert_addr) start_vpn = 0x1288e, end_vpn = 0x1288f, start_va = 0x4a238000[0m
+[32m[DEBUG] (MemorySetInner, mmap) start_va:0x4a238000,end_va:0x4a23c000[0m
+[32m[DEBUG] MapArea::new_mmap: 0x4a238000 - 0x4a23c000, offset: 18446744073709551615, flags: MAP_PRIVATE | MAP_ANONYMOUS[0m
+[34m[ INFO] badv: 0x4a238000[0m
+[34m[ INFO] [kernel] trap_handler: Exception(StorePageFault) at 0x4a238000 as virtadd[0m
+[34m[ INFO] [kernel] trap_handler: Exception(StorePageFault) at 0x1288e as vpn[0m
+[34m[ INFO] badv: 0x4a238000[0m
+[34m[ INFO] [kernel] trap_handler: Exception(StorePageFault) at 0x4a238000 as virtadd[0m
+[34m[ INFO] [kernel] trap_handler: Exception(StorePageFault) at 0x1288e as vpn[0m
+[34m[ INFO] cow_page_fault: scause = Exception(StorePageFault)[0m
+[34m[ INFO] badv: 0x4a238000[0m
+```
+
 # Optimization
 
 - [x] 修改 `extern "C" {fn stext(); ...}`，现在 RV 的部分在 `memory_set.rs` 而 LA 的部分在 `info.rs`.

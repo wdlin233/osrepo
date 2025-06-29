@@ -32,16 +32,16 @@ const SYSCALL_LS: usize = 1040; //list files in a directory
 
 global_asm!(include_str!("syscall.asm"));
 
-pub fn syscall(id: usize, args0: usize, args1: usize, args2: usize) -> isize {
+pub fn syscall(id: usize, args0: usize, args1: usize, args2: usize, args3: usize, args4: usize) -> isize {
     extern "C" {
-        fn do_syscall(id: usize, args0: usize, args1: usize, args2: usize) -> isize;
+        fn do_syscall(id: usize, args0: usize, args1: usize, args2: usize, args3: usize, args4: usize) -> isize;
     }
-    unsafe { do_syscall(id, args0, args1, args2) }
+    unsafe { do_syscall(id, args0, args1, args2, args3, args4) }
 }
 pub fn sys_busyboxsh() -> isize {
     syscall(
         SYSCALL_EXEC,
-        "/busybox\0".as_ptr() as usize,
+        "/musl/busybox\0".as_ptr() as usize,
         [
             "busybox\0".as_ptr() as isize,
             "sh\0".as_ptr() as isize,
@@ -53,38 +53,40 @@ pub fn sys_busyboxsh() -> isize {
         ]
         .as_ptr() as usize,
         0,
+        0,
+        0,
     )
 }
 pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
-    syscall(SYSCALL_READ, fd, buffer.as_mut_ptr() as usize, buffer.len())
+    syscall(SYSCALL_READ, fd, buffer.as_mut_ptr() as usize, buffer.len(), 0, 0)
 }
 
 pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
-    syscall(SYSCALL_WRITE, fd, buffer.as_ptr() as usize, buffer.len())
+    syscall(SYSCALL_WRITE, fd, buffer.as_ptr() as usize, buffer.len(), 0, 0)
 }
 
 pub fn sys_exit(exit_code: i32) -> ! {
-    syscall(SYSCALL_EXIT, exit_code as usize, 0, 0);
+    syscall(SYSCALL_EXIT, exit_code as usize, 0, 0, 0, 0);
     panic!("sys_exit called");
 }
 
 pub fn sys_yield() -> isize {
-    syscall(SYSCALL_YIELD, 0, 0, 0)
+    syscall(SYSCALL_YIELD, 0, 0, 0, 0, 0)
 }
 
 pub fn sys_get_time() -> isize {
-    syscall(SYSCALL_GET_TIME, 0, 0, 0)
+    syscall(SYSCALL_GET_TIME, 0, 0, 0, 0, 0)
 }
 
 pub fn sys_getpid() -> isize {
-    syscall(SYSCALL_GETPID, 0, 0, 0)
+    syscall(SYSCALL_GETPID, 0, 0, 0, 0, 0)
 }
 
 /// 功能：当前进程 fork 出来一个子进程。
 /// 返回值：对于子进程返回 0，对于当前进程则返回子进程的 PID 。
 /// syscall ID：220
 pub fn sys_fork() -> isize {
-    syscall(SYSCALL_FORK, 0, 0, 0)
+    syscall(SYSCALL_FORK, 0, 0, 0, 0, 0)
 }
 /// 功能：将当前进程的地址空间清空并加载一个特定的可执行文件，
 /// 返回用户态后开始它的执行。 参数：path 给出了要加载的可执行文件的名字；
@@ -97,6 +99,7 @@ pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
         path.as_ptr() as usize,
         args.as_ptr() as usize,
         0,
+        0, 0
     )
 }
 
@@ -107,7 +110,7 @@ pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
 /// -1；否则如果要等待的子进程均未结束则返回 -2； 否则返回结束的子进程的进程
 /// ID。 syscall ID：260
 pub fn sys_waitpid(pid: isize, exit_code: *mut i32) -> isize {
-    syscall(SYSCALL_WAITPID, pid as usize, exit_code as usize, 0)
+    syscall(SYSCALL_WAITPID, pid as usize, exit_code as usize, 0, 0, 0)
 }
 
 /// 功能：打开一个常规文件，并返回可以访问它的文件描述符。
@@ -117,7 +120,7 @@ pub fn sys_waitpid(pid: isize, exit_code: *mut i32) -> isize {
 /// -1，否则返回打开常规文件的文件描述符。可能的错误原因是：文件不存在。 syscall
 /// ID：56
 pub fn sys_open(path: &str, flags: u32) -> isize {
-    syscall(SYSCALL_OPEN, path.as_ptr() as usize, flags as usize, 0)
+    syscall(SYSCALL_OPEN, path.as_ptr() as usize, flags as usize, 0, 0, 0)
 }
 
 /// 功能：当前进程关闭一个文件。
@@ -125,7 +128,7 @@ pub fn sys_open(path: &str, flags: u32) -> isize {
 /// 返回值：如果成功关闭则返回 0 ，否则返回 -1
 /// 。可能的出错原因：传入的文件描述符并不对应一个打开的文件。
 pub fn sys_close(fd: usize) -> isize {
-    syscall(SYSCALL_CLOSE, fd, 0, 0)
+    syscall(SYSCALL_CLOSE, fd, 0, 0, 0, 0)
 }
 
 /// 功能：为当前进程打开一个管道。
@@ -134,7 +137,7 @@ pub fn sys_close(fd: usize) -> isize {
 /// 返回值：如果出现了错误则返回 -1，否则返回 0
 /// 。可能的错误原因是：传入的地址不合法。 syscall ID：59
 pub fn sys_pipe(pipe: &mut [usize]) -> isize {
-    syscall(SYSCALL_PIPE, pipe.as_mut_ptr() as usize, 0, 0)
+    syscall(SYSCALL_PIPE, pipe.as_mut_ptr() as usize, 0, 0, 0, 0)
 }
 
 /// 功能：将进程中一个已经打开的文件复制一份并分配到一个新的文件描述符中。
@@ -143,71 +146,71 @@ pub fn sys_pipe(pipe: &mut [usize]) -> isize {
 /// 可能的错误原因是：传入的 fd 并不对应一个合法的已打开文件。
 /// syscall ID：24
 pub fn sys_dup(fd: usize) -> isize {
-    syscall(SYSCALL_DUP, fd, 0, 0)
+    syscall(SYSCALL_DUP, fd, 0, 0, 0, 0)
 }
 
 // 将某信号发送给某进程
 // pid：进程pid
 // signal：信号的整数码
 pub fn sys_kill(pid: usize, signal: i32) -> isize {
-    syscall(SYSCALL_KILL, pid, signal as usize, 0)
+    syscall(SYSCALL_KILL, pid, signal as usize, 0, 0, 0)
 }
 
 /// 功能：当前进程创建一个新的线程
 /// 参数：entry 表示线程的入口函数地址
 /// 参数：arg：表示线程的一个参数
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
-    syscall(SYSCALL_THREAD_CREATE, entry, arg, 0)
+    syscall(SYSCALL_THREAD_CREATE, entry, arg, 0, 0, 0)
 }
 /// 参数：tid表示线程id
 /// 返回值：如果线程不存在，返回-1；如果线程还没退出，返回-2；其他情况下，
 /// 返回结束线程的退出码
 pub fn sys_gettid() -> isize {
-    syscall(SYSCALL_GETTID, 0, 0, 0)
+    syscall(SYSCALL_GETTID, 0, 0, 0, 0, 0)
 }
 
 pub fn sys_waittid(tid: usize) -> isize {
-    syscall(SYSCALL_WAITTID, tid, 0, 0)
+    syscall(SYSCALL_WAITTID, tid, 0, 0, 0, 0)
 }
 
 pub fn sys_sleep(ms: usize) -> isize {
-    syscall(SYSCALL_SLEEP, ms, 0, 0)
+    syscall(SYSCALL_SLEEP, ms, 0, 0, 0, 0)
 }
 
 pub fn sys_mutex_create(blocking: bool) -> isize {
-    syscall(SYSCALL_MUTEX_CREATE, blocking as usize, 0, 0)
+    syscall(SYSCALL_MUTEX_CREATE, blocking as usize, 0, 0, 0, 0)
 }
 pub fn sys_mutex_lock(id: usize) -> isize {
-    syscall(SYSCALL_MUTEX_LOCK, id, 0, 0)
+    syscall(SYSCALL_MUTEX_LOCK, id, 0, 0, 0, 0)
 }
 pub fn sys_mutex_unlock(id: usize) -> isize {
-    syscall(SYSCALL_MUTEX_UNLOCK, id, 0, 0)
+    syscall(SYSCALL_MUTEX_UNLOCK, id, 0, 0, 0, 0)
 }
 
 pub fn sys_semaphore_create(res_count: usize) -> isize {
-    syscall(SYSCALL_SEMAPHORE_CREATE, res_count, 0, 0)
+    syscall(SYSCALL_SEMAPHORE_CREATE, res_count, 0, 0, 0, 0)
 }
 
 pub fn sys_semaphore_up(sem_id: usize) -> isize {
-    syscall(SYSCALL_SEMAPHORE_UP, sem_id, 0, 0)
+    syscall(SYSCALL_SEMAPHORE_UP, sem_id, 0, 0, 0, 0)
 }
 
 pub fn sys_semaphore_down(sem_id: usize) -> isize {
-    syscall(SYSCALL_SEMAPHORE_DOWN, sem_id, 0, 0)
+    syscall(SYSCALL_SEMAPHORE_DOWN, sem_id, 0, 0, 0, 0)
 }
 
 pub fn sys_condvar_create(_arg: usize) -> isize {
-    syscall(SYSCALL_CONDVAR_CREATE, _arg, 0, 0)
+    syscall(SYSCALL_CONDVAR_CREATE, _arg, 0, 0, 0, 0)
 }
 
 pub fn sys_condvar_signal(condvar_id: usize) -> isize {
-    syscall(SYSCALL_CONDVAR_SIGNAL, condvar_id, 0, 0)
+    syscall(SYSCALL_CONDVAR_SIGNAL, condvar_id, 0, 0, 0, 0)
 }
 
 pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
-    syscall(SYSCALL_CONDVAR_WAIT, condvar_id, mutex_id, 0)
+    syscall(SYSCALL_CONDVAR_WAIT, condvar_id, mutex_id, 0, 0, 0)
 }
 
 pub fn sys_ls() -> isize {
-    syscall(SYSCALL_LS, 0, 0, 0)
+    syscall(SYSCALL_LS, 0, 0, 0, 0, 0)
 }

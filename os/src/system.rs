@@ -72,6 +72,7 @@ pub fn change_to_c(source: &mut [u8;65],ch: &[u8]){
         debug!("change to c ing...");
         for i in 0..size {
             source[i] = ch[i];
+            // info!("source[{}] = {}", i, source[i]);
         }
         for i in size..65 {
             source[i] = 0;

@@ -240,7 +240,7 @@ impl ProcessControlBlock {
         let mut inner = self.inner_exclusive_access();
 
         debug!(
-            "self.brk = {},self.bottom = {}",
+            "self.brk = {:#x},self.bottom = {:#x}",
             inner.heap_top, inner.heap_bottom
         );
         if grow == 0 {
@@ -258,7 +258,7 @@ impl ProcessControlBlock {
         if grow < 0 {
             let shrink = (inner.heap_top as isize + grow) as usize;
             if shrink < inner.heap_bottom {
-                debug!("user heap downflow at : {}", shrink);
+                debug!("user heap downflow at : {:#x}", shrink);
                 return 2;
             }
             let shrink_vpn: VirtPageNum = (shrink / PAGE_SIZE + 1).into();
@@ -268,12 +268,12 @@ impl ProcessControlBlock {
             inner.heap_top = shrink;
         } else {
             let append = inner.heap_top + grow as usize;
-            debug!("in pcb brk, append is : {}", append);
+            debug!("in pcb brk, append is : {:#x}", append);
             let append_vpn: VirtPageNum = (append / PAGE_SIZE + 1).into();
-            debug!("in pcb brk, append vpn is : {}", append_vpn.0);
+            debug!("in pcb brk, append vpn is : {:#x}", append_vpn.0);
             let hp_top_vpn: VirtPageNum = ((inner.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
             if append_vpn >= hp_top_vpn {
-                debug!("user heap overflow at : {}", append);
+                debug!("user heap overflow at : {:#x}", append);
                 return 2;
             }
             debug!("in pcb brk, to append to");

@@ -7,9 +7,13 @@ do_syscall:
     move $t1,$a1
     move $t2,$a2
     move $t3,$a3
+    move $t4,$a4
+    move $t5,$a5
     move $a7, $t0
     move $a0, $t1
     move $a1, $t2
     move $a2, $t3
+    move $a3, $t4
+    move $a4, $t5
     syscall 0
     jr $ra
