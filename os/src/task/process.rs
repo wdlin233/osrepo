@@ -16,7 +16,9 @@ use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
-use crate::mm::{translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr, VirtPageNum};
+use crate::mm::{
+    flush_tlb, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr, VirtPageNum,
+};
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::task::id::tid_dealloc;
@@ -261,6 +263,8 @@ impl ProcessControlBlock {
             }
             let shrink_vpn: VirtPageNum = (shrink / PAGE_SIZE + 1).into();
             area.shrink_to(&mut inner.memory_set.get_mut().page_table, shrink_vpn);
+            #[cfg(target_arch = "loongarch64")]
+            flush_tlb();
             inner.heap_top = shrink;
         } else {
             let append = inner.heap_top + grow as usize;
@@ -274,6 +278,8 @@ impl ProcessControlBlock {
             }
             debug!("in pcb brk, to append to");
             area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
+            #[cfg(target_arch = "loongarch64")]
+            flush_tlb();
             inner.heap_top = append;
         }
         inner.heap_top
@@ -795,11 +801,6 @@ impl ProcessControlBlock {
                 trap_cx.x[10] = 0;
                 trap_cx.kernel_sp = task.kstack.get_top();
             }
-            #[cfg(target_arch = "loongarch64")]
-            {
-                let trap_cx = task_inner.get_trap_cx();
-                trap_cx.x[4] = 0;
-            }
             // modify kstack_top in trap_cx of this thread
 
             // #[cfg(target_arch = "riscv64")]
@@ -812,6 +813,8 @@ impl ProcessControlBlock {
             let mut task_inner = task.inner_exclusive_access();
             #[cfg(target_arch = "loongarch64")]
             {
+                let trap_cx = task_inner.get_trap_cx();
+                trap_cx.x[4] = 0;
                 // 修改trap_cx的内容，使其保持与父进程相同
                 // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
                 task_inner

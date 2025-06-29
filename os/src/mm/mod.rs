@@ -32,8 +32,8 @@ pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
 pub use memory_set::{MemorySet, MemorySetInner};
 use page_table::PTEFlags;
 pub use page_table::{
-    safe_translated_byte_buffer, translated_byte_buffer, translated_ref, translated_refmut,
-    translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
+    flush_tlb, safe_translated_byte_buffer, translated_byte_buffer, translated_ref,
+    translated_refmut, translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
 };
 
 #[cfg(target_arch = "loongarch64")]

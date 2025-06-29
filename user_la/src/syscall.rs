@@ -42,6 +42,23 @@ pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
     syscall(SYSCALL_READ, fd, buffer.as_mut_ptr() as usize, buffer.len())
 }
 
+pub fn sys_busyboxsh() -> isize {
+    syscall(
+        SYSCALL_EXEC,
+        "/busybox\0".as_ptr() as usize,
+        [
+            "busybox\0".as_ptr() as isize,
+            "sh\0".as_ptr() as isize,
+            "run-all.sh\0".as_ptr() as isize,
+            //"./test-ltp.sh\0".as_ptr() as isize,
+            //"ltp/testcases/bin/abort01\0".as_ptr() as isize,
+            // "libctest_testcode.sh\0".as_ptr() as isize,
+            0,
+        ]
+        .as_ptr() as usize,
+        0,
+    )
+}
 pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
     syscall(SYSCALL_WRITE, fd, buffer.as_ptr() as usize, buffer.len())
 }

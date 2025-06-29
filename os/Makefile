@@ -1,5 +1,5 @@
 # Building, riscv64 or loongarch64
-ARCH := riscv64
+ARCH := loongarch64
 MODE := release
 
 # Building mode argument
@@ -100,8 +100,6 @@ fs-img:
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part/
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
-	@sudo cp ../testcases/riscv64/busybox /mnt/image_part/
-	@sudo cp ../test-riscv/musl/* /mnt/image_part/
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else
