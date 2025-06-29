@@ -789,6 +789,7 @@ impl MemorySetInner {
                         mmap_write_page_fault(vpn.into(), &mut self.page_table, area);
                     }
                 }
+                flush_tlb();
             }
             return true;
         }

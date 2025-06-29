@@ -1,5 +1,5 @@
 # Building, riscv64 or loongarch64
-ARCH := riscv64
+ARCH := loongarch64
 MODE := release
 
 # Building mode argument
