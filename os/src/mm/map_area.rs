@@ -1,3 +1,6 @@
+#[cfg(target_arch = "loongarch64")]
+use core::iter::Map;
+
 use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
@@ -247,7 +250,7 @@ impl Default for MapPermission {
         #[cfg(target_arch = "riscv64")]
         return MapPermission::R | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return MapPermission::PLVL;
+        return MapPermission::PLVL | MapPermission::PLVH; // as PLV3, user mode
     }
 }
 
@@ -308,6 +311,6 @@ impl MapPermission {
         #[cfg(target_arch = "riscv64")]
         return self | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return self | MapPermission::PLVL;
+        return self | MapPermission::PLVL | MapPermission::PLVH;
     }
 }

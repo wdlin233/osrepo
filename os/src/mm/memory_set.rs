@@ -32,6 +32,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::error;
+#[cfg(target_arch = "loongarch64")]
+use core::iter::Map;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::*;
@@ -577,7 +579,7 @@ impl MemorySetInner {
         #[cfg(target_arch = "riscv64")]
         let perm = MapPermission::R | MapPermission::W | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        let perm = MapPermission::W | MapPermission::PLVL;
+        let perm = MapPermission::W | MapPermission::PLVL | MapPermission::PLVH; // PLV3, user mode
         memory_set.insert_framed_area(
             user_heap_bottom.into(),
             user_heap_top.into(),
@@ -614,7 +616,7 @@ impl MemorySetInner {
                 #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
                 #[cfg(target_arch = "loongarch64")]
-                let mut map_perm = MapPermission::PLVL;
+                let mut map_perm = MapPermission::PLVL | MapPermission::PLVH; // PLV3, user mode
                 let ph_flags = ph.flags();
                 #[cfg(target_arch = "riscv64")]
                 {
@@ -1176,10 +1178,6 @@ impl MemorySetInner {
         flush_tlb();
     }
     pub fn find_insert_addr(&self, hint: usize, size: usize) -> usize {
-        info!(
-            "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
-            hint, size
-        );
         info!(
             "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
             hint, size
