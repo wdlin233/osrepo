@@ -4,16 +4,18 @@
 #[macro_use]
 extern crate user_lib;
 
-use user_lib::{exec, fork, run_busyboxsh, sched_yield, wait};
+use user_lib::{exec, fork, run_basicsh, run_busyboxsh, sched_yield, wait};
 
 #[no_mangle]
 fn main() -> i32 {
     println!("[initproc] Init process started");
     if fork() == 0 {
         run_busyboxsh();
+        run_basicsh();
     } else {
         loop {
             let mut exit_code: i32 = 0;
+            let pid = wait(&mut exit_code);
             let pid = wait(&mut exit_code);
             if pid == -1 {
                 sched_yield();

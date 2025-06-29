@@ -154,6 +154,29 @@ pub fn sys_linkat(
     )
 }
 
+pub fn sys_basicsh() -> isize {
+    syscall6(
+        SYSCALL_EXEC,
+        [
+            "/musl/busybox\0".as_ptr() as usize,
+            [
+                "busybox\0".as_ptr() as isize,
+                "sh\0".as_ptr() as isize,
+                "basic_testcode.sh\0".as_ptr() as isize,
+                //"busybox_testcode.sh\0".as_ptr() as isize,
+                //"./test-ltp.sh\0".as_ptr() as isize,
+                //"ltp/testcases/bin/abort01\0".as_ptr() as isize,
+                // "libctest_testcode.sh\0".as_ptr() as isize,
+                0,
+            ]
+            .as_ptr() as usize,
+            0,
+            0,
+            0,
+            0,
+        ],
+    )
+}
 pub fn sys_busyboxsh() -> isize {
     syscall6(
         SYSCALL_EXEC,
@@ -162,7 +185,8 @@ pub fn sys_busyboxsh() -> isize {
             [
                 "busybox\0".as_ptr() as isize,
                 "sh\0".as_ptr() as isize,
-                "libctest_testcode.sh\0".as_ptr() as isize,
+                //"basic_testcode.sh\0".as_ptr() as isize,
+                "busybox_testcode.sh\0".as_ptr() as isize,
                 //"./test-ltp.sh\0".as_ptr() as isize,
                 //"ltp/testcases/bin/abort01\0".as_ptr() as isize,
                 // "libctest_testcode.sh\0".as_ptr() as isize,

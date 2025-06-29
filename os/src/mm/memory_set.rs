@@ -1174,6 +1174,10 @@ impl MemorySetInner {
             "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
             hint, size
         );
+        info!(
+            "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
+            hint, size
+        );
         let end_vpn = VirtAddr::from(hint).floor();
         let start_vpn = VirtAddr::from(hint - size).floor();
         let start_va: VirtAddr = start_vpn.into();
