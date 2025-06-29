@@ -116,7 +116,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             debug!("push busybox");
             argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
-            path = String::from("/musl/busybox");
+            path = String::from("/busybox");
         }
 
         //处理argv参数
