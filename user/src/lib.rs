@@ -168,8 +168,8 @@ bitflags! {
 }
 
 const AT_FDCWD: isize = -100;
-pub fn run_busyboxsh() -> isize {
-    sys_busyboxsh()
+pub fn run_busyboxsh(test: &str) -> isize {
+    sys_busyboxsh(test)
 }
 pub fn open(path: &str, flags: OpenFlags) -> isize {
     sys_openat(AT_FDCWD as usize, path, flags.bits, OpenFlags::RDWR.bits)

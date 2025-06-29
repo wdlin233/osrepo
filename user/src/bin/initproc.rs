@@ -4,26 +4,32 @@
 #[macro_use]
 extern crate user_lib;
 
-use user_lib::{exec, fork, run_busyboxsh, sched_yield, wait};
+const TESTS: &[&str] = &["busybox_testcode.sh\0", "basic_testcode.sh\0"];
+
+const TEST_NUM: usize = TESTS.len();
+
+use user_lib::{exec, fork, run_busyboxsh, sched_yield, waitpid};
 
 #[no_mangle]
-fn main() -> i32 {
-    println!("[initproc] Init process started");
-    if fork() == 0 {
-        run_busyboxsh();
-    } else {
-        loop {
-            let mut exit_code: i32 = 0;
-            let pid = wait(&mut exit_code);
-            if pid == -1 {
-                sched_yield();
-                continue;
-            }
-            println!(
-                "[initproc] Released a zombie process, pid={}, exit_code={}",
-                pid, exit_code,
-            );
+pub fn main() -> i32 {
+    let mut pids = [0; TEST_NUM];
+    for (i, &test) in TESTS.iter().enumerate() {
+        println!("Usertests: Running {}", test);
+        let pid = fork();
+        if pid == 0 {
+            run_busyboxsh(test);
+            panic!("unreachable!");
+        } else {
+            pids[i] = pid;
         }
+        let mut xstate: i32 = Default::default();
+        let wait_pid = waitpid(pids[i] as usize, &mut xstate, 0);
+        assert_eq!(pids[i], wait_pid);
+        println!(
+            "\x1b[32mUsertests: Test {} in Process {} exited with code {}\x1b[0m",
+            test, pids[i], xstate
+        );
     }
+    println!("[usertest] Basic usertests passed!");
     0
 }

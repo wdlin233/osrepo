@@ -40,7 +40,7 @@ const TESTS: &[&str] = &[
     "umount\0",
     "unlink\0",
 */
-const TESTS: &[&str] = &["run-all.sh\0"];
+const TESTS: &[&str] = &["basic_testcode.sh\0"];
 
 const TEST_NUM: usize = TESTS.len();
 
