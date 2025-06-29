@@ -39,37 +39,32 @@ mod board;
 
 #[macro_use]
 pub mod config;
+pub mod boot; // used to set up the initial environment
 pub mod drivers;
 pub mod fs;
+pub mod hal;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
+pub mod signal;
 pub mod sync;
 pub mod syscall;
 pub mod task;
 pub mod timer;
-pub mod hal;
-pub mod boot; // used to set up the initial environment
 pub mod utils;
-pub mod signal;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::{
+    hal::arch::info::{kernel_layout, print_machine_info},
     hal::trap::{enable_timer_interrupt, init},
     task::add_initproc,
-    hal::arch::info::{print_machine_info, kernel_layout},
 };
 pub mod system;
 pub mod users;
 
-use core::arch::global_asm;
+use crate::hal::{clear_bss, utils::console::CONSOLE};
 use config::FLAG;
-use crate::{
-    hal::{
-        clear_bss,
-        utils::console::CONSOLE,
-    }
-};
+use core::arch::global_asm;
 
 #[no_mangle]
 pub fn main(cpu: usize) -> ! {
@@ -81,11 +76,14 @@ pub fn main(cpu: usize) -> ! {
     log::error!("Logging init success");
     
     mm::init();
-    #[cfg(target_arch = "riscv64")] mm::remap_test();
+    #[cfg(target_arch = "riscv64")] 
+    mm::remap_test();
     hal::trap::init();
-    #[cfg(target_arch = "loongarch64")] print_machine_info();
+    #[cfg(target_arch = "loongarch64")] 
+    print_machine_info();
     hal::trap::enable_timer_interrupt();
-    #[cfg(target_arch = "riscv64")] timer::set_next_trigger();
+    #[cfg(target_arch = "riscv64")] 
+    timer::set_next_trigger();
 
     fs::list_apps();
     task::add_initproc();

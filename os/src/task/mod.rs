@@ -55,7 +55,7 @@ pub use task::{TaskControlBlock, TaskStatus};
 #[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;
 
-use core::arch::asm;
+use core::arch::{asm, global_asm};
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -223,17 +223,28 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 
+global_asm!(include_str!("initproc_rv.S"));
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
-    debug!("kernel: INITPROC is being initialized");
+    // debug!("kernel: INITPROC is being initialized");
 
-    let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
-        .expect("open initproc error!")
-        .file()
-        .expect("initproc can not be abs file!");
-    debug!("kernel: INITPROC opened successfully");
-    let elf_data = initproc.inode.read_all().unwrap();
-    let res = ProcessControlBlock::new(&elf_data);
-    res
+    // let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+    //     .expect("open initproc error!")
+    //     .file()
+    //     .expect("initproc can not be abs file!");
+    // debug!("kernel: INITPROC opened successfully");
+    // let elf_data = initproc.inode.read_all().unwrap();
+    // let res = ProcessControlBlock::new(&elf_data);
+    // res
+    unsafe {
+        extern "C" {
+            fn initproc_rv_start();
+            fn initproc_rv_end();
+        }
+        let start = initproc_rv_start as usize as *const usize as *const u8;
+        let len = initproc_rv_end as usize - initproc_rv_start as usize;
+        let data = core::slice::from_raw_parts(start, len);
+        ProcessControlBlock::new(data)
+    }
 });
 
 ///Add init process to the manager

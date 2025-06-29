@@ -168,8 +168,8 @@ bitflags! {
 }
 
 const AT_FDCWD: isize = -100;
-pub fn run_busyboxsh() -> isize {
-    sys_busyboxsh()
+pub fn run_busyboxsh(test: &str) -> isize {
+    sys_busyboxsh(test)
 }
 pub fn run_basicsh() -> isize {
     sys_basicsh()
