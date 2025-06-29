@@ -4,7 +4,7 @@
 #[macro_use]
 extern crate user_lib;
 
-const TESTS: &[&str] = &["busybox_testcode.sh\0", "basic_testcode.sh\0"];
+const TESTS: &[&str] = &["busybox_testcode.sh\0", "basic_testcode.sh\0",];
 
 const TEST_NUM: usize = TESTS.len();
 

@@ -93,10 +93,10 @@ fs-img:
 	-sudo cp ../testcases/musl/busybox /mnt/image_part/
 	-sudo mkdir -p /mnt/image_part/lib
 	-sudo cp ../testcases/musl/lib/* /mnt/image_part/lib/
-	-sudo cp ../testcases/musl/libctest_testcode.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/run-static.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/run-dynamic.sh /mnt/image_part/
+	-sudo cp ../testcases/musl/*.sh /mnt/image_part/
 	-sudo cp ../testcases/musl/*.exe /mnt/image_part/
+	-sudo mkdir -p /mnt/image_part/basic
+	-sudo cp -r ../testcases/musl/basic/* /mnt/image_part/basic/
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else ifeq ($(ARCH),loongarch64)
@@ -113,10 +113,10 @@ fs-img:
 	-sudo cp ../testcases/loongarch/musl/busybox /mnt/image_part2/
 	-sudo mkdir -p /mnt/image_part2/lib
 	-sudo cp ../testcases/loongarch/musl/lib/* /mnt/image_part2/lib/
-	-sudo cp ../testcases/loongarch/musl/libctest_testcode.sh /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/run-static.sh /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/run-dynamic.sh /mnt/image_part2/
+	-sudo cp ../testcases/loongarch/musl/*.sh /mnt/image_part2/
 	-sudo cp ../testcases/loongarch/musl/*.exe /mnt/image_part2/
+	-sudo mkdir -p /mnt/image_part2/basic
+	-sudo cp -r ../testcases/loongarch/musl/basic/* /mnt/image_part2/basic/
 	@sudo ls /mnt/image_part2/
 	@sudo umount /mnt/image_part2
 else

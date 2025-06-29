@@ -6,7 +6,7 @@ extern crate user_lib;
 
 use user_lib::{exec, fork, run_busyboxsh, wait, yield_};
 
-const TESTS: &[&str] = &["busybox_testcode.sh\0", "basic_testcode.sh\0"];
+const TESTS: &[&str] = &["busybox_testcode.sh\0","basic_testcode.sh\0",];
 
 const TEST_NUM: usize = TESTS.len();
 
