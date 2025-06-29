@@ -108,8 +108,8 @@ impl From<MmapProt> for MapPermission {
 #[cfg(target_arch = "loongarch64")]
 impl From<MmapProt> for MapPermission {
     fn from(prot: MmapProt) -> Self {
-        // 基础权限：设置用户态访问 (PLV=3) 和 RPLV 限制
-        let mut map_permission = MapPermission::PLVH | MapPermission::RPLV;
+        // 基础权限：设置用户态访问 (PLV=3)
+        let mut map_permission = MapPermission::PLVH | MapPermission::PLVL;
 
         // 读权限：PROT_READ 对应清除 NR 位 (可读)
         if prot.contains(MmapProt::PROT_READ) {

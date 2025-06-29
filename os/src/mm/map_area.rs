@@ -243,7 +243,7 @@ impl Default for MapPermission {
         #[cfg(target_arch = "riscv64")]
         return MapPermission::R | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
-        return MapPermission::PLVL | MapPermission::PLVH;
+        return MapPermission::PLVL | MapPermission::PLVH; // as PLV3, user mode
     }
 }
 

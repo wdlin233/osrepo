@@ -101,8 +101,12 @@ fs-img:
 	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
 	@sudo cp ../testcases/loongarch/musl/busybox /mnt/image_part/
-	@sudo cp ../testcases/loongarch/musl/busybox_testcode.sh /mnt/image_part/
-	@sudo cp ../testcases/loongarch/musl/busybox_cmd.txt /mnt/image_part/
+	@sudo cp ../testcases/loongarch/musl/*.sh /mnt/image_part/
+	@sudo cp ../testcases/loongarch/musl/*.txt /mnt/image_part/
+	@sudo mkdir -p /mnt/image_part/lib
+	@sudo cp -r ../testcases/loongarch/musl/lib/* /mnt/image_part/lib/
+	@sudo mkdir -p /mnt/image_part/basic
+	@sudo cp -r ../testcases/loongarch/musl/basic/* /mnt/image_part/lib/
 	@sudo ls /mnt/image_part/
 	@sudo umount /mnt/image_part
 else
