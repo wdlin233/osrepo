@@ -1,5 +1,5 @@
 # Building, riscv64 or loongarch64
-ARCH := loongarch64
+ARCH := riscv64
 MODE := release
 
 # Building mode argument
@@ -89,7 +89,7 @@ fs-img:
 	@sudo cp ../user/build/elf/* /mnt/image_part/
 	@sudo cp -r $(TESTSUITS) /mnt/image_part/
 	-sudo cp ../testcases/musl/busybox_testcode.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox_cmd.txt /mnt/imagecases
+	-sudo cp ../testcases/musl/busybox_cmd.txt /mnt/image_part/
 	-sudo cp ../testcases/musl/busybox /mnt/image_part/
 	-sudo mkdir -p /mnt/image_part/lib
 	-sudo cp ../testcases/musl/lib/* /mnt/image_part/lib/

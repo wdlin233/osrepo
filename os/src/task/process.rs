@@ -762,15 +762,6 @@ impl ProcessControlBlock {
                 trap_cx.kernel_sp = task.kstack.get_top();
             }
             // modify kstack_top in trap_cx of this thread
-
-            // #[cfg(target_arch = "riscv64")]
-            // {
-            //     let trap_cx = task_inner.get_trap_cx();
-            //     trap_cx.kernel_sp = task.kstack.get_top();
-            // }
-
-            #[cfg(target_arch = "loongarch64")]
-            let mut task_inner = task.inner_exclusive_access();
             #[cfg(target_arch = "loongarch64")]
             {
                 let mut kstack = &mut task.inner_exclusive_access().kstack;

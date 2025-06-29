@@ -640,7 +640,13 @@ impl MemorySetInner {
                         map_perm |= MapPermission::NX;
                     }
                 }
-                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
+                #[cfg(target_arch = "riscv64")]
+                let map_area = MapArea::new(
+                    start_va, 
+                    end_va, 
+                    MapType::Framed,
+                    map_perm, 
+                    MapAreaType::Elf);
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
 
