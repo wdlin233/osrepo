@@ -41,7 +41,7 @@ pub use manager::{
     add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
     wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
 };
-pub use process::{CloneFlags, ProcessControlBlock, ProcessControlBlockInner, Tms, TmsInner};
+pub use process::{CloneFlags, ProcessControlBlock, ProcessControlBlockInner, Tms, TmsInner, RobustList};
 #[cfg(target_arch = "loongarch64")]
 pub use processor::current_trap_addr;
 #[cfg(target_arch = "riscv64")]

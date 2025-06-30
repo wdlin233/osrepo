@@ -48,8 +48,8 @@ impl UTSname {
     pub fn get(&mut self){
         let sn = "Substium";
         let nn = "rcos";
-        let re = "0.1.0";
-        let v = "0.1.0-dev (2025.06.30) risc-v";
+        let re = "5.8.0";
+        let v = "5.8.0-dev (2025.06.30) risc-v";
         let ma = "RISC-V";
         let dn = "";
         change_to_c(&mut self.sysname,sn.as_bytes());

@@ -197,7 +197,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
-        SYSCALL_SETROBUSTLIST => sys_setrobustlist(),
+        SYSCALL_SETROBUSTLIST => sys_set_robust_list(args[0], args[1]),
         SYSCALL_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
         SYSCALL_SYSINFO => sys_sysinfo(args[0] as *mut SysInfo),
         SYSCALL_READV => sys_readv(args[0], args[1] as *const u8, args[2]),
