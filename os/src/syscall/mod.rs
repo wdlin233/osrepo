@@ -64,6 +64,8 @@ pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_EXIT_GROUP: usize = 94;
 /// set_tid_address syscall
 pub const SYSCALL_TID_ADDRESS: usize = 96;
+/// set tobustlist syscall
+pub const SYSCALL_SETROBUSTLIST: usize = 99;
 /// sleep syscall
 pub const SYSCALL_SLEEP: usize = 101;
 /// clock_get_time syscall
@@ -187,13 +189,15 @@ use crate::{
     fs::{Kstat, Statx},
     signal::{SigAction, SigInfo, SignalFlags},
     system::UTSname,
-    task::TmsInner, timer::TimeSpec,
+    task::TmsInner,
+    timer::TimeSpec,
 };
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SETROBUSTLIST => sys_setrobustlist(),
         SYSCALL_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
         SYSCALL_SYSINFO => sys_sysinfo(args[0] as *mut SysInfo),
         SYSCALL_READV => sys_readv(args[0], args[1] as *const u8, args[2]),

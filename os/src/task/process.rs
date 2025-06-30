@@ -94,6 +94,22 @@ pub struct ProcessControlBlockInner {
     pub heap_bottom: usize,
     //heap top
     pub heap_top: usize,
+    //
+    pub robust_list: RobustList,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RobustList {
+    pub head: usize,
+    pub len: usize,
+}
+
+impl RobustList {
+    // from strace
+    pub const HEAD_SIZE: usize = 24;
+    pub fn default() -> Self {
+        RobustList { head: 0, len: 24 }
+    }
 }
 
 ///record process times
@@ -326,6 +342,7 @@ impl ProcessControlBlock {
                     sig_pending: SignalFlags::empty(),
                     heap_bottom,
                     heap_top: heap_bottom,
+                    robust_list: RobustList::default(),
                 })
             },
         });
@@ -689,6 +706,7 @@ impl ProcessControlBlock {
                         sig_table,
                         heap_bottom: parent.heap_bottom,
                         heap_top: parent.heap_top,
+                        robust_list: RobustList::default(),
                     })
                 },
             });
@@ -730,6 +748,7 @@ impl ProcessControlBlock {
                         heap_id: parent.heap_id,
                         heap_bottom: parent.heap_bottom,
                         heap_top: parent.heap_top,
+                        robust_list: RobustList::default(),
                     })
                 },
             });

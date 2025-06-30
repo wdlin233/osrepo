@@ -537,3 +537,14 @@ pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
     memory_set.mprotect(start_vpn, end_vpn, map_perm);
     return 0;
 }
+
+pub fn sys_set_robust_list(head: usize, len: usize) -> isize {
+    if len != crate::task::RobustList::HEAD_SIZE {
+        return SysErrNo::EINVAL as isize;
+    }
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    inner.robust_list.head = head;
+    //inner.robust_list.len = len;
+    0
+}
