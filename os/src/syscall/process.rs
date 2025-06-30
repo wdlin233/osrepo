@@ -109,6 +109,8 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let token = inner.get_user_token();
     unsafe {
         //debug!("in unsafe");
+        debug!("the pathp is :{:?}", pathp);
+        debug!("the path is :{}",  translated_str(token, pathp));
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);
         if path.ends_with(".sh") {

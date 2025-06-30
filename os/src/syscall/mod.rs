@@ -54,6 +54,8 @@ pub const SYSCALL_READV: usize = 65;
 pub const SYSCALL_WRITEV: usize = 66;
 /// sendfile syscall
 pub const SYSCALL_SENDFILE: usize = 71;
+/// read link at
+pub const SYSCALL_READLINKAT: usize = 78;
 /// fstat syscall
 pub const SYSCALL_FSTAT: usize = 80;
 /// utimesat sysall
@@ -76,6 +78,8 @@ pub const SYSCALL_LOG: usize = 116;
 pub const SYSCALL_YIELD: usize = 124;
 /// kill syscall
 pub const SYSCALL_KILL: usize = 129;
+/// tgkill
+//pub const SYSCALL_TGKILL: usize = 131;
 /*
 /// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
@@ -198,6 +202,12 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
         SYSCALL_SETROBUSTLIST => sys_set_robust_list(args[0], args[1]),
+        SYSCALL_READLINKAT => sys_readlinkat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *const u8,
+            args[3],
+        ),
         SYSCALL_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
         SYSCALL_SYSINFO => sys_sysinfo(args[0] as *mut SysInfo),
         SYSCALL_READV => sys_readv(args[0], args[1] as *const u8, args[2]),

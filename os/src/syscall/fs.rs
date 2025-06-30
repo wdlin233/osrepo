@@ -12,7 +12,7 @@ use crate::mm::{
     translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
 use crate::syscall::{
-    process, FaccessatFileMode, FaccessatMode, FcntlCmd, Iovec, PollEvents, PollFd, RLimit, TimeVal
+    process, FaccessatFileMode, FaccessatMode, FcntlCmd, Iovec, PollEvents, PollFd, RLimit, TimeVal,
 };
 use crate::task::{
     block_current_and_run_next, current_process, current_user_token, suspend_current_and_run_next,
@@ -25,6 +25,37 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+
+pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: usize) -> isize {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    //let path = data_flow!({ c_ptr_to_string(path) });
+    let path = translated_str(token, path);
+
+    // assert!(path == "/proc/self/exe", "unsupported other path!");
+    if path == "/proc/self/exe" {
+        debug!("fs_info={}", inner.fs_info.exe());
+        let size_needed = inner.fs_info.exe_as_bytes().len();
+        let mut buffer = UserBuffer::new(vec![unsafe{
+            core::slice::from_raw_parts_mut(buf as *mut _, size_needed)
+        }]);
+        let res = buffer.write(inner.fs_info.exe_as_bytes());
+        return res as isize;
+    }
+    // debug!("[sys_read_linkat] got path : {}", inner.fs_info.get_cwd());
+    let abs_path = inner.get_abs_path(dirfd, &path);
+    let mut linkbuf = vec![0u8; bufsize];
+    let file = open(&abs_path, OpenFlags::empty(), NONE_MODE).unwrap().file().unwrap();
+    let readcnt = file.inode.read_link(&mut linkbuf, bufsize).unwrap_or(0);
+    // let mut buffer = UserBuffer::new(translated_byte_buffer(token, buf, readcnt).unwrap());
+    let mut buffer =
+        UserBuffer::new_single(unsafe { core::slice::from_raw_parts_mut(buf as *mut _, readcnt) });
+    buffer.write(&linkbuf);
+    readcnt as isize
+
+    // Ok(res)
+}
 
 //lseek
 pub fn sys_lseek(fd: usize, offset: isize, whence: usize) -> isize {
@@ -1168,7 +1199,6 @@ pub fn sys_utimensat(dirfd: isize, path: *const u8, times: *const TimeVal, _flag
         .unwrap();
     return 0;
 }
-
 
 pub fn sys_prlimit(
     pid: usize,
