@@ -597,7 +597,7 @@ pub struct UserBuffer {
 impl UserBuffer {
     ///Create a `UserBuffer` by parameter
     pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
-        debug!("UserBuffer::new: buffers: {:?}", buffers);
+        //debug!("UserBuffer::new: buffers: {:?}", buffers);
         Self { buffers }
     }
     pub fn new_single(buffer: &'static mut [u8]) -> Self {

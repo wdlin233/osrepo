@@ -61,14 +61,8 @@ endif
 #                        -netdev user,id=net0,hostfwd=tcp::5555-:5555,hostfwd=udp::5555-:5555  \
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
-ifeq ($(ARCH),riscv64)
-build: env kernel config
-else ifeq ($(ARCH),loongarch64)
-build: env kernel config
-else
-	$(error "ARCH" must be one of "riscv64" or "loongarch64")
-endif
 
+build: env kernel config
 
 env:
 	(rustup target list | grep "$(TARGET) (installed)") || rustup target add $(TARGET)

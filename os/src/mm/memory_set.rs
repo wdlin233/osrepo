@@ -688,7 +688,15 @@ impl MemorySetInner {
         memory_set.map_trampoline();
         // copy data sections/trap_context/user_stack
         for area in user_space.areas.iter() {
+            if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
+                continue;
+            }
             let new_area = MapArea::from_another(area);
+            if area.area_type == MapAreaType::Mmap
+                && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+            {
+                GROUP_SHARE.lock().add_area(new_area.groupid);
+            }
             memory_set.push(new_area, None);
             // copy data from another space
             for vpn in area.vpn_range {

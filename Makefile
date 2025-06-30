@@ -40,9 +40,7 @@ run:
 else ifeq ($(ARCH), loongarch64)
 run:
 	qemu-system-loongarch64 -kernel $(KERNEL) -m 1G -nographic -smp 1 -drive file=$(FS_IMG),if=none,format=raw,id=x0  \
-					-device virtio-blk-pci,drive=x0,bus=virtio-mmio-bus.0 -no-reboot  -device virtio-net-pci,netdev=net0 \
-					id=net0,hostfwd=tcp::5555-:5555,hostfwd=udp::5555-:5555  \
-					-drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
+					-device virtio-blk-pci,drive=x0, -no-reboot
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif

@@ -23,14 +23,16 @@ mod task;
 use self::id::TaskUserRes;
 //use crate::drivers::BLOCK_DEVICE;
 //use crate::fs::ext4::ROOT_INO;
-use crate::fs::{open, OpenFlags, NONE_MODE};
+use crate::fs::{open, OpenFlags, DEFAULT_FILE_MODE, NONE_MODE, vfs::File};
+use crate::mm::UserBuffer;
 use crate::println;
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
-use spin::Lazy;
+use spin::lazy::Lazy;
+use spin::Lazy as OtherLazy;
 use switch::__switch;
 
 use crate::signal::{send_signal_to_thread_group, SignalFlags};
@@ -56,6 +58,7 @@ pub use task::{TaskControlBlock, TaskStatus};
 pub use id::kstack_alloc;
 
 use core::arch::{asm, global_asm};
+use core::sync::atomic::AtomicU32;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -243,7 +246,46 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
 
 ///Add init process to the manager
 pub fn add_initproc() {
+    flush_preload();
     let _initproc = INITPROC.clone();
+}
+
+pub fn flush_preload() {
+    extern "C" {
+        fn test_rv_start();
+        fn test_rv_end();
+        fn busybox_rv_start();
+        fn busybox_rv_end();
+    }
+    let test = open(
+        "/run-all-test.sh",
+        OpenFlags::O_CREATE,
+        DEFAULT_FILE_MODE,
+    )
+    .unwrap()
+    .file()
+    .unwrap();
+    let mut v = Vec::new();
+    v.push(unsafe {
+        core::slice::from_raw_parts_mut(
+            test_rv_start as *mut u8,
+            test_rv_end as usize - test_rv_start as usize,
+        ) as &'static mut [u8]
+    });
+    test.write(UserBuffer::new(v));
+    
+    let busybox = open("/busybox", OpenFlags::O_CREATE, DEFAULT_FILE_MODE)
+        .unwrap()
+        .file()
+        .unwrap();
+    let mut v = Vec::new();
+    v.push(unsafe {
+        core::slice::from_raw_parts_mut(
+            busybox_rv_start as *mut u8,
+            busybox_rv_end as usize - busybox_rv_start as usize,
+        ) as &'static mut [u8]
+    });
+    busybox.write(UserBuffer::new(v));
 }
 
 /// Check if the current task has any signal to handle
@@ -269,11 +311,12 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     //将主线程退出的那些处于等待的子线程也删除掉
 }
 
+pub static CUR_UID: Lazy<AtomicU32> = Lazy::new(|| AtomicU32::new(0));
+
 pub fn current_uid() -> u32 {
-    //CUR_UID.load(core::sync::atomic::Ordering::SeqCst)
-    //unimplemented!()
-    let current = current_task().unwrap();
-    current.process.upgrade().unwrap().getuid() as u32
+    CUR_UID.load(core::sync::atomic::Ordering::SeqCst)
+    //let current = current_task().unwrap();
+    //current.process.upgrade().unwrap().getuid() as u32
 }
 
 pub fn current_token() -> usize {
