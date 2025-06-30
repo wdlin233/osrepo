@@ -144,6 +144,9 @@ impl TaskControlBlock {
         //     0 // LoongArch64 does not have a tid in the kernel stack
         // }
     }
+    // pub fn getpid(&self) -> usize {
+    //     self.process.upgrade().unwrap().get
+    // }
 }
 
 #[derive(Copy, Clone, PartialEq)]

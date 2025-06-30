@@ -17,7 +17,7 @@ pub const TICKS_PER_SEC: usize = 100;
 /// The number of milliseconds per second
 pub const MSEC_PER_SEC: usize = 1000;
 /// kernel stack size
-pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
+pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
 /// the virtual addr of trapoline
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 

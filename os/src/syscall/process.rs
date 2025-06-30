@@ -113,12 +113,25 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         debug!("the path is :{}",  translated_str(token, pathp));
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);
-        if path.ends_with(".sh") {
+        if path.contains("/musl") {
+            debug!("in set cwd");
+            inner.fs_info.set_cwd(String::from("/musl"));
+        } else {
+            inner.fs_info.set_cwd(String::from("/glibc"));
+        }
+        if path.ends_with(".sh") && path.contains("/musl") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
             argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
             path = String::from("/busybox");
+        }
+        if path.ends_with(".sh") && path.contains("/glic") {
+            //.sh文件不是可执行文件，需要用busybox的sh来启动
+            debug!("push busybox");
+            argv.push(String::from("/glibc/busybox"));
+            argv.push(String::from("sh"));
+            path = String::from("/glibc/busybox");
         }
 
         //处理argv参数
@@ -147,6 +160,10 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             if arg_str_ptr == 0 {
                 break;
             }
+            debug!(
+                "the argv is : {}",
+                translated_str(token, arg_str_ptr as *const u8)
+            );
             argv.push(translated_str(token, arg_str_ptr as *const u8));
             args = args.add(1);
         }
@@ -180,6 +197,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_enough);
     }
     let cwd = if !path.starts_with('/') {
+        //debug!("the path is not start with / ");
         inner.fs_info.cwd()
     } else {
         "/"

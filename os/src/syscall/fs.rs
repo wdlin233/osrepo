@@ -37,7 +37,7 @@ pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: us
     if path == "/proc/self/exe" {
         debug!("fs_info={}", inner.fs_info.exe());
         let size_needed = inner.fs_info.exe_as_bytes().len();
-        let mut buffer = UserBuffer::new(vec![unsafe{
+        let mut buffer = UserBuffer::new(vec![unsafe {
             core::slice::from_raw_parts_mut(buf as *mut _, size_needed)
         }]);
         let res = buffer.write(inner.fs_info.exe_as_bytes());
@@ -46,8 +46,11 @@ pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: us
     // debug!("[sys_read_linkat] got path : {}", inner.fs_info.get_cwd());
     let abs_path = inner.get_abs_path(dirfd, &path);
     let mut linkbuf = vec![0u8; bufsize];
-    let file = open(&abs_path, OpenFlags::empty(), NONE_MODE).unwrap().file().unwrap();
-    let readcnt = file.inode.read_link(&mut linkbuf, bufsize).unwrap_or(0);
+    let file = open(&abs_path, OpenFlags::empty(), NONE_MODE)
+        .unwrap()
+        .file()
+        .unwrap();
+    let readcnt = file.inode.read_link(&mut linkbuf, bufsize).unwrap();
     // let mut buffer = UserBuffer::new(translated_byte_buffer(token, buf, readcnt).unwrap());
     let mut buffer =
         UserBuffer::new_single(unsafe { core::slice::from_raw_parts_mut(buf as *mut _, readcnt) });
