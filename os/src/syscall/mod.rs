@@ -168,6 +168,8 @@ pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 pub const SYSCALL_PRLIMIT: usize = 261;
 /// mprotect syscall
 pub const SYSCALL_MPROTECT: usize = 226;
+/// getrandom syscall
+pub const SYSCALL_GETRANDOM: usize = 278;
 
 mod fs;
 mod options;
@@ -340,6 +342,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as *mut RLimit,
         ),
         SYSCALL_MPROTECT => sys_mprotect(args[0], args[1], args[2] as u32),
+        SYSCALL_GETRANDOM => sys_getrandom(
+            args[0] as *mut u8,
+            args[1],
+            args[2] as u32,
+        ),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

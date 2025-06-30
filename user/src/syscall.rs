@@ -158,9 +158,9 @@ pub fn sys_basicsh() -> isize {
     syscall6(
         SYSCALL_EXEC,
         [
-            "/musl/busybox\0".as_ptr() as usize,
+            "busybox\0".as_ptr() as usize,
             [
-                "/musl/busybox\0".as_ptr() as isize,
+                "busybox\0".as_ptr() as isize,
                 "sh\0".as_ptr() as isize,
                 "basic_testcode.sh\0".as_ptr() as isize,
                 //"busybox_testcode.sh\0".as_ptr() as isize,

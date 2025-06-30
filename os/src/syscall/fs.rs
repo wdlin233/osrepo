@@ -3,8 +3,7 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, open, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat,
-    OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
+    convert_kstat_to_statx, open, open_device_file, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET
 }; //::{link, unlink}
 
 use crate::mm::{
@@ -38,9 +37,11 @@ pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: us
         debug!("fs_info={}", inner.fs_info.exe());
         let size_needed = inner.fs_info.exe_as_bytes().len();
         debug!("the size need is : {}", size_needed);
-        let mut buffer = UserBuffer::new(vec![unsafe {
-            core::slice::from_raw_parts_mut(buf as *mut _, size_needed)
-        }]);
+        let mut buffer = UserBuffer::new(vec![
+            unsafe {
+                core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), size_needed)
+            }
+        ]);
         let res = buffer.write(inner.fs_info.exe_as_bytes());
         return res as isize;
     }
@@ -480,7 +481,11 @@ pub fn sys_getcwd(buf: *const u8, size: usize) -> isize {
     let mut inner = process.inner_exclusive_access();
     let cwdlen = inner.fs_info.cwd().len();
     if (buf as isize) < 0 || is_bad_address(buf as usize) || (size as isize) < 0 || size <= cwdlen {
-        return -1;
+        return SysErrNo::EFAULT as isize;
+    }
+    let cwdlen = inner.fs_info.cwd().len();
+    if size <= cwdlen {
+        return SysErrNo::ERANGE as isize;
     }
     let mut buffer =
         UserBuffer::new(safe_translated_byte_buffer(inner.memory_set.clone(), buf, size).unwrap());
@@ -1236,4 +1241,23 @@ pub fn sys_prlimit(
     }
 
     return 0;
+}
+
+pub fn sys_getrandom(buf: *const u8, buflen: usize, flags: u32) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    if (buf as isize) < 0 || is_bad_address(buf as usize) || buf.is_null(){
+        return SysErrNo::EFAULT as isize;
+    }
+    if (flags as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    match open_device_file("/dev/random").unwrap().read(UserBuffer::new_single(unsafe {
+        core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), buflen)
+    })) {
+        Ok(size) => size as isize,
+        Err(_) => SysErrNo::EIO as isize, // check TODO
+    }
 }

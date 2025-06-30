@@ -933,6 +933,7 @@ impl MemorySetInner {
             return addr;
         }
         // 自行选择地址,计算已经使用的MMap地址
+        debug!("MMAP_TOP: {:#x}", MMAP_TOP);
         let addr = self.find_insert_addr(MMAP_TOP, len);
         debug!(
             "(MemorySetInner, mmap) start_va:{:#x},end_va:{:#x}",
