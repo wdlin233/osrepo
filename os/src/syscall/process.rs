@@ -110,13 +110,14 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     unsafe {
         //debug!("in unsafe");
         debug!("the pathp is :{:?}", pathp);
-        debug!("the path is :{}",  translated_str(token, pathp));
+        debug!("the path is :{}", translated_str(token, pathp));
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);
         if path.contains("/musl") {
             debug!("in set cwd");
             inner.fs_info.set_cwd(String::from("/musl"));
-        } else {
+        }
+        if path.contains("/glibc") {
             inner.fs_info.set_cwd(String::from("/glibc"));
         }
         if path.ends_with(".sh") && path.contains("/musl") {
