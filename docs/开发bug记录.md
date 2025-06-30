@@ -344,11 +344,11 @@ COW页面发生写操作时会触发 `PageFault` 进入 `trap_handler` 进行处
 
 但很惭愧的是这部分我都没帮上什么忙，问题就在于内存，但是内存都是队友处理的，感觉我对这部分一点也不了解，水准之低令人汗颜。
 
-![mmap](./img/mmap.png)
+<img src="./img/mmap.png" alt="mmap" style="width: 80%;" />
 
 当时出现的一个 `mmap` 问题，后来发现是我们堆空间的布局有问题，队友就修改了 `change_program_brk` 解决了。
 
-![trap](./img/trap.png)
+<img src="./img/trap.png" alt="trap" style="width: 65%;" />
 
 我们当时持续的出现这个莫名进入 `trap_handler` 然后报错 `StorePageFault` 的问题，然后就会传参给 `sys_mmap` 让其 `start` 和 `len` 都为0，显然这是极其不合理的。持续卡了我们好几天，临近初赛结束遇到这种问题，其实已经做好初赛爆零的准备了，**有点绝望了**，当时是不是不应该花这么多时间来准备内核赛，而且开始写的时间也有点晚了，如果当时没有选择 ch8 还好，队友的思路是这个 `trap_cx` 是有问题的，但是 ch8 的 `trap_cx` 非常复杂，是由一个 `TaskUserRes` 来管理的，存在用户栈上。
 
