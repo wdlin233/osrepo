@@ -326,7 +326,7 @@ impl ProcessControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: Arc::new(FdTable::new_with_stdio()),
-                    fs_info: Arc::new(FsInfo::new(String::from("/"))),
+                    fs_info: Arc::new(FsInfo::new(String::from("/musl/"))),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(0),

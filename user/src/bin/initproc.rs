@@ -6,9 +6,9 @@ extern crate user_lib;
 
 const TESTS: &[&str] = &[
     "/musl/busybox_testcode.sh\0", 
-    "glibc/busybox_testcode.sh\0",
-    "musl/basic_testcode.sh\0",
-    "glibc/basic_testcode.sh\0",
+    "/glibc/busybox_testcode.sh\0",
+    "/musl/basic_testcode.sh\0",
+    "/glibc/basic_testcode.sh\0",
 ];
 
 const TEST_NUM: usize = TESTS.len();

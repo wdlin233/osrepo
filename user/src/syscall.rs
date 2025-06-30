@@ -183,7 +183,7 @@ pub fn sys_busyboxsh(test: &str) -> isize {
         [
             "/musl/busybox\0".as_ptr() as usize,
             [
-                "/musl/busybox\0".as_ptr() as isize,
+                "busybox\0".as_ptr() as isize,
                 "sh\0".as_ptr() as isize,
                 test.as_ptr() as isize,
                 //"./test-ltp.sh\0".as_ptr() as isize,
