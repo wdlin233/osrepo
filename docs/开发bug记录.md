@@ -1,11 +1,15 @@
-# SubsToKernel
+# 开发日志与 bug 记录 by wdlin
 
 ![badge](https://img.shields.io/badge/SubsTo-Kernel-blue)
 
-# Problems
+## 2025.5.15 ~ 2025.6.6
+
+做的主要是参考 [rCoreloongArch](https://github.com/Godones/rCoreloongArch) 实现了对 LoongArch 架构的支持，[曾经考虑过](https://github.com/wdlin233/osrepo/tree/polyhal)使用 `polyhal` 但是后来觉得自己做迁移的可操作性更大，对自己内核的支持也更好，现在想来不一定自己实现 HAL 是个好事. 
+
+开发过程中留下的记录：
 
 - [x] 就现在的需要做的工作来说，是 page_table, memory_set 和 address 适配 rv 和 la 的兼容.
-- [x] LA 的 `task""id` 中 `alloc_user_res()` 不同于 RV，涉及的是 `syscall_brk`，希望我写的没错.
+- [x] LA 的 `task::id` 中 `alloc_user_res()` 不同于 RV，涉及的是 `syscall_brk`，希望我写的没错.
 - [x] 为了修改 mm 也要修改 LA 的 trap 和 task 等.
 - [x] 适配 LA 的 trap 和 task.
 - [x] FileSystem，如果不对磁盘进行初始化就会导致错误，所以磁盘初始化是无法避免的问题.
@@ -103,9 +107,9 @@ process_inner.memory_set.insert_framed_area(
 
 修改用户栈大小后转变为zombie process. 疑似 `usertests_simple` 中的 `waitpid` 有问题. 并不是. 是因为之前在完成 basic 测例时修改了 `block_current_and_run_next` 的逻辑，将 `add_block_task(task);` 保留就可以正常运行了.
 
-## 2025.6.12
+## 2025.6.8
 
-队友实现了 ext4 的文件系统，开始适配对 la 的支持了. 前几天尝试了一下使用更新版本的 `ext4_rs` 对文件系统进行适配，发现难度有一点大，要花费很多时间，于是先这么使用了.
+~~队友实现了 ext4 的文件系统~~实际上根本不能用，开始适配对 la 的支持了. 前几天尝试了一下使用更新版本的 `ext4_rs` 对文件系统进行适配，发现难度有一点大，要花费很多时间，于是先这么使用了.
 
 在 la 上遇到的第一个问题，就是会出现地址段的重复映射，经过排查发现是因为 `PAGE_SIZE` 的大小在 rv 和 la 上并不一样，之前也遇到过类似的问题.
 
@@ -139,7 +143,7 @@ process_inner.memory_set.insert_framed_area(
 
 ## 2025.6.13
 
-考虑分别对文件系统进行实现，在此我使用了 `lwext4_rust` 库，并参考了去年队伍的实现。第一步是更改 `VIRTIO0` 的值，然后就可以顺利读取磁盘了. 解决了
+考虑分别对文件系统进行实现，在此我决定自己处理文件系统部分，使用了 `lwext4_rust` 库，并参考了[去年队伍](https://gitlab.eduxiji.net/rusttrusthuster/oskernel2024-trustos)的实现。这里借用了他们写的真的很好，从中学到了很多。整体架构上和他们差不多，然后就要考虑如何适配我们自己的操作系统。第一步是更改 `VIRTIO0` 的值，然后就可以顺利读取磁盘了. 解决了
 
 ```shell
 [kernel] Panicked at src/hal/trap/mod.rs:344 a trap Exception(StorePageFault) from kernel!
@@ -175,13 +179,13 @@ process_inner.memory_set.insert_framed_area(
 
 ## 2025.6.20
 
-考完期末周，回来实现了 `sys_open()`，然后开始做 EXT4 对 la 的适配，修改 `VIRTIO0` 后遇到的 
+前一周没怎么写代码，因为复习期末了。考完期末周，使用 `lwext4_rust` 库继续实现文件系统。回来实现了 `sys_open()`，然后开始做 EXT4 对 la 的适配，解决 `VIRTIO0` 后遇到的 
 
 ```shell
 [kernel] Panicked at src/drivers/virtio/blk.rs:16 VirtIOBlk create failed: InvalidParam
 ```
 
-问题，做 pci 与 mmio 的兼容.
+问题，做 pci 与 mmio 的兼容. 虽然之前说不使用 `polyhal`，但是还是从中学习到了很多，正好 `polyhal` 的维护者也写在 ByteOS 上写了一个 PCI 驱动，从中学习了。其实驱动的问题很多时候是地址的问题，这里要注意是物理地址，因此自然就涉及到了虚实地址转换的问题。
 
 ## 2025.6.21
 
@@ -316,13 +320,45 @@ if (array == MAP_FAILED) {
 
 在 `trap_handler` 中对 `LoadPageFault` 做了处理，实现了 `cow`. 然后一个错误是在 `OSInode::write` 中的 `for slice in buf.buffers.iter()` 不能访问 `slice`. 或者说 `munmap` 中 `buf` 的地址有问题.
 
-确实是 `buf` 在内核态访问了用户态的内容，一直尝试使用 `safe_translated_byte_buffer` 来解决问题，和引用问题斗争了很久. 经过指点发现完全可以使用 `translated_byte_buffer` 这个更基础的函数来解决，惭愧.
+确实是 `buf` 在内核态访问了用户态的内容，使用 `safe_translated_byte_buffer` 需要解决引用问题，和引用问题斗争了很久. 其实完全可以使用 `translated_byte_buffer` 这个更基础的函数来解决，惭愧.
 
 ## 2025.6.24
+
+这部分内容是之后补的，所以可能有点疏漏。总的来说这段时间在解决 busybox 的启动问题。
+
+在解决 `sys_mmap` 时我们参考了[前辈](https://gitlab.eduxiji.net/rusttrusthuster/oskernel2024-trustos)的代码，觉得他们写的非常好，于是也进入了一个写时复制机制，这样就能提高很多性能了。
+
+于是我们采取了惰性分配的策略，也就是在新建一个 `MapArea` 时本应传入一个 `None`，我们就先不传。也就是说，复制内存时, 不真的去拷贝内存, 只是将新的虚拟地址映射到同样的一块物理地址, 直到程序要进行写操作时, 才进行实际的拷贝操作。
+
+好处是如果相应的数据在复制到消亡的过程中，并没有进行过写操作的话, 则可以节省拷贝这部分数据的时间。
+
+COW页面发生写操作时会触发 `PageFault` 进入 `trap_handler` 进行处理。
 
 > 在COW机制中，当一个页面被标记为只读（因为COW）时，任何写操作都会触发一个页面错误。因此，存储操作（写操作）会触发StorePageFault。而读操作和取指操作不会触发写操作，因此不会因为COW而触发错误（除非该页面本身也不允许读或执行）。所以在COW处理中，我们应该只处理StorePageFault，而将LoadPageFault和FetchPageFault视为真正的错误。
 
 但不是很确定 LA 下的 `LoadPageFault` 和 `FetchPageFault` 是否也需要 COW 的处理，也没什么资料能佐证这一点，虽然测例通过了...会是 LA 的 TLB 重填中遇到的一些页面权限的问题吗？不是很确定架构上是否存在着这个差异，感觉代码也写的没什么问题.
+
+## 2025.6.25 ~ 2025.6.30
+
+这段是后面补的，写的可能比较乱，具体看 commits 可能会更好。这段时间我们在启动了 sh，但是集中出现了特别多的问题。这几天一直到初赛结束队友基本都是凌晨四点才回去睡觉，然后我在早上合并他昨晚写的代码，看看有没有什么问题，队友最后解决了，真是太厉害了！！！于是 `busybox` 和 `libctest` 我们后面修了一些 syscalls 和 内存布局的问题也就过了很多。
+
+但很惭愧的是这部分我都没帮上什么忙，问题就在于内存，但是内存都是队友处理的，感觉我对这部分一点也不了解，水准之低令人汗颜。
+
+![mmap](./img/mmap.png)
+
+当时出现的一个 `mmap` 问题，后来发现是我们堆空间的布局有问题，队友就修改了 `change_program_brk` 解决了。
+
+![trap](./img/trap.png)
+
+我们当时持续的出现这个莫名进入 `trap_handler` 然后报错 `StorePageFault` 的问题，然后就会传参给 `sys_mmap` 让其 `start` 和 `len` 都为0，显然这是极其不合理的。持续卡了我们好几天，临近初赛结束遇到这种问题，其实已经做好初赛爆零的准备了，**有点绝望了**，当时是不是不应该花这么多时间来准备内核赛，而且开始写的时间也有点晚了，如果当时没有选择 ch8 还好，队友的思路是这个 `trap_cx` 是有问题的，但是 ch8 的 `trap_cx` 非常复杂，是由一个 `TaskUserRes` 来管理的，存在用户栈上。
+
+队友的思路是在用户栈上会遇到 `tid` 不唯一的问题，因为 `trap_cx` 是依靠 `tid` 来索引，如果不唯一就会导致 `trap_cx` 的混乱。按他26晚左右时间的思路应该是这个问题，不知道是不是，他后来和我解释了一下其实也没太懂，总之还是用户空间布局的问题。具体看 commits 可能比较好。我看似乎是会在 `fork` 时传入两个值，这样他们的寄存器状态就混乱了。
+
+总之这段时间真是保队友大腿了，没帮上什么忙。这段时间的代码有点乱七八糟的，分支也创建了一大堆，自己都有点分不清楚。准备在初赛后好好重构一下，感觉一直被压力着实现 syscalls，后面有些时候都没细想了。加了很多 syscalls 来支持 busybox 的启动。
+
+还遇到一个 LA 下启动 sh 遇到进入 `run_tasks` 调度后卡死的问题，发现是 LA 下的权限设错了，就是那个最高位的 `RPLV` 害我，一般都不需要这个参数的.
+
+准备还是初赛之后好好重构一下，真受不了现在这个代码了.
 
 # Optimization
 
