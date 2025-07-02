@@ -181,11 +181,11 @@ pub fn sys_busyboxsh(test: &str, cwd: &str) -> isize {
     syscall6(
         SYSCALL_EXEC,
         [
-            cwd.as_ptr() as usize,
+            test.as_ptr() as usize,
             [
-                cwd.as_ptr() as isize,
-                "sh\0".as_ptr() as isize,
                 test.as_ptr() as isize,
+                "sh\0".as_ptr() as isize,
+                cwd.as_ptr() as isize,
                 //"./test-ltp.sh\0".as_ptr() as isize,
                 //"ltp/testcases/bin/abort01\0".as_ptr() as isize,
                 // "libctest_testcode.sh\0".as_ptr() as isize,
