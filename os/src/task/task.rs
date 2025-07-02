@@ -21,19 +21,6 @@ pub struct TaskControlBlock {
     inner: UPSafeCell<TaskControlBlockInner>,
 }
 
-impl TaskControlBlock {
-    /// Get the mutable reference of the inner TCB
-    pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlockInner> {
-        self.inner.exclusive_access()
-    }
-    /// Get the address of app's page table
-    pub fn get_user_token(&self) -> usize {
-        let process = self.process.upgrade().unwrap();
-        let inner = process.inner_exclusive_access();
-        inner.memory_set.token()
-    }
-}
-
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
 
@@ -50,10 +37,19 @@ pub struct TaskControlBlockInner {
     pub task_status: TaskStatus,
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
-    // ///heap bottom
-    // pub heap_bottom: usize,
-    // ///program brk
-    // pub program_brk: usize,
+}
+
+impl TaskControlBlock {
+    /// Get the mutable reference of the inner TCB
+    pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlockInner> {
+        self.inner.exclusive_access()
+    }
+    /// Get the address of app's page table
+    pub fn get_user_token(&self) -> usize {
+        let process = self.process.upgrade().unwrap();
+        let inner = process.inner_exclusive_access();
+        inner.memory_set.token()
+    }
 }
 
 impl TaskControlBlockInner {

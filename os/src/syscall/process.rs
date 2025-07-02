@@ -123,9 +123,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         if path.ends_with(".sh") && path.contains("/musl") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
-            argv.push(String::from("busybox"));
+            argv.push(String::from("/musl/busybox"));
             argv.push(String::from("sh"));
-            path = String::from("/busybox");
+            path = String::from("/musl/busybox");
         }
         if path.ends_with(".sh") && path.contains("/glic") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
@@ -198,7 +198,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_enough);
     }
     let cwd = if !path.starts_with('/') {
-        //debug!("the path is not start with / ");
+        debug!("the path is not start with / ");
         inner.fs_info.cwd()
     } else {
         "/"

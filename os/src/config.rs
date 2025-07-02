@@ -25,6 +25,45 @@ pub const THREAD_MAX_NUM: usize = 3000;
 // 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
 pub const USER_SPACE_SIZE: usize = 0x5000_0000;
 
+/*
+------------------------------
+    ...
+    ...
+    ...
+    -----------------
+    user1's heap size
+-------------------------------heap_bottom
+    guard page
+--------------------------------user_trap_context_top
+    guard page
+    --------------------
+    user1's trap context
+    --------------------
+    guard page
+    --------------------
+    user2's trap context
+    ...
+    ...
+    ...
+-----------------------------user_stack_top
+    guard page
+    ---------------
+    user1's stack
+    ---------------
+    guard page
+    ---------------
+    user2's stack
+    ...
+    ...
+    ...
+------------------------------
+
+
+
+
+
+*/
+
 pub const USER_TRAP_CONTEXT_TOP: usize = USER_SPACE_SIZE;
 
 pub const USER_STACK_TOP: usize = USER_TRAP_CONTEXT_TOP - PAGE_SIZE * THREAD_MAX_NUM;
@@ -34,7 +73,7 @@ pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
     - USER_STACK_SIZE * THREAD_MAX_NUM
     - PAGE_SIZE;
 //heap bottom
-pub const USER_HEAP_BOTTOM: usize = USER_STACK_TOP + PAGE_SIZE;
+pub const USER_HEAP_BOTTOM: usize = USER_TRAP_CONTEXT_TOP + PAGE_SIZE;
 ///heap size
 pub const USER_HEAP_SIZE: usize = 0x10_0000;
 
