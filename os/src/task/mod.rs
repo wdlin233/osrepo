@@ -11,7 +11,7 @@
 
 mod aux;
 mod context;
-mod id;
+mod alloc;
 mod manager;
 mod process;
 mod processor;
@@ -20,7 +20,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use self::id::TaskUserRes;
+use self::alloc::TaskUserRes;
 //use crate::drivers::BLOCK_DEVICE;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::{open, OpenFlags, NONE_MODE};
@@ -36,7 +36,7 @@ use switch::__switch;
 use crate::signal::{send_signal_to_thread_group, SignalFlags};
 pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
-pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
+pub use alloc::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
     wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
@@ -55,7 +55,7 @@ pub use processor::{
 pub use task::{TaskControlBlock, TaskStatus};
 
 #[cfg(target_arch = "riscv64")]
-pub use id::kstack_alloc;
+pub use alloc::kstack_alloc;
 
 use core::arch::{asm, global_asm};
 

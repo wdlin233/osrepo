@@ -1,6 +1,6 @@
 //! Types related to task management & Functions for completely changing TCB
 
-use super::id::TaskUserRes;
+use super::alloc::TaskUserRes;
 #[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
@@ -37,17 +37,13 @@ impl TaskControlBlock {
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
 
-    /// The physical page number of the frame where the trap context is placed
-    #[cfg(target_arch = "riscv64")]
-    pub trap_cx_ppn: PhysPageNum,
     //每个线程都存在内核栈，其trap上下文位于内核栈上
     #[cfg(target_arch = "loongarch64")]
     pub kstack: KernelStack,
 
     /// Save task context, 线程上下文
-    pub task_cx: TaskContext,
-    /// Maintain the execution status of the current process
-    pub task_status: TaskStatus,
+    
+    
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
     // ///heap bottom
@@ -121,7 +117,6 @@ impl TaskControlBlock {
                     #[cfg(target_arch = "riscv64")]
                     trap_cx_ppn: _trap_cx_ppn.unwrap(),
                     task_cx: TaskContext::goto_trap_return(kstack_top),
-                    task_status: TaskStatus::Ready,
                     exit_code: None,
                 })
             },
@@ -149,13 +144,4 @@ impl TaskControlBlock {
     // }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-/// The execution status of the current process
-pub enum TaskStatus {
-    /// ready to run
-    Ready,
-    /// running
-    Running,
-    /// blocked
-    Blocked,
-}
+

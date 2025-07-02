@@ -2,8 +2,7 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
-    USER_TRAP_CONTEXT_TOP,
+    KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
@@ -18,7 +17,6 @@ use alloc::{
 };
 use lazy_static::*;
 use lwext4_rust::file::PAGE_MASK;
-//use virtio_drivers::PAGE_SIZE;
 
 /// Allocator with a simple recycle strategy
 pub struct RecycleAllocator {
@@ -75,7 +73,7 @@ lazy_static! {
         unsafe { UPSafeCell::new(RecycleAllocator::new(1)) };
 
         static ref HEAP_ID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new(0)) };
+        unsafe { UPSafeCell::new(RecycleAllocator::new(1)) };
 }
 #[cfg(target_arch = "riscv64")]
 lazy_static! {
@@ -87,6 +85,7 @@ lazy_static! {
 /// The idle task's pid is 0
 pub const IDLE_PID: usize = 0;
 
+/// heapid wrapper
 pub struct HeapidHandle(pub usize);
 
 /// Allocate a new PID
@@ -94,68 +93,63 @@ pub fn heap_id_alloc() -> HeapidHandle {
     HeapidHandle(HEAP_ID_ALLOCATOR.exclusive_access().alloc())
 }
 
-/// A handle to a pid
-pub struct PidHandle(pub usize);
-
-// impl Drop for PidHandle {
-//     fn drop(&mut self) {
-//         // trace!("drop pid {}", self.0);
-//         PID_ALLOCATOR.exclusive_access().dealloc(self.0);
-//     }
-// }
-pub fn pid_dealloc(id: usize) {
-    PID_ALLOCATOR.exclusive_access().dealloc(id);
+impl Drop for HeapidHandle {
+    fn drop(&mut self) {
+        HEAP_ID_ALLOCATOR.exclusive_access().dealloc(self.0);
+    }
 }
+
+
+
+/// pid wrapper
+pub struct PidHandle(pub usize);
 
 /// Allocate a new PID
 pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
 
+/// 之前在这里发生过错误，姑且先继续保持着 Drop
+impl Drop for PidHandle {
+    fn drop(&mut self) {
+        PID_ALLOCATOR.exclusive_access().dealloc(self.0);
+    }
+}
+
+
+
+/// tid wrapper
 pub struct TidHandle(pub usize);
 
 /// Allocate a new PID
 pub fn tid_alloc() -> TidHandle {
     TidHandle(TID_ALLOCATOR.exclusive_access().alloc())
 }
-pub fn tid_dealloc(id: usize) {
-    TID_ALLOCATOR.exclusive_access().dealloc(id);
+
+impl Drop for TidHandle {
+    fn drop(&mut self) {
+        TID_ALLOCATOR.exclusive_access().dealloc(self.0);
+    }
 }
 
-#[cfg(target_arch = "riscv64")]
+
+
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
-    //debug!("in kernel stack position, app id is : {}", app_id);
-    let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
+    let top = KSTACK_TOP - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
-    //debug!("kstack bottom is : {}, top is : {}", bottom, top);
     (bottom, top)
 }
 
-#[cfg(target_arch = "riscv64")]
-/// Kernel stack for a task
-pub struct KernelStack(pub usize);
-
-#[cfg(target_arch = "loongarch64")]
+/// Kernel stack for a process
 pub struct KernelStack {
-    pub frame: FrameTracker,
+    tid: usize,
 }
 
-#[cfg(target_arch = "riscv64")]
 /// Allocate a kernel stack for a task
 pub fn kstack_alloc() -> KernelStack {
     //debug!("in kstack alloc");
-    let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
-    //debug!("kstack id is : {}", kstack_id);
-    let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
-    //debug!("to map kernel space");
-    KERNEL_SPACE.exclusive_access().insert_framed_area(
-        kstack_bottom.into(),
-        kstack_top.into(),
-        MapPermission::R | MapPermission::W,
-        MapAreaType::Stack,
-    );
-    KernelStack(kstack_id)
+    
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -171,75 +165,84 @@ impl Drop for KernelStack {
     }
 }
 
-/// Create a kernelstack
-/// 在loongArch平台上，并不需要根据pid在内核空间分配内核栈
-/// 内核态并不处于页表翻译模式，而是以类似于直接管理物理内存的方式管理
-/// 因此这里会直接申请对应大小的内存空间
-/// 但这也会造成内核栈无法被保护的状态
 impl KernelStack {
-    #[cfg(target_arch = "loongarch64")]
-    pub fn new() -> Self {
-        frame_alloc().map(|frame| KernelStack { frame }).unwrap()
+    pub fn new(tid_handle: &TidHandle) -> Self {
+        let (kstack_bottom, kstack_top) = kernel_stack_position(tid_handle.0);
+        KERNEL_SPACE.exclusive_access().insert_framed_area(
+            kstack_bottom.into(),
+            kstack_top.into(),
+            #[cfg(target_arch = "riscv64")]
+            (MapPermission::R | MapPermission::W),
+            #[cfg(target_arch = "loongarch64")]
+            (MapPermission::W),
+            MapAreaType::Stack,
+        );
+        KernelStack(kstack_id)
     }
 
-    #[cfg(target_arch = "riscv64")]
     /// return the top of the kernel stack
     pub fn get_top(&self) -> usize {
-        debug!("in kernel stack, to get top");
-        let (_, kernel_stack_top) = kernel_stack_position(self.0);
+        debug!("(KernelStack), get_top");
+        let (_, kernel_stack_top) = kernel_stack_position(self.tid);
         kernel_stack_top
     }
-    #[cfg(target_arch = "loongarch64")]
-    fn get_virt_top(&self) -> usize {
-        let top: PhysAddr = self.frame.ppn.into();
-        let top = phys_to_virt!(top.0 + PAGE_SIZE);
-        top
+    ///
+    pub fn pos(&self) -> (usize, usize) {
+        kernel_stack_position(self.tid)
     }
-    /// Push a variable of type T into the top of the KernelStack and return its raw pointer
-    pub fn push_on_top<T>(&self, value: T) -> *mut T
-    where
-        T: Sized,
-    {
-        #[cfg(target_arch = "riscv64")]
-        let kernel_stack_top = self.get_top();
-        #[cfg(target_arch = "loongarch64")]
-        let kernel_stack_top = self.get_virt_top();
-        let ptr_mut = (kernel_stack_top - core::mem::size_of::<T>()) as *mut T;
-        unsafe {
-            *ptr_mut = value;
-        }
-        ptr_mut
-    }
-
-    #[cfg(target_arch = "loongarch64")]
-    pub fn copy_from_other(&mut self, kernel_stack: &KernelStack) -> &mut Self {
-        //需要从kernel_stack复制到self
-        let trap_context = kernel_stack.get_trap_cx().clone();
-        self.push_on_top(trap_context);
-        self
-    }
-    /// 返回trap上下文的可变引用
-    /// 用于修改返回值
-    #[cfg(target_arch = "loongarch64")]
-    pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        let cx = self.get_virt_top() - core::mem::size_of::<TrapContext>();
-        unsafe { &mut *(cx as *mut TrapContext) }
-    }
-
-    /// 返回trap上下文的位置，用于初始化trap上下文
-    #[cfg(target_arch = "loongarch64")]
-    pub fn get_trap_addr(&self) -> usize {
-        let addr = self.get_virt_top() - core::mem::size_of::<TrapContext>();
-        addr
+    pub fn bottom(&self) -> usize {
+        let (kernel_stack_bottom, _) = kernel_stack_position(self.tid);
+        kernel_stack_bottom
     }
 }
 
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        KERNEL_SPACE.exclusive_access().remove_area_with_start_vpn(
+            self.bottom().into(),
+        );
+    }
+}
+ //以下部分是原有的 KernelStack 函数       // /// Push a variable of type T into the top of the KernelStack and return its raw pointer
+    // pub fn push_on_top<T>(&self, value: T) -> *mut T
+    // where
+    //     T: Sized,
+    // {
+    //     #[cfg(target_arch = "riscv64")]
+    //     let kernel_stack_top = self.get_top();
+    //     #[cfg(target_arch = "loongarch64")]
+    //     let kernel_stack_top = self.get_virt_top();
+    //     let ptr_mut = (kernel_stack_top - core::mem::size_of::<T>()) as *mut T;
+    //     unsafe {
+    //         *ptr_mut = value;
+    //     }
+    //     ptr_mut
+    // }
+
+    // #[cfg(target_arch = "loongarch64")]
+    // pub fn copy_from_other(&mut self, kernel_stack: &KernelStack) -> &mut Self {
+    //     //需要从kernel_stack复制到self
+    //     let trap_context = kernel_stack.get_trap_cx().clone();
+    //     self.push_on_top(trap_context);
+    //     self
+    // }
+    // /// 返回trap上下文的可变引用
+    // /// 用于修改返回值
+    // #[cfg(target_arch = "loongarch64")]
+    // pub fn get_trap_cx(&self) -> &'static mut TrapContext {
+    //     let cx = self.get_virt_top() - core::mem::size_of::<TrapContext>();
+    //     unsafe { &mut *(cx as *mut TrapContext) }
+    // }
+
+    // /// 返回trap上下文的位置，用于初始化trap上下文
+    // #[cfg(target_arch = "loongarch64")]
+    // pub fn get_trap_addr(&self) -> usize {
+    //     let addr = self.get_virt_top() - core::mem::size_of::<TrapContext>();
+    //     addr
+    // }
+
 /// User Resource for a task
 pub struct TaskUserRes {
-    /// task id
-    pub tid: usize,
-    /// user stack base
-    pub ustack_base: usize,
     /// process belongs to
     pub process: Weak<ProcessControlBlock>,
     //
@@ -253,7 +256,7 @@ fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     USER_TRAP_CONTEXT_TOP - tid * PAGE_SIZE
 }
 /// Return the bottom addr (high addr) of the user stack for a task
-fn ustack_bottom_from_tid(_ustack_base: usize, tid: usize) -> usize {
+fn ustack_bottom_from_tid(tid: usize) -> usize {
     USER_STACK_TOP - tid * (PAGE_SIZE + USER_STACK_SIZE)
 }
 

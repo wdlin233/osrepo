@@ -269,10 +269,11 @@ impl MemorySetInner {
         {
             area.unmap(&mut self.page_table);
             self.areas.remove(idx);
-            #[cfg(target_arch = "riscv64")]
-            unsafe {
-                asm!("sfence.vma");
-            }
+            // 可能不需要
+            // #[cfg(target_arch = "riscv64")]
+            // unsafe {
+            //     asm!("sfence.vma");
+            // }
         }
     }
 

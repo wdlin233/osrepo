@@ -2,7 +2,7 @@
 
 use super::add_task;
 use super::aux::{Aux, AuxType};
-use super::id::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
+use super::alloc::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
@@ -21,7 +21,7 @@ use crate::mm::{
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
-use crate::task::id::tid_dealloc;
+use crate::task::TaskStatus;
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -37,19 +37,25 @@ use loongarch64::register::pgdl;
 /// Process Control Block
 pub struct ProcessControlBlock {
     ///ppid
-    pub ppid: usize,
+    ppid: usize,
     /// immutable
-    pub pid: usize,
+    pid: usize,
     /// immutable default user
-    pub user: Arc<User>,
+    user: Arc<User>,
+    ///
+    pub kernel_stack: KernelStack,
     /// mutable
     inner: UPSafeCell<ProcessControlBlockInner>,
 }
 
 /// Inner of Process Control Block
 pub struct ProcessControlBlockInner {
+    pub trap_cx_ppn: PhysPageNum,
+    pub task_cx: TaskContext,
     /// is zombie?
     pub is_zombie: bool,
+    /// task status
+    pub task_status: TaskStatus,
     /// memory set(address space)
     pub memory_set: Arc<MemorySet>,
     /// parent process
@@ -96,6 +102,7 @@ pub struct ProcessControlBlockInner {
     pub heap_top: usize,
     //
     pub robust_list: RobustList,
+    
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -320,6 +327,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     heap_id,
+                    task_status: TaskStatus::Ready,
                     is_zombie: false,
                     memory_set: Arc::new(memory_set),
                     parent: None,
@@ -684,6 +692,7 @@ impl ProcessControlBlock {
                 inner: unsafe {
                     UPSafeCell::new(ProcessControlBlockInner {
                         heap_id: parent.heap_id,
+                        task_status: TaskStatus::Ready,
                         is_zombie: false,
                         clear_child_tid,
                         memory_set: memory_set,
@@ -726,6 +735,7 @@ impl ProcessControlBlock {
                 inner: unsafe {
                     UPSafeCell::new(ProcessControlBlockInner {
                         is_zombie: false,
+                        task_status: TaskStatus::Ready,
                         clear_child_tid,
                         memory_set: memory_set,
                         fs_info,
@@ -889,4 +899,15 @@ bitflags! {
         ///Clone io context
         const CLONE_IO = 1 << 31;
     }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+/// The execution status of the current process
+pub enum TaskStatus {
+    /// ready to run
+    Ready,
+    /// running
+    Running,
+    /// blocked
+    Blocked,
 }
