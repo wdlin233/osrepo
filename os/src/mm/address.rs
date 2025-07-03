@@ -287,13 +287,15 @@ impl PhysPageNum {
 impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        //let kernel_va = KernelAddr::from(pa).0;
-        debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
-        //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
-        //debug!("Kernel virtual address: {:#x}", kernel_va);
-        // No kernel address translation.
-        use crate::config::PAGE_SIZE;
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, PAGE_SIZE) }
+        let kernel_va = KernelAddr::from(pa).0;
+        use crate::config::PAGE_SIZE; // 4096
+        unsafe { core::slice::from_raw_parts_mut(kernel_va as *mut u8, PAGE_SIZE) }
+    }
+    pub fn bytes_array(&self) -> &'static [u8] {
+        let pa: PhysAddr = (*self).into();
+        let kernel_va = KernelAddr::from(pa).0;
+        use crate::config::PAGE_SIZE; // 4096
+        unsafe { core::slice::from_raw_parts(kernel_va as *const u8, PAGE_SIZE) }
     }
 }
 
@@ -416,4 +418,29 @@ pub fn is_bad_address(va: usize) -> bool {
 
 pub fn remove_bad_address(va: usize) {
     BAD_ADDRESS.lock().remove(&va);
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct KernelAddr(pub usize);
+
+impl From<usize> for KernelAddr {
+    fn from(v: usize) -> Self {
+        return Self(v);
+    }
+}
+
+impl From<PhysAddr> for KernelAddr {
+    fn from(v: PhysAddr) -> Self {
+        return Self(v.0);
+    }
+}
+
+impl KernelAddr {
+    pub fn get_mut<T>(&self) -> &'static mut T {
+        unsafe { (self.0 as *mut T).as_mut().unwrap() }
+    }
+    pub fn get_ref<T>(&self) -> &'static T {
+        unsafe { (self.0 as *const T).as_ref().unwrap() }
+    }
 }

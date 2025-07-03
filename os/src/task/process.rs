@@ -10,18 +10,18 @@ use super::{pid_alloc, PidHandle};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 
-use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
+use crate::config::{PAGE_SIZE, PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
-use crate::hal::trap::{trap_handler, TrapContext};
+use crate::hal::trap::{self, trap_handler, TrapContext};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{
-    flush_tlb, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr, VirtPageNum,
+    flush_tlb, translated_refmut, MapAreaType, MemorySet, MemorySetInner, PageTable, PageTableEntry, VPNRange, VirtAddr, VirtPageNum
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
-use crate::task::TaskStatus;
+use crate::task::{TaskContext, TaskStatus};
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -51,7 +51,9 @@ pub struct ProcessControlBlock {
 /// Inner of Process Control Block
 pub struct ProcessControlBlockInner {
     pub trap_cx_ppn: PhysPageNum,
+    pub trap_cx_base: usize,
     pub task_cx: TaskContext,
+    pub user_stack_top: usize,
     /// is zombie?
     pub is_zombie: bool,
     /// task status
@@ -249,6 +251,71 @@ impl ProcessControlBlockInner {
             get_abs_path(self.fs_info.cwd(), path)
         }
     }
+    /// 创建用户栈、上下文
+    pub fn alloc_user_res(&mut self) {
+        let (trap_cx_base, _) = self.memory_set.insert_framed_area_with_hint(
+            USER_TRAP_CONTEXT_TOP,
+            PAGE_SIZE,
+            MapPermission::rw(),
+            MapAreaType::Trap,
+        );
+        let (ustack_base, ustack_top) = self.memory_set.lazy_insert_framed_area_with_hint(
+            USER_STACK_TOP,
+            USER_STACK_SIZE,
+            MapPermission::rwu(),
+            MapAreaType::Stack,
+        );
+        let trap_cx_ppn = self.memory_set.translate(trap_cx_base).unwrap().ppn();
+        self.user_stack_top = stack_top;
+        self.trap_cx_ppn = trap_cx_ppn;
+        self.trap_cx_base = trap_cx_base;
+
+        let user_stack_range = VPNRange::new(
+            VirtPageNum::from(ustack_base).floor(),
+            VirtPageNum::from(ustack_top).floor(),
+        );
+        // 预分配用于环境变量
+        let page_table = PageTable::from_token(self.memory_set.token());
+        let area = self.memory_set.get_mut().areas.iter_mut().find(|area| {
+            area.vpn_range.range() == user_stack_range.range() 
+            //&& area.area_type == MapAreaType::Stack
+        }).unwrap();
+        for i in 1..=PRE_ALLOC_PAGES {
+            let vpn = (area.vpn_range.end().0 - i).into();
+            let pte: Option<PageTableEntry> = page_table.translate(vpn);
+            if pte.is_none() || !pte.unwrap().is_valid() {
+                area.map_one(
+                    &mut self.memory_set.get_mut().page_table,
+                    vpn,
+                )
+            }
+        }
+    }
+    pub fn clone_user_res(&mut self, another: &ProcessControlBlockInner) {
+        self.alloc_user_res();
+        self.memory_set.lazy_clone_area(
+            VirtAddr::from(self.user_stack_top - USER_HEAP_SIZE).floor(),
+            another.memory_set.get_ref(),
+        );
+        seelf.memory_set.lazy_clone_area(
+            VirtAddr::from(self.trap_cx_base).floor(),
+            another.memory_set.get_ref(),
+        );
+    }
+    pub fn dealloc_user_res(&mut self) {
+        if self.user_stack_top != 0 {
+            self.memory_set.remove_area_with_start_vpn(
+                VirtAddr::from(self.user_stack_top - USER_STACK_SIZE).floor(),
+            )
+        }
+        self.memory_set.remove_area_with_start_vpn(
+            VirtAddr::from(self.trap_cx_base).floor(),
+        );
+        flush_tlb();
+    }
+    pub fn trap_cx(&self) -> &'static mut TrapContext {
+        self.trap_cx_ppn.get_mut()
+    }
 }
 
 impl ProcessControlBlock {
@@ -324,8 +391,13 @@ impl ProcessControlBlock {
             ppid: 0,
             pid: 0,
             user,
+            kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
+                    trap_cx_ppn: 0.into(),
+                    trap_cx_base: 0,
+                    user_stack_top: 0,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     heap_id,
                     task_status: TaskStatus::Ready,
                     is_zombie: false,
@@ -691,6 +763,7 @@ impl ProcessControlBlock {
                 user,
                 inner: unsafe {
                     UPSafeCell::new(ProcessControlBlockInner {
+                        trap_cx_ppn: 0.into(),
                         heap_id: parent.heap_id,
                         task_status: TaskStatus::Ready,
                         is_zombie: false,
@@ -734,6 +807,7 @@ impl ProcessControlBlock {
                 user,
                 inner: unsafe {
                     UPSafeCell::new(ProcessControlBlockInner {
+                        trap_cx_ppn: 0.into(),
                         is_zombie: false,
                         task_status: TaskStatus::Ready,
                         clear_child_tid,
@@ -829,75 +903,6 @@ impl ProcessControlBlock {
     /// set clear child tid
     pub fn set_clear_child_tid(&self, new: usize) {
         self.inner_exclusive_access().clear_child_tid = new;
-    }
-}
-
-// impl ProcessControlBlock {
-//     /// Create a new child process directly from the parent process
-//     pub fn spwan(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
-//         let child = Arc::new(Self::new(elf_data));
-
-//         child.inner_exclusive_access().parent = Some(Arc::downgrade(self));
-//         self.inner_exclusive_access().children.push(Arc::clone(&child));
-
-//         child
-//     }
-//     // seems a unnecessary syscall, tempolarily remove it
-// }
-
-bitflags! {
-    /// Open file flags
-    pub struct CloneFlags: u32 {
-        ///
-        const SIGCHLD = (1 << 4) | (1 << 0);
-        ///set if VM shared between processes
-        const CLONE_VM = 1 << 8;
-        ///set if fs info shared between processes
-        const CLONE_FS = 1 << 9;
-        ///set if open files shared between processes
-        const CLONE_FILES = 1 << 10;
-        ///set if signal handlers and blocked signals shared
-        const CLONE_SIGHAND = 1 << 11;
-        ///set if a pidfd should be placed in parent
-        const CLONE_PIDFD = 1 << 12;
-        ///set if we want to let tracing continue on the child too
-        const CLONE_PTRACE = 1 << 13;
-        ///set if the parent wants the child to wake it up on mm_release
-        const CLONE_VFORK = 1 << 14;
-        ///set if we want to have the same parent as the cloner
-        const CLONE_PARENT = 1 << 15;
-        ///Same thread group?
-        const CLONE_THREAD = 1 << 16;
-        ///New mount namespace group
-        const CLONE_NEWNS = 1 << 17;
-        ///share system V SEM_UNDO semantics
-        const CLONE_SYSVSEM = 1 << 18;
-        ///create a new TLS for the child
-        const CLONE_SETTLS = 1 << 19;
-        ///set the TID in the parent
-        const CLONE_PARENT_SETTID = 1 << 20;
-        ///clear the TID in the child
-        const CLONE_CHILD_CLEARTID = 1 << 21;
-        ///Unused, ignored
-        const CLONE_DETACHED = 1 << 22;
-        ///set if the tracing process can't force CLONE_PTRACE on this clone
-        const CLONE_UNTRACED = 1 << 23;
-        ///set the TID in the child
-        const CLONE_CHILD_SETTID = 1 << 24;
-        ///New cgroup namespace
-        const CLONE_NEWCGROUP = 1 << 25;
-        ///New utsname namespace
-        const CLONE_NEWUTS = 1 << 26;
-        ///New ipc namespace
-        const CLONE_NEWIPC = 1 << 27;
-        /// New user namespace
-        const CLONE_NEWUSER = 1 << 28;
-        ///New pid namespace
-        const CLONE_NEWPID = 1 << 29;
-        ///New network namespace
-        const CLONE_NEWNET = 1 << 30;
-        ///Clone io context
-        const CLONE_IO = 1 << 31;
     }
 }
 

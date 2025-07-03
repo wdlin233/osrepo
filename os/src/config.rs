@@ -55,7 +55,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 #[cfg(target_arch = "riscv64")]
 /// user app's stack size
-pub const USER_STACK_SIZE: usize = 4096 * 8;
+pub const USER_STACK_SIZE: usize = 1024 * 1024 * 8;
 #[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
@@ -73,10 +73,4 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE;
 #[cfg(target_arch = "loongarch64")]
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 
-/// yield wakeup task
-pub const YIELD_CHECK: usize = 90;
-#[allow(unused)]
-/// Use a fs block size of 512 bytes
-pub const BLOCK_SIZE: usize = 4096;
-/// The io block size of the disk layer
-pub const IO_BLOCK_SIZE: usize = 512;
+pub const PRE_ALLOC_PAGES: usize = 8;

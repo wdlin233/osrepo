@@ -134,11 +134,12 @@ pub fn init_frame_allocator() {
 }
 
 /// Allocate a physical page frame in FrameTracker style
-pub fn frame_alloc() -> Option<FrameTracker> {
+pub fn frame_alloc() -> Option<Arc<FrameTracker>> {
     FRAME_ALLOCATOR
         .exclusive_access()
         .alloc()
         .map(FrameTracker::new)
+        .map(Arc::new)
 }
 
 /// Deallocate a physical page frame with a given ppn
