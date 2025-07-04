@@ -40,16 +40,6 @@ pub struct TaskControlBlockInner {
     //每个线程都存在内核栈，其trap上下文位于内核栈上
     #[cfg(target_arch = "loongarch64")]
     pub kstack: KernelStack,
-
-    /// Save task context, 线程上下文
-    
-    
-    /// It is set when active exit or execution error occurs
-    pub exit_code: Option<i32>,
-    // ///heap bottom
-    // pub heap_bottom: usize,
-    // ///program brk
-    // pub program_brk: usize,
 }
 
 impl TaskControlBlockInner {

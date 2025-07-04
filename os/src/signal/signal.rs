@@ -124,6 +124,7 @@ impl SignalFlags {
     pub fn from_sig(signo: usize) -> Self {
         SignalFlags::from_bits(1 << (signo - 1)).unwrap()
     }
+    /// 返回最低位的信号
     pub fn peek_front(&self) -> Option<usize> {
         if self.is_empty() {
             None
@@ -150,7 +151,7 @@ impl SignalFlags {
         } else if self.contains(Self::SIGSEGV) {
             Some((-11, "Segmentation Fault, SIGSEGV=11"))
         } else {
-            // warn!("[kernel] signalflags check_error  {:?}", self);
+            warn!("[kernel] signalflags check_error  {:?}", self);
             None
         }
     }

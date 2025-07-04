@@ -131,17 +131,24 @@ pub fn add_stopping_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.exclusive_access().add_stop(task);
 }
 
+
+
 /// Get process by pid
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
     info!("(pid2process) pid: {}", pid);
-    let map = PID2PCB.exclusive_access();
-    map.get(&pid).map(Arc::clone)
+    match PID2PCB.exclusive_access().get(&pid) {
+        Some(process) => Some(process.clone()),
+        None => {
+            warn!("(pid2process) pid: {} not found", pid);
+            None
+        }
+    }
 }
 
 /// Insert item(pid, pcb) into PID2PCB map (called by do_fork AND ProcessControlBlock::new)
-pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
+pub fn insert_into_pid2process(pid: usize, process: &Arc<ProcessControlBlock>) {
     info!("(insert_into_pid2process) pid: {}", pid);
-    PID2PCB.exclusive_access().insert(pid, process);
+    PID2PCB.exclusive_access().insert(pid, process.clone());
 }
 
 /// Remove item(pid, _some_pcb) from PDI2PCB map (called by exit_current_and_run_next)
@@ -160,19 +167,20 @@ pub fn process_num() -> usize {
     PID2PCB.exclusive_access().len()
 }
 
-/// 线程组
-pub static THREAD_GROUP: Lazy<Mutex<BTreeMap<usize, Vec<Arc<ProcessControlBlock>>>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
+
+
+/// 线程组实现
+pub static THREAD_GROUP: UPSafeCell<BTreeMap<usize, Vec<Arc<ProcessControlBlock>>>> =
+    unsafe { UPSafeCell::new(BTreeMap::new()) };
 
 pub fn insert_into_thread_group(pid: usize, process: &Arc<ProcessControlBlock>) {
     THREAD_GROUP
-        .lock()
+        .exclusive_access()
         .entry(pid)
         .or_insert_with(Vec::new)
         .push(process.clone());
 }
 /// 删除整个线程组,同时将线程从pid2process移除
-/// 实际上这里和 pid2process 是有联系的，先都存放着. TODO!(wdlin)
 pub fn remove_all_from_thread_group(pid: usize) {
-    THREAD_GROUP.lock().remove(&pid);
+    THREAD_GROUP.exclusive_access().remove(&pid);
 }
