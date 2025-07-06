@@ -127,7 +127,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             argv.push(String::from("sh"));
             path = String::from("/musl/busybox");
         }
-        if path.ends_with(".sh") && path.contains("/glic") {
+        if path.ends_with(".sh") && path.contains("/glibc") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
             argv.push(String::from("/glibc/busybox"));
