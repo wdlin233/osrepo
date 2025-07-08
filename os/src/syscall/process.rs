@@ -252,7 +252,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
             );
             let pair = inner.children.iter().enumerate().find(|(_, p)| {
                 // ++++ temporarily access child PCB exclusively
-                p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
+                p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
                 // ++++ release child PCB
             });
             if let Some((idx, _)) = pair {

@@ -43,6 +43,8 @@ use riscv::register::{
     scause::{Exception, Trap},
 };
 use xmas_elf::ElfFile;
+use polyhal::pagetable::{MappingFlags, MappingSize, PageTable, PageTableWrapper};
+use polyhal::{PhysAddr, VirtAddr};
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
@@ -115,9 +117,9 @@ impl MemorySet {
         Self::new(MemorySetInner::new_kernel())
     }
     #[inline(always)]
-    pub fn from_elf(elf_data: &[u8], heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
         let (memory_set, user_heap_bottom, entry_point, auxv) =
-            MemorySetInner::from_elf(elf_data, heap_id);
+            MemorySetInner::from_elf(elf_data);
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
@@ -126,14 +128,9 @@ impl MemorySet {
             user_space.inner.get_unchecked_mut(),
         ))
     }
-    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn activate(&self) {
         self.inner.get_unchecked_ref().activate();
-    }
-    #[inline(always)]
-    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
-        self.inner.get_unchecked_ref().translate(vpn)
     }
     #[inline(always)]
     pub fn recycle_data_pages(&self) {
@@ -242,7 +239,7 @@ impl MemorySet {
 /// address space
 pub struct MemorySetInner {
     /// page table
-    pub page_table: PageTable,
+    pub page_table: Arc<PageTableAWrapper>,
     /// areas
     pub areas: Vec<MapArea>,
 }
@@ -251,13 +248,13 @@ impl MemorySetInner {
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
         Self {
-            page_table: PageTable::new(),
+            page_table: Arc::new(PageTableWrapper::alloc()),
             areas: Vec::new(),
         }
     }
     /// Get he page table token
-    pub fn token(&self) -> usize {
-        self.page_table.token()
+    pub fn token(&self) -> PageTable {
+        self.page_table.0
     }
 
     pub fn insert_framed_area_with_hint(
@@ -432,17 +429,14 @@ impl MemorySetInner {
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
-    pub fn from_elf(elf_data: &[u8], heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
         let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
-        #[cfg(target_arch = "riscv64")]
-        // map trampoline
-        memory_set.map_trampoline();
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
         let _magic = elf_header.pt1.magic;
-        //assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
+        assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
         let mut max_end_vpn = VirtPageNum(0);
 
@@ -452,13 +446,13 @@ impl MemorySetInner {
         )); // ELF64 header 64bytes
         auxv.push(Aux::new(AuxType::PHNUM, ph_count as usize));
         auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
-        // // 设置动态链接
-        // if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf) {
-        //     auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
-        //     entry_point = interp_entry_point;
-        // } else {
-        auxv.push(Aux::new(AuxType::BASE, 0));
-        //}
+        // 设置动态链接
+        if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf) {
+            auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
+            entry_point = interp_entry_point;
+        } else {
+            auxv.push(Aux::new(AuxType::BASE, 0));
+        }
         auxv.push(Aux::new(AuxType::FLAGS, 0 as usize));
         auxv.push(Aux::new(
             AuxType::ENTRY,
@@ -482,7 +476,7 @@ impl MemorySetInner {
         });
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
+        let mut user_heap_bottom: usize = max_end_va.into();
 
         // guard page
         user_heap_bottom += PAGE_SIZE;
@@ -491,14 +485,11 @@ impl MemorySetInner {
             user_heap_bottom, user_heap_bottom
         );
         let user_heap_top: usize = user_heap_bottom;
-        #[cfg(target_arch = "riscv64")]
-        let perm = MapPermission::R | MapPermission::W | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")]
-        let perm = MapPermission::W | MapPermission::PLVL | MapPermission::PLVH; // PLV3, user mode
         memory_set.insert_framed_area(
             user_heap_bottom.into(),
             user_heap_top.into(),
-            perm,
+            MapType::Framed,
+            MapPermission::R | MapPermission::W | MapPermission::U,
             MapAreaType::Brk,
         );
         // 返回 address空间,用户栈顶,入口地址
@@ -521,76 +512,40 @@ impl MemorySetInner {
         for i in 0..ph_count {
             let ph = elf.program_header(i).unwrap();
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-                let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-                let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+                let start_va: VirtAddr = (ph.virtual_addr() as usize + offset.0).into();
+                let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize + offset.0).into();
                 debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
                 if !has_found_header_va {
                     head_va = start_va.0;
                     has_found_header_va = true;
                 }
-                #[cfg(target_arch = "riscv64")]
                 let mut map_perm = MapPermission::U;
-                #[cfg(target_arch = "loongarch64")]
-                let mut map_perm = MapPermission::PLVL | MapPermission::PLVH; // PLV3, user mode
                 let ph_flags = ph.flags();
-                #[cfg(target_arch = "riscv64")]
-                {
-                    if ph_flags.is_read() {
-                        map_perm |= MapPermission::R;
-                    }
-                    if ph_flags.is_write() {
-                        map_perm |= MapPermission::W;
-                    }
-                    if ph_flags.is_execute() {
-                        map_perm |= MapPermission::X;
-                    }
+                if ph_flags.is_read() {
+                    map_perm |= MapPermission::R;
                 }
-                #[cfg(target_arch = "loongarch64")]
-                {
-                    if !ph_flags.is_read() {
-                        map_perm |= MapPermission::NR;
-                    }
-                    if ph_flags.is_write() {
-                        map_perm |= MapPermission::W;
-                    }
-                    if !ph_flags.is_execute() {
-                        map_perm |= MapPermission::NX;
-                    }
+                if ph_flags.is_write() {
+                    map_perm |= MapPermission::W;
                 }
-                #[cfg(target_arch = "riscv64")]
+                if ph_flags.is_execute() {
+                    map_perm |= MapPermission::X;
+                }
                 let map_area = MapArea::new(
                     start_va, 
                     end_va, 
                     MapType::Framed,
                     map_perm, 
-                    MapAreaType::Elf);
-                #[cfg(target_arch = "loongarch64")]
-                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
-
+                    MapAreaType::Elf
+                );
+                let data_offset = start_va.0 = start_va.floor().0 * PAGE_SIZE;
                 max_end_vpn = map_area.vpn_range.get_end();
                 debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
                 // A optimization for mapping data, keep aligned
-                if start_va.page_offset() == 0 {
-                    debug!("page offset == 0");
-                    self.push(
-                        map_area,
-                        Some(
-                            &elf.input
-                                [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-                        ),
-                    );
-                } else {
-                    debug!("page offset != 0");
-                    //error!("start_va page offset is not zero, start_va: {:?}", start_va);
-                    let data_len = start_va.page_offset() + ph.file_size() as usize;
-                    let mut data: Vec<u8> = Vec::with_capacity(data_len);
-                    data.resize(data_len, 0);
-                    data[start_va.page_offset()..].copy_from_slice(
-                        &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-                    );
-                    debug!("to mem set push");
-                    self.push(map_area, Some(data.as_slice()));
-                }
+                self.push_with_offset(
+                    map_area,
+                    data_offset,
+                    Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
+                );
             }
         }
         (max_end_vpn, head_va.into())
@@ -607,8 +562,8 @@ impl MemorySetInner {
             memory_set.push(new_area, None);
             // copy data from another space
             for vpn in area.vpn_range {
-                let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                let src_ppn = user_space.translate(vpn).unwrap().0;
+                let dst_ppn = memory_set.translate(vpn).unwrap().0;
                 dst_ppn
                     .get_bytes_array()
                     .copy_from_slice(src_ppn.get_bytes_array());
@@ -616,18 +571,15 @@ impl MemorySetInner {
         }
         memory_set
     }
-    #[cfg(target_arch = "riscv64")]
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
-        let satp = self.page_table.token();
-        unsafe {
-            satp::write(satp);
-            asm!("sfence.vma");
-        }
+        self.page_table.change();
     }
     /// Translate a virtual page number to a page table entry
-    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+    fn translate(&self, vpn: VirtPageNum) -> Option<(PhysAddr, MappingFlags)> {
+        let vaddr: VirtAddr = vpn.into();
         self.page_table.translate(vpn)
+            .map(|(pa, flags)| (pa.into(), flags))
     }
 
     ///Remove all `MapArea`
@@ -734,10 +686,13 @@ impl MemorySetInner {
         }
         false
     }
-    // #[inline(always)] for multiThread, use lazy_page_fault simply
-    // pub fn lazy_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
-    //     self.inner.get_unchecked_mut().lazy_page_fault(vpn, scause)
-    // }
+    fn push_with_offset(&mut self, mut map_area: MapArea, offset: usize, data: Option<&[u8]>) {
+        map_area.map(&mut self.page_table);
+        if let Some(data) = data {
+            map_area.copy_data(&mut self.page_table, data, offset);
+        }
+        self.areas.push(map_area);
+    }
 }
 
 /// remap test in kernel space

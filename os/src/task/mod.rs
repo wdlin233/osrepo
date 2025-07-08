@@ -141,7 +141,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         remove_from_pid2process(pid);
         let mut process_inner = process.inner_exclusive_access();
         // mark this process as a zombie process
-        process_inner.is_zombie = true;
+        process_inner.task_status = TaskStatus::Zombie;
         // record exit code of main process
         process_inner.exit_code = exit_code;
         // wakeup his parent
@@ -198,7 +198,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
             if let Some(tasks) = thread_group.get(&process.getpid()) {
                 if tasks
                     .iter()
-                    .all(|task| task.inner_exclusive_access().is_zombie == true)
+                    .all(|task| task.inner_exclusive_access().is_zombie() == true)
                 {
                     drop(thread_group);
                     send_signal_to_thread_group(

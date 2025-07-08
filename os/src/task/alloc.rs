@@ -141,10 +141,7 @@ impl KernelStack {
         KERNEL_SPACE.exclusive_access().insert_framed_area(
             kstack_bottom.into(),
             kstack_top.into(),
-            #[cfg(target_arch = "riscv64")]
             (MapPermission::R | MapPermission::W),
-            #[cfg(target_arch = "loongarch64")]
-            (MapPermission::W),
             MapAreaType::Stack,
         );
         KernelStack(kstack_id)

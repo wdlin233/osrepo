@@ -246,7 +246,6 @@ impl PhysAddr {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
@@ -262,6 +261,12 @@ impl PhysPageNum {
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         pa.get_mut()
+    }
+    /// Get mutable reference of physical address as type T
+    pub fn as_mut<T>(&self) -> &'static mut T {
+        let pa: PhysAddr = (*self).into();
+        let kernel_va = KernelAddr::from(pa);
+        kernel_va.as_mut()
     }
 }
 

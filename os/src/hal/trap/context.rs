@@ -65,9 +65,7 @@ impl TrapContext {
     pub fn app_init_context(
         entry: usize,
         sp: usize,
-        #[cfg(target_arch = "riscv64")] kernel_satp: usize,
-        #[cfg(target_arch = "riscv64")] kernel_sp: usize,
-        #[cfg(target_arch = "riscv64")] trap_handler: usize,
+        kernel_sp: usize,
     ) -> Self {
         #[cfg(target_arch = "riscv64")]
         let mut sstatus = sstatus::read();
