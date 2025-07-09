@@ -19,11 +19,12 @@ pub const MSEC_PER_SEC: usize = 1000;
 /// kernel stack size
 pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
 /// kernel stack top address
+pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1; // trampoline address for loongarch64
 pub const KSTACK_TOP: usize = usize::MAX - PAGE_SIZE + 1;
 
 pub const THREAD_MAX_NUM: usize = 3000;
-// 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
-pub const USER_SPACE_SIZE: usize = 0x5000_0000;
+
+pub const USER_SPACE_SIZE: usize = 0x30_0000_0000;
 
 pub const USER_TRAP_CONTEXT_TOP: usize = USER_SPACE_SIZE;
 
@@ -44,19 +45,19 @@ pub use crate::board::{CLOCK_FREQ, MMIO};
 pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 /// physical memory end address
 pub const MEMORY_END: usize = 0x8800_0000;
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 /// page size bits: 12
 pub const PAGE_SIZE_BITS: usize = 0xc;
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 /// user app's stack size
 pub const USER_STACK_SIZE: usize = 1024 * 1024 * 8;
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
 
@@ -74,3 +75,4 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE;
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 
 pub const PRE_ALLOC_PAGES: usize = 8;
+pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;

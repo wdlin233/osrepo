@@ -257,16 +257,11 @@ impl PhysPageNum {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
-    /// Get the mutable reference of physical address
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        let pa: PhysAddr = (*self).into();
-        pa.get_mut()
-    }
     /// Get mutable reference of physical address as type T
     pub fn as_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         let kernel_va = KernelAddr::from(pa);
-        kernel_va.as_mut()
+        kernel_va.get_mut()
     }
 }
 

@@ -4,9 +4,9 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE,
+    DL_INTERP_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE
 };
-use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
+use crate::fs::{map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlags, NONE_MODE, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::MapType;
@@ -22,12 +22,13 @@ use crate::hal::{
     ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
 };
 use crate::mm::page_table::flush_tlb;
-use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
+use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, translated_refmut, UserBuffer};
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
-use crate::task::{current_process, Aux, AuxType};
-use crate::utils::SysErrNo;
+use crate::task::{current_task, Aux, AuxType};
+use crate::utils::{SysErrNo, SyscallRet};
 use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -43,8 +44,6 @@ use riscv::register::{
     scause::{Exception, Trap},
 };
 use xmas_elf::ElfFile;
-use polyhal::pagetable::{MappingFlags, MappingSize, PageTable, PageTableWrapper};
-use polyhal::{PhysAddr, VirtAddr};
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
@@ -89,12 +88,13 @@ impl MemorySet {
         &self,
         start_va: VirtAddr,
         end_va: VirtAddr,
+        map_type: MapType,
         permission: MapPermission,
         area_type: MapAreaType,
     ) {
         self.inner
             .get_unchecked_mut()
-            .insert_framed_area(start_va, end_va, permission, area_type);
+            .insert_framed_area(start_va, end_va, map_type, permission, area_type);
     }
     #[inline(always)]
     pub fn remove_area_with_start_vpn(&self, start_vpn: VirtPageNum) {
@@ -157,17 +157,6 @@ impl MemorySet {
         self.inner.get_unchecked_mut().all_invalid(start, end)
     }
     #[inline(always)]
-    pub fn insert_framed_area_with_hint(
-        &self,
-        hint: usize,
-        size: usize,
-        map_perm: MapPermission,
-        area_type: MapAreaType,
-    ) -> (usize, usize) {
-        self.get_mut()
-            .insert_framed_area_with_hint(hint, size, map_perm, area_type)
-    }
-    #[inline(always)]
     pub fn mmap(
         &self,
         start: usize,
@@ -209,7 +198,7 @@ impl MemorySet {
         area_type: MapAreaType,
     ) -> (usize, usize) {
         self.inner
-            .get_mut()
+            .get_unchecked_mut()
             .insert_framed_area_with_hint(hint, size, map_perm, area_type)
     }
     #[inline(always)]
@@ -221,8 +210,8 @@ impl MemorySet {
         area_type: MapAreaType,
     ) -> (usize, usize) {
         self.inner
-            .get_mut()
-            .insert_framed_area_with_hint(hint, size, map_perm, area_type)
+            .get_unchecked_mut()
+            .lazy_insert_framed_area_with_hint(hint, size, map_perm, area_type)
     }
     #[inline(always)]
     pub fn lazy_clone_area(
@@ -231,15 +220,26 @@ impl MemorySet {
         another: &MemorySetInner,
     ) {
         self.inner
-            .get_mut()
+            .get_unchecked_mut()
             .lazy_clone_area(start_vpn, another)
+    }
+    #[inline(always)]
+    pub fn recycle(&mut self) -> SyscallRet {
+        self.inner.get_unchecked_mut().recycle_data_pages()
+    }
+    #[inline(always)]
+    pub fn translate(
+        &self,
+        vpn: VirtPageNum,
+    ) -> Option<PageTableEntry> {
+        self.inner.get_unchecked_ref().translate(vpn)
     }
 }
 
 /// address space
 pub struct MemorySetInner {
     /// page table
-    pub page_table: Arc<PageTableAWrapper>,
+    pub page_table: PageTable,
     /// areas
     pub areas: Vec<MapArea>,
 }
@@ -248,13 +248,13 @@ impl MemorySetInner {
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
         Self {
-            page_table: Arc::new(PageTableWrapper::alloc()),
+            page_table: PageTable::new(),
             areas: Vec::new(),
         }
     }
     /// Get he page table token
-    pub fn token(&self) -> PageTable {
-        self.page_table.0
+    pub fn token(&self) -> usize {
+        self.page_table.token()
     }
 
     pub fn insert_framed_area_with_hint(
@@ -269,6 +269,7 @@ impl MemorySetInner {
         self.insert_framed_area(
             VirtAddr::from(start_va),
             VirtAddr::from(end_va),
+            MapType::Framed,
             map_perm,
             area_type,
         );
@@ -280,16 +281,16 @@ impl MemorySetInner {
         &mut self,
         start_va: VirtAddr,
         end_va: VirtAddr,
+        map_type: MapType,
         permission: MapPermission,
         area_type: MapAreaType,
     ) {
-        #[cfg(target_arch = "riscv64")]
         self.push(
-            MapArea::new(start_va, end_va, MapType::Framed, permission, area_type),
+            MapArea::new(start_va, end_va, map_type, permission, area_type),
             None,
         );
-        #[cfg(target_arch = "loongarch64")]
-        self.push(MapArea::new(start_va, end_va, permission, area_type), None);
+        //#[cfg(target_arch = "loongarch64")]
+        //self.push(MapArea::new(start_va, end_va, permission, area_type), None);
     }
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -319,7 +320,7 @@ impl MemorySetInner {
         // );
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
-            map_area.copy_data(&mut self.page_table, data);
+            map_area.copy_data(&mut self.page_table, data, 0);
         }
         self.areas.push(map_area);
     }
@@ -435,10 +436,10 @@ impl MemorySetInner {
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
-        let _magic = elf_header.pt1.magic;
+        let magic = elf_header.pt1.magic;
         assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
-        let mut max_end_vpn = VirtPageNum(0);
+        let mut entry_point = elf.header.pt2.entry_point() as usize;
 
         auxv.push(Aux::new(
             AuxType::PHENT,
@@ -496,7 +497,7 @@ impl MemorySetInner {
         (
             memory_set,
             user_heap_bottom,
-            elf.header.pt2.entry_point() as usize,
+            entry_point,
             auxv,
         )
     }
@@ -537,7 +538,7 @@ impl MemorySetInner {
                     map_perm, 
                     MapAreaType::Elf
                 );
-                let data_offset = start_va.0 = start_va.floor().0 * PAGE_SIZE;
+                let data_offset = start_va.0 - start_va.floor().0 * PAGE_SIZE;
                 max_end_vpn = map_area.vpn_range.get_end();
                 debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
                 // A optimization for mapping data, keep aligned
@@ -562,8 +563,8 @@ impl MemorySetInner {
             memory_set.push(new_area, None);
             // copy data from another space
             for vpn in area.vpn_range {
-                let src_ppn = user_space.translate(vpn).unwrap().0;
-                let dst_ppn = memory_set.translate(vpn).unwrap().0;
+                let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
                 dst_ppn
                     .get_bytes_array()
                     .copy_from_slice(src_ppn.get_bytes_array());
@@ -573,19 +574,46 @@ impl MemorySetInner {
     }
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
-        self.page_table.change();
+        let satp = self.page_table.token();
+        #[cfg(target_arch = "riscv64")]
+        unsafe {
+            satp::write(satp);
+            asm!("sfence.vma"); 
+        }
     }
     /// Translate a virtual page number to a page table entry
-    fn translate(&self, vpn: VirtPageNum) -> Option<(PhysAddr, MappingFlags)> {
-        let vaddr: VirtAddr = vpn.into();
+    fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
-            .map(|(pa, flags)| (pa.into(), flags))
     }
 
     ///Remove all `MapArea`
-    pub fn recycle_data_pages(&mut self) {
-        //*self = Self::new_bare();
+    pub fn recycle_data_pages(&mut self) -> SyscallRet {
+        // 先检测是否需要munmap
+        for area in self.areas.iter_mut() {
+            if area.area_type == MapAreaType::Mmap {
+                if area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+                    && area.map_perm.contains(MapPermission::W)
+                {
+                    let addr: VirtAddr = area.vpn_range.get_start().into();
+                    let mapped_len: usize = area
+                        .vpn_range
+                        .into_iter()
+                        .filter(|vpn| area.data_frames.contains_key(&vpn))
+                        .count()
+                        * PAGE_SIZE;
+                    let file = area.mmap_file.file.clone().unwrap();
+                    let process = current_task().unwrap();
+                    let inner = process.inner_exclusive_access();
+                    let token = inner.memory_set.token();
+                    let buffers =
+                            translated_byte_buffer(token, addr.0 as *mut u8, mapped_len);
+                    file.write(UserBuffer::new(buffers))?;
+                }
+            }
+        }
         self.areas.clear();
+        self.page_table.clear();
+        return Ok(0);
     }
 
     /// shrink the area to new_end
@@ -692,6 +720,45 @@ impl MemorySetInner {
             map_area.copy_data(&mut self.page_table, data, offset);
         }
         self.areas.push(map_area);
+    }
+    fn load_dl_interp_if_needed(&mut self, elf: &ElfFile) -> Option<usize> {
+        let elf_header = elf.header;
+        let ph_count = elf_header.pt2.ph_count();
+
+        let mut is_dl = false;
+        for i in 0..ph_count {
+            let ph = elf.program_header(i).unwrap();
+            if ph.get_type().unwrap() == xmas_elf::program::Type::Interp {
+                is_dl = true;
+                break;
+            }
+        }
+
+        if is_dl {
+            debug!("[load_dl] encounter a dl elf");
+            let section = elf.find_section_by_name(".interp").unwrap();
+            let mut interp = String::from_utf8(section.raw_data(&elf).to_vec()).unwrap();
+            interp = interp.strip_suffix("\0").unwrap_or(&interp).to_string();
+            debug!("[load_dl] interp {}", interp);
+
+            let interp = map_dynamic_link_file(&interp);
+
+            // log::info!("interp {}", interp);
+
+            let interp_inode = open(&interp, OpenFlags::O_RDONLY, NONE_MODE)
+                .unwrap()
+                .file()
+                .ok();
+            let interp_file = interp_inode.unwrap();
+            let interp_elf_data = interp_file.inode.read_all().unwrap();
+            let interp_elf = xmas_elf::ElfFile::new(&interp_elf_data).unwrap();
+            self.map_elf(&interp_elf, DL_INTERP_OFFSET.into());
+
+            Some(interp_elf.header.pt2.entry_point() as usize + DL_INTERP_OFFSET)
+        } else {
+            debug!("[load_dl] encounter a static elf");
+            None
+        }
     }
 }
 
@@ -1171,19 +1238,19 @@ impl MemorySetInner {
         let another_page_table = PageTable::from_token(another.page_table.token());
         for vpn in another_area.vpn_range {
             let src_pte = another_page_table.translate(vpn);
-            if let Some(src_pte) = src_pte {
-                if src_pte.is_valid() {
-                    let dst_pte = origin_page_table.translate(vpn);
-                    if dst_pte.is_none() || !dst_pte.unwrap().is_valid() {
-                        this_area.map_one(&mut origin_page_table, vpn);
-                    }
-                    let src_ppn = src_pte.unwrap().ppn();
-                    let dst_ppn = origin_page_table.translate(vpn).unwrap().ppn();
-                    dst_ppn.bytes_array_mut()
-                        .copy_from_slice(src_ppn.bytes_array());
-
-                }
+            if src_pte.is_none() || !src_pte.unwrap().is_valid() {
+                continue;
             }
+            let src_ppn = src_pte.unwrap().ppn();
+
+            let dst_pte = origin_page_table.translate(vpn);
+            if dst_pte.is_none() || !dst_pte.unwrap().is_valid() {
+                this_area.map_one(&mut origin_page_table, vpn);
+            }
+            let dst_ppn = origin_page_table.translate(vpn).unwrap().ppn();
+            dst_ppn
+                .bytes_array_mut()
+                .copy_from_slice(src_ppn.bytes_array());
         }
     }
 }

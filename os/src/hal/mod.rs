@@ -2,6 +2,9 @@ pub mod utils;
 pub mod arch; 
 pub mod trap;
 
+use core::arch::global_asm;
+
+global_asm!(include_str!("entry.asm"));
 pub fn clear_bss() {
     extern "C" {
         fn sbss();

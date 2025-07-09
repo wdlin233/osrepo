@@ -3,26 +3,26 @@
 use super::add_task;
 use super::aux::{Aux, AuxType};
 use super::alloc::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
-use super::manager::insert_into_pid2process;
+use super::manager::insert_into_tid2task;
 use super::stride::Stride;
-use super::TaskControlBlock;
 use super::{pid_alloc, PidHandle};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 
-use crate::config::{PAGE_SIZE, PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP};
+use crate::config::{PAGE_SIZE, PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
-use crate::hal::trap::{self, trap_handler, TrapContext};
+use crate::hal::trap::{self, trap_handler};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{
-    flush_tlb, translated_refmut, MapAreaType, MemorySet, MemorySetInner, PageTable, PageTableEntry, VPNRange, VirtAddr, VirtPageNum
+    flush_tlb, translated_refmut, MapAreaType, MapPermission, MapType, MemorySet, MemorySetInner, PageTable, PageTableEntry, PhysPageNum, VPNRange, VirtAddr, VirtPageNum
 };
 use crate::signal::{SigTable, SignalFlags};
-use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::sync::UPSafeCell;
+use crate::syscall::CloneFlags;
 use crate::task::manager::insert_into_thread_group;
-use crate::task::{KernelStack, TaskContext, TaskStatus};
+use crate::task::{KernelStack, TaskContext};
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -64,9 +64,6 @@ pub struct ProcessControlBlockInner {
     pub memory_set: Arc<MemorySet>,
     pub fd_table: Arc<FdTable>,
     pub fs_info: Arc<FsInfo>,
-    pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
-    pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
-    pub condvar_list: Vec<Option<Arc<Condvar>>>,
     pub priority: usize,
     pub stride: Stride,
     pub tms: Tms,
@@ -160,20 +157,8 @@ impl ProcessControlBlockInner {
     /// set utime
     pub fn set_utime(&mut self, in_kernel_time: usize) {
         self.tms.inner.tms_utime = in_kernel_time - self.tms.begin_urun_time;
-        if let Some(parent) = self.parent.as_mut() {
-            parent
-                .upgrade()
-                .unwrap()
-                .inner_exclusive_access()
-                .tms
-                .set_cutime(self.tms.inner.tms_utime);
-            parent
-                .upgrade()
-                .unwrap()
-                .inner_exclusive_access()
-                .tms
-                .set_cstime(self.tms.one_stime);
-        }
+        self.tms.set_cutime(self.tms.inner.tms_utime);
+        self.tms.set_cstime(self.tms.one_stime);
         self.tms.one_stime = 0;
     }
 
@@ -185,34 +170,9 @@ impl ProcessControlBlockInner {
         self.tms.one_stime += out_kernel_time - in_kernel_time;
     }
 
-    #[allow(unused)]
     /// get the address of app's page table
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
-    }
-    // /// allocate a new file descriptor
-    // pub fn alloc_fd(&mut self) -> usize {
-    //     let fd_table = &mut self
-    //         .fd_table
-    //         .get().files;
-    // } use fstruct.rs instead
-    /// allocate a new task id
-    pub fn alloc_tid(&mut self) -> usize {
-        self.task_res_allocator.alloc()
-        //tid_alloc().0
-    }
-    /// deallocate a task id
-    pub fn dealloc_tid(&mut self, tid: usize) {
-        self.task_res_allocator.dealloc(tid)
-        //tid_dealloc(tid);
-    }
-    /// the count of tasks(threads) in this process
-    pub fn thread_count(&self) -> usize {
-        self.tasks.len()
-    }
-    /// get a task with tid in this process
-    pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
-        self.tasks[tid].as_ref().unwrap().clone()
     }
     ///get abs path
     pub fn get_abs_path(&self, dirfd: isize, path: &str) -> String {
@@ -236,26 +196,29 @@ impl ProcessControlBlockInner {
     }
     /// 创建用户栈、上下文
     pub fn alloc_user_res(&mut self) {
-        let (trap_cx_base, _) = self.memory_set.insert_framed_area_with_hint(
+        let (trap_cx_base, _) = self.memory_set.get_mut().insert_framed_area_with_hint(
             USER_TRAP_CONTEXT_TOP,
             PAGE_SIZE,
             MapPermission::rw(),
             MapAreaType::Trap,
         );
-        let (ustack_base, ustack_top) = self.memory_set.lazy_insert_framed_area_with_hint(
+        let (ustack_base, ustack_top) = self.memory_set.get_mut().lazy_insert_framed_area_with_hint(
             USER_STACK_TOP,
             USER_STACK_SIZE,
             MapPermission::rwu(),
             MapAreaType::Stack,
         );
-        let trap_cx_ppn = self.memory_set.translate(trap_cx_base).unwrap().ppn();
-        self.user_stack_top = stack_top;
+        let trap_cx_ppn = self.memory_set
+            .translate(VirtAddr::from(trap_cx_base).floor())
+            .unwrap()
+            .ppn();
+        self.user_stack_top = ustack_top;
         self.trap_cx_ppn = trap_cx_ppn;
         self.trap_cx_base = trap_cx_base;
 
         let user_stack_range = VPNRange::new(
-            VirtPageNum::from(ustack_base).floor(),
-            VirtPageNum::from(ustack_top).floor(),
+            VirtAddr::from(ustack_base).floor(),
+            VirtAddr::from(ustack_top).floor(),
         );
         // 预分配用于环境变量
         let page_table = PageTable::from_token(self.memory_set.token());
@@ -264,7 +227,7 @@ impl ProcessControlBlockInner {
             //&& area.area_type == MapAreaType::Stack
         }).unwrap();
         for i in 1..=PRE_ALLOC_PAGES {
-            let vpn = (area.vpn_range.end().0 - i).into();
+            let vpn = (area.vpn_range.get_end().0 - i).into();
             let pte: Option<PageTableEntry> = page_table.translate(vpn);
             if pte.is_none() || !pte.unwrap().is_valid() {
                 area.map_one(
@@ -276,11 +239,12 @@ impl ProcessControlBlockInner {
     }
     pub fn clone_user_res(&mut self, another: &ProcessControlBlockInner) {
         self.alloc_user_res();
-        self.memory_set.lazy_clone_area(
+        let memory_set = self.memory_set.get_mut();
+        memory_set.lazy_clone_area(
             VirtAddr::from(self.user_stack_top - USER_HEAP_SIZE).floor(),
             another.memory_set.get_ref(),
         );
-        seelf.memory_set.lazy_clone_area(
+        memory_set.lazy_clone_area(
             VirtAddr::from(self.trap_cx_base).floor(),
             another.memory_set.get_ref(),
         );
@@ -296,8 +260,16 @@ impl ProcessControlBlockInner {
         );
         flush_tlb();
     }
-    pub fn trap_cx(&self) -> &'static mut TrapContext {
-        self.trap_cx_ppn.get_mut()
+    pub fn trap_cx(&self) -> &'static mut TrapFrame {
+        self.trap_cx_ppn.as_mut()
+    }
+    pub fn recycle(&mut self) {
+        self.memory_set.recycle_data_pages();
+        self.fd_table.clear();
+        self.fs_info.clear();
+    }
+    pub fn is_group_exit(&self) -> bool {
+        self.sig_table.is_exited()
     }
 }
 
@@ -367,7 +339,8 @@ impl ProcessControlBlock {
         let (kernel_stack_bottom, kernel_stack_top) = kernel_stack.pos();
         memory_set.insert_framed_area(
             kernel_stack_bottom.into(), 
-            kernel_stack_top.into(), 
+            kernel_stack_top.into(),
+            MapType::Framed, 
             MapPermission::R | MapPermission::W, 
             MapAreaType::Stack,
         );
@@ -389,9 +362,6 @@ impl ProcessControlBlock {
                     memory_set: Arc::new(memory_set),
                     fd_table: Arc::new(FdTable::new_with_stdio()),
                     fs_info: Arc::new(FsInfo::new(String::from("/"))),
-                    mutex_list: Vec::new(),
-                    semaphore_list: Vec::new(),
-                    condvar_list: Vec::new(),
                     priority: 16,
                     clear_child_tid: 0,
                     stride: Stride::default(),
@@ -410,15 +380,15 @@ impl ProcessControlBlock {
         
         let mut inner = process.inner_exclusive_access();
         inner.alloc_user_res();
-        let mut trap_cx = inner.get_trap_cx();
+        let trap_cx = inner.get_trap_cx();
         // *trap_cx = TrapContext::app_init_context(
         //     entry_point,
         //     inner.user_stack_top,
         //     kernel_stack_top
         // );
         *trap_cx = TrapFrame::new();
-        *trap_cx[TrapFrameArgs::SEPC] = entry_point;
-        *trap_cx[TrapFrameArgs::SP] = inner.user_stack_top;
+        trap_cx[TrapFrameArgs::SEPC] = entry_point;
+        trap_cx[TrapFrameArgs::SP] = inner.user_stack_top;
         drop(inner);
         process
     }
@@ -537,7 +507,7 @@ impl ProcessControlBlock {
         user_sp -= 16;
         aux.push(Aux::new(AuxType::RANDOM, user_sp));
         for i in 0..0xf {
-            let mut p = user_sp + i;
+            let p = user_sp + i;
             *translated_refmut(new_token, p as *mut u8) = (i * 2) as u8;
         }
         user_sp -= user_sp % 16;
@@ -546,19 +516,19 @@ impl ProcessControlBlock {
         aux.push(Aux::new(AuxType::NULL, 0));
         for aux in aux.iter().rev() {
             user_sp -= core::mem::size_of::<Aux>();
-            let mut p = user_sp;
-            let mut pp = user_sp + size;
+            let p = user_sp;
+            let pp = user_sp + size;
             *translated_refmut(new_token, p as *mut usize) = aux.aux_type as usize;
             *translated_refmut(new_token, pp as *mut usize) = aux.value;
         }
-        let aux_base = user_sp;
+        let _aux_base = user_sp;
 
         //env指针
         //env指针空间
         user_sp -= envp.len() * size;
         let env_base = user_sp;
         for i in 0..envp.len() {
-            let mut p = user_sp + i * size;
+            let p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = envp[i];
         }
 
@@ -567,7 +537,7 @@ impl ProcessControlBlock {
         user_sp -= argv.len() * size;
         let argv_base = user_sp;
         for i in 0..argv.len() {
-            let mut p = user_sp + i * size;
+            let p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = argv[i];
         }
 
@@ -612,12 +582,12 @@ impl ProcessControlBlock {
         self: &Arc<Self>,
         flags: CloneFlags,
         stack: usize,
-        parent_tid: *mut u32,
+        _parent_tid: *mut u32,
         _tls: usize,
         child_tid: *mut u32,
     ) -> Arc<Self> {
         let user = self.user.clone();
-        let mut parent = self.inner_exclusive_access();
+        let parent = self.inner_exclusive_access();
         
         let tid_handle = tid_alloc();
         let kernel_stack = KernelStack::new(&tid_handle);
@@ -653,7 +623,7 @@ impl ProcessControlBlock {
         //     put_data(parent_inner.user_token(), parent_tid, tid_handle.0 as u32);
         // }
         // 检查是否需要设置子进程的 set_child_tid,clear_child_tid
-        let set_child_tid = if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
+        let _set_child_tid = if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
             child_tid as usize
         } else {
             0
@@ -700,9 +670,6 @@ impl ProcessControlBlock {
                     memory_set,
                     fs_info,
                     fd_table: new_fd_table,
-                    mutex_list: Vec::new(),
-                    semaphore_list: Vec::new(),
-                    condvar_list: Vec::new(),
                     priority: 16,
                     stride: Stride::default(),
                     tms: Tms::new(),
@@ -719,27 +686,27 @@ impl ProcessControlBlock {
         let mut inner = child.inner_exclusive_access();
         if flags.contains(CloneFlags::CLONE_THREAD) {
             inner.alloc_user_res();
-            *inner.get_trap_cx() = *parent.get_trap_cx();
+            *inner.get_trap_cx() = parent.get_trap_cx().clone();
         } else {
             inner.clone_user_res(&parent);
-            *inner.get_trap_cx()[TrapFrameArgs::ARG0] = 0; // 应该是这么写吧
+            inner.get_trap_cx()[TrapFrameArgs::ARG0] = 0; // 应该是这么写吧
         }
         // let trap_cx = inner.get_trap_cx();
         // trap_cx.kernel_sp = kernel_stack_top;
         // 实际上就是 trap_cx.kernel_sp = task.kstack.get_top();
         if stack != 0 {
-            implemented!("[ProcessControlBlock, fork] stack != 0, not implemented yet");
+            unimplemented!("[ProcessControlBlock, fork] stack != 0, not implemented yet");
         }
         if flags.contains(CloneFlags::CLONE_SETTLS) {
             // 这里的 tls 是指线程局部存储
-            implemented!("[ProcessControlBlock, fork] CLONE_SETTLS not implemented yet");
+            unimplemented!("[ProcessControlBlock, fork] CLONE_SETTLS not implemented yet");
         }
         if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
             unimplemented!("[ProcessControlBlock, fork] CLONE_CHILD_SETTID not implemented yet");
         }
         drop(inner);
         drop(parent);
-        insert_into_pid2process(inner.gettid(), &child);
+        insert_into_tid2task(child.gettid(), &child);
         insert_into_thread_group(child.pid, &child);
         if !flags.contains(CloneFlags::CLONE_THREAD) {
             unimplemented!("[ProcessControlBlock, fork] CLONE_THREAD not implemented yet");
@@ -764,9 +731,6 @@ impl ProcessControlBlock {
     /// get default gid
     pub fn getgid(&self) -> usize {
         self.user.getgid()
-    }
-    pub fn get_task_len(&self) -> usize {
-        self.inner_exclusive_access().tasks.len()
     }
     /// set clear child tid
     pub fn set_clear_child_tid(&self, new: usize) {

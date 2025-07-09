@@ -6,15 +6,16 @@
 
 use super::__switch;
 use super::{fetch_task, TaskStatus};
-use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
+use super::{ProcessControlBlock, TaskContext};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
-use crate::hal::trap::TrapContext;
 use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
+use polyhal::kcontext::KContext;
+use polyhal_trap::trapframe::TrapFrame;
 use core::arch::asm;
 //use core::str::next_code_point;
 use lazy_static::*;
@@ -24,22 +25,22 @@ use loongarch64::register::{asid, pgdl};
 /// Processor management structure
 pub struct Processor {
     /// The task currently executing on the current processor
-    current: Option<Arc<TaskControlBlock>>,
+    current: Option<Arc<ProcessControlBlock>>,
 
     ///The basic control flow of each core, helping to select and switch process
-    idle_task_cx: TaskContext,
+    idle_task_cx: KContext,
 }
 
 impl Processor {
     pub fn new() -> Self {
         Self {
             current: None,
-            idle_task_cx: TaskContext::zero_init(),
+            idle_task_cx: KContext::blank(),
         }
     }
 
     ///Get mutable reference to `idle_task_cx`
-    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
+    fn get_idle_task_cx_ptr(&mut self) -> *mut KContext {
         // info!(
         //     "get_idle_task_cx_ptr: idle task cx ptr: {:p}",
         //     &self.idle_task_cx
@@ -48,12 +49,12 @@ impl Processor {
     }
 
     ///Get current task in moving semanteme
-    pub fn take_current(&mut self) -> Option<Arc<TaskControlBlock>> {
+    pub fn take_current(&mut self) -> Option<Arc<ProcessControlBlock>> {
         self.current.take()
     }
 
     ///Get current task in cloning semanteme
-    pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
+    pub fn current(&self) -> Option<Arc<ProcessControlBlock>> {
         self.current.as_ref().map(Arc::clone)
     }
 }
@@ -70,11 +71,7 @@ pub fn run_tasks() {
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
-            #[cfg(target_arch = "riscv64")]
-            task.process
-                .upgrade()
-                .unwrap()
-                .inner_exclusive_access()
+            task.inner_exclusive_access()
                 .tms
                 .set_begin();
             #[cfg(target_arch = "loongarch64")]
@@ -86,13 +83,8 @@ pub fn run_tasks() {
                 pgdl::set_base(pgd); //设置根页表基地址
                 asid::set_asid(pid); //设置ASID
             }
-            // debug!(
-            //     "run_tasks: pid: {}, tid: {}",
-            //     task.process.upgrade().unwrap().getpid(),
-            //     task.inner_exclusive_access().res.as_ref().unwrap().tid
-            // );
             let mut task_inner = task.inner_exclusive_access();
-            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
+            let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
             task_inner.task_status = TaskStatus::Running;
             #[cfg(target_arch = "loongarch64")]
             // 在进行线程切换的时候
@@ -120,50 +112,28 @@ pub fn run_tasks() {
 }
 
 /// Get current task through take, leaving a None in its place
-pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
+pub fn take_current_task() -> Option<Arc<ProcessControlBlock>> {
     PROCESSOR.exclusive_access().take_current()
 }
 
 /// Get a copy of the current task
-pub fn current_task() -> Option<Arc<TaskControlBlock>> {
+pub fn current_task() -> Option<Arc<ProcessControlBlock>> {
     PROCESSOR.exclusive_access().current()
-}
-
-/// get current process
-pub fn current_process() -> Arc<ProcessControlBlock> {
-    current_task().unwrap().process.upgrade().unwrap()
 }
 
 /// Get the current user token(addr of page table)
 pub fn current_user_token() -> usize {
     let task = current_task().unwrap();
-    task.get_user_token()
+    let inner = task.inner_exclusive_access();
+    inner.get_user_token()
 }
 
 /// Get the mutable reference to trap context of current task
-pub fn current_trap_cx() -> &'static mut TrapContext {
+pub fn current_trap_cx() -> &'static mut TrapFrame {
     current_task()
         .unwrap()
         .inner_exclusive_access()
         .get_trap_cx()
-}
-
-#[cfg(target_arch = "riscv64")]
-/// get the user virtual address of trap context
-pub fn current_trap_cx_user_va() -> usize {
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .trap_cx_user_va()
-}
-
-#[cfg(target_arch = "riscv64")]
-/// get the top addr of kernel stack
-pub fn current_kstack_top() -> usize {
-    current_task().unwrap().kstack.get_top()
 }
 
 #[cfg(target_arch = "loongarch64")]
@@ -175,7 +145,7 @@ pub fn current_trap_addr() -> usize {
 }
 
 /// Return to idle control flow for new scheduling
-pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
+pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     let mut processor = PROCESSOR.exclusive_access();
     let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);
@@ -194,7 +164,8 @@ pub fn mmap(
     fd: Option<Arc<crate::fs::OSInode>>,
     off: usize,
 ) -> usize {
-    current_process()
+    current_task()
+        .unwrap()
         .inner_exclusive_access()
         .memory_set
         .mmap(addr, len, port, flags, fd, off)
@@ -203,9 +174,6 @@ pub fn mmap(
 /// Unmap the MapArea for the current task
 pub fn munmap(addr: usize, len: usize) -> isize {
     current_task()
-        .unwrap()
-        .process
-        .upgrade()
         .unwrap()
         .inner_exclusive_access()
         .memory_set

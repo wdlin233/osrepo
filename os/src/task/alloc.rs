@@ -4,10 +4,9 @@ use super::ProcessControlBlock;
 use crate::config::{
     KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
-use crate::hal::trap::TrapContext;
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{frame_alloc, translated_ref, FrameTracker, PhysAddr};
-use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum};
+use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum, MapType};
 use crate::phys_to_virt;
 use crate::sync::UPSafeCell;
 use alloc::{
@@ -141,10 +140,13 @@ impl KernelStack {
         KERNEL_SPACE.exclusive_access().insert_framed_area(
             kstack_bottom.into(),
             kstack_top.into(),
-            (MapPermission::R | MapPermission::W),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W,
             MapAreaType::Stack,
         );
-        KernelStack(kstack_id)
+        KernelStack{
+            tid: tid_handle.0,
+        }
     }
 
     /// return the top of the kernel stack

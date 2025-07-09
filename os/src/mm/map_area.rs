@@ -196,7 +196,6 @@ impl MapArea {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
 /// Only framed type in LA64
@@ -205,7 +204,6 @@ pub enum MapType {
     Framed,
 }
 
-#[cfg(target_arch = "riscv64")]
 bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
     pub struct MapPermission: u8 {

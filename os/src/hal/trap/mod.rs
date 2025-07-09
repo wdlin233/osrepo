@@ -11,8 +11,6 @@
 //! It then calls different functionality based on what exactly the exception
 //! was. For example, timer interrupts trigger task preemption, and syscalls go
 //! to [`syscall()`].
-
-mod context;
 #[cfg(target_arch = "loongarch64")]
 mod trap;
 
@@ -22,15 +20,13 @@ use crate::println;
 pub use crate::signal::SignalFlags;
 use crate::syscall::syscall;
 use crate::task::{
-    check_signals_of_current, current_add_signal, current_process, current_trap_cx,
+    current_task, current_trap_cx,
     current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
 };
 use crate::timer::check_timer;
 
-#[cfg(target_arch = "riscv64")]
 use crate::{
     config::TRAMPOLINE,
-    task::current_trap_cx_user_va,
     timer::{get_time, set_next_trigger},
 };
 #[cfg(target_arch = "loongarch64")]
@@ -51,7 +47,6 @@ use loongarch64::{
     },
     time::get_timer_freq,
 };
-#[cfg(target_arch = "riscv64")]
 use riscv::register::{
     mtvec::TrapMode,
     satp,
@@ -156,113 +151,113 @@ pub fn enable_timer_interrupt() {
 }
 
 /// trap handler
-#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_handler() -> ! {
-    set_kernel_trap_entry();
-    let scause = scause::read();
-    let stval = stval::read();
-    // trace!("into {:?}", scause.cause());
-    // to get kernel time
-    let in_kernel_time = get_time();
-    current_process()
-        .inner_exclusive_access()
-        .set_utime(in_kernel_time);
-    match scause.cause() {
-        Trap::Exception(Exception::UserEnvCall) => {
-            // jump to next instruction anyway
-            //debug!("in trap handler, before syscall, to get cx");
-            let mut cx = current_trap_cx();
-            cx.sepc += 4;
-            // get system call return value
-            // debug!(
-            //     "before syscall ,genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
-            //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
-            // );
-            let result = syscall(
-                cx.x[17],
-                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
-            );
-            // cx is changed during sys_exec, so we have to call it again
-            //debug!("after syscall, to get cx");
-            cx = current_trap_cx();
-            // debug!(
-            //     "after syscall, genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
-            //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
-            // );
-            cx.x[10] = result as usize;
-            //debug!("return x10 is : {}", cx.x[10]);
-        }
-        Trap::Exception(Exception::StorePageFault)
-        | Trap::Exception(Exception::InstructionPageFault)
-        | Trap::Exception(Exception::LoadPageFault) => {
-            // page fault
-            let mut res: bool;
-            {
-                let process = current_process();
-                let inner = process.inner_exclusive_access();
-                // info!(
-                //     "[kernel] trap_handler: {:?} at {:#x} as vpn",
-                //     scause.cause(),
-                //     stval,
-                // );
-                res = inner
-                    .memory_set
-                    .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
-                if !res {
-                    res = inner
-                        .memory_set
-                        .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
-                }
-                // drop to avoid deadlock and exit exception
-            }
-            if !res {
-                error!(
-                        "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
-                        scause.cause(),
-                        stval,
-                        current_trap_cx().sepc,
-                    );
-                current_add_signal(SignalFlags::SIGSEGV);
-            }
-        }
-        Trap::Exception(Exception::StoreFault)
-        | Trap::Exception(Exception::InstructionFault)
-        | Trap::Exception(Exception::LoadFault) => {
-            error!(
-                "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
-                scause.cause(),
-                stval,
-                current_trap_cx().sepc,
-            );
-            exit_current_and_run_next(-2);
-        }
-        Trap::Exception(Exception::IllegalInstruction) => {
-            current_add_signal(SignalFlags::SIGILL);
-        }
-        Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            set_next_trigger();
-            check_timer();
-            suspend_current_and_run_next();
-        }
-        _ => {
-            panic!(
-                "Unsupported trap {:?}, stval = {:#x}!",
-                scause.cause(),
-                stval
-            );
-        }
-    }
-    // check signals
-    if let Some((errno, msg)) = check_signals_of_current() {
-        trace!("[kernel] trap_handler: .. check signals {}", msg);
-        exit_current_and_run_next(errno);
-    }
-    let out_kernel_time = get_time();
-    current_process()
-        .inner_exclusive_access()
-        .set_stime(in_kernel_time, out_kernel_time);
-    trap_return();
+    unimplemented!()
+    // set_kernel_trap_entry();
+    // let scause = scause::read();
+    // let stval = stval::read();
+    // // trace!("into {:?}", scause.cause());
+    // // to get kernel time
+    // let in_kernel_time = get_time();
+    // current_task()
+    //     .inner_exclusive_access()
+    //     .set_utime(in_kernel_time);
+    // match scause.cause() {
+    //     Trap::Exception(Exception::UserEnvCall) => {
+    //         // jump to next instruction anyway
+    //         //debug!("in trap handler, before syscall, to get cx");
+    //         let mut cx = current_trap_cx();
+    //         cx.sepc += 4;
+    //         // get system call return value
+    //         // debug!(
+    //         //     "before syscall ,genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
+    //         //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
+    //         // );
+    //         let result = syscall(
+    //             cx.x[17],
+    //             [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
+    //         );
+    //         // cx is changed during sys_exec, so we have to call it again
+    //         //debug!("after syscall, to get cx");
+    //         cx = current_trap_cx();
+    //         // debug!(
+    //         //     "after syscall, genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
+    //         //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
+    //         // );
+    //         cx.x[10] = result as usize;
+    //         //debug!("return x10 is : {}", cx.x[10]);
+    //     }
+    //     Trap::Exception(Exception::StorePageFault)
+    //     | Trap::Exception(Exception::InstructionPageFault)
+    //     | Trap::Exception(Exception::LoadPageFault) => {
+    //         // page fault
+    //         let mut res: bool;
+    //         {
+    //             let process = current_task();
+    //             let inner = process.inner_exclusive_access();
+    //             // info!(
+    //             //     "[kernel] trap_handler: {:?} at {:#x} as vpn",
+    //             //     scause.cause(),
+    //             //     stval,
+    //             // );
+    //             res = inner
+    //                 .memory_set
+    //                 .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+    //             if !res {
+    //                 res = inner
+    //                     .memory_set
+    //                     .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+    //             }
+    //             // drop to avoid deadlock and exit exception
+    //         }
+    //         if !res {
+    //             error!(
+    //                     "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+    //                     scause.cause(),
+    //                     stval,
+    //                     current_trap_cx().sepc,
+    //                 );
+    //             current_add_signal(SignalFlags::SIGSEGV);
+    //         }
+    //     }
+    //     Trap::Exception(Exception::StoreFault)
+    //     | Trap::Exception(Exception::InstructionFault)
+    //     | Trap::Exception(Exception::LoadFault) => {
+    //         error!(
+    //             "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+    //             scause.cause(),
+    //             stval,
+    //             current_trap_cx().sepc,
+    //         );
+    //         exit_current_and_run_next(-2);
+    //     }
+    //     Trap::Exception(Exception::IllegalInstruction) => {
+    //         current_add_signal(SignalFlags::SIGILL);
+    //     }
+    //     Trap::Interrupt(Interrupt::SupervisorTimer) => {
+    //         set_next_trigger();
+    //         check_timer();
+    //         suspend_current_and_run_next();
+    //     }
+    //     _ => {
+    //         panic!(
+    //             "Unsupported trap {:?}, stval = {:#x}!",
+    //             scause.cause(),
+    //             stval
+    //         );
+    //     }
+    // }
+    // // check signals
+    // if let Some((errno, msg)) = check_signals_of_current() {
+    //     trace!("[kernel] trap_handler: .. check signals {}", msg);
+    //     exit_current_and_run_next(errno);
+    // }
+    // let out_kernel_time = get_time();
+    // current_task()
+    //     .inner_exclusive_access()
+    //     .set_stime(in_kernel_time, out_kernel_time);
+    // trap_return();
 }
 
 #[cfg(target_arch = "loongarch64")]
@@ -277,7 +272,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
     }
     // to get kernel time
     let in_kernel_time = get_time();
-    current_process()
+    current_task()
         .inner_exclusive_access()
         .set_utime(in_kernel_time);
     match estat.cause() {
@@ -303,7 +298,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             info!("badv: {:#x}", badv);
             let mut res: bool;
             {
-                let process = current_process();
+                let process = current_task();
                 let inner = process.inner_exclusive_access();
                 let add = VirtAddr::from(badv);
                 info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
@@ -341,7 +336,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             // let badv = badv::read().vaddr();
             // let mut res: bool = false;
             // {
-            //     let process = current_process();
+            //     let process = current_task();
             //     let inner = process.inner_exclusive_access();
             //     res = inner.memory_set
             //         .cow_page_fault(VirtAddr::from(badv).floor(), estat.cause());
@@ -384,26 +379,32 @@ extern "C" {
 }
 
 /// return to user space
-#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
-    //disable_supervisor_interrupt();
-    set_user_trap_entry();
-    let trap_cx_user_va = current_trap_cx_user_va();
-    let user_satp = current_user_token();
+    unimplemented!();
+    // if let Some(signo) = check_if_any_sig_for_current_task() {
+    //     debug!("found signo in trap_return");
+    //     handle_signal(signo);
+    // }
+    // if scause::read().cause() == Trap::Interrupt(scause::Interrupt::SupervisorTimer) {
+    //     set_next_trigger();
+    // }
+    // set_user_trap_entry();
+    // let trap_cx_user_va = current_trap_cx_user_va();
+    // let user_satp = current_user_token();
 
-    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
-    // trace!("[kernel] trap_return: ..before return");
-    unsafe {
-        asm!(
-            "fence.i",
-            "jr {restore_va}",         // jump to new addr of __restore asm function
-            restore_va = in(reg) restore_va,
-            in("a0") trap_cx_user_va,      // a0 = virt addr of Trap Context
-            in("a1") user_satp,        // a1 = phy addr of usr page table
-            options(noreturn)
-        );
-    }
+    // let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    // // trace!("[kernel] trap_return: ..before return");
+    // unsafe {
+    //     asm!(
+    //         "fence.i",
+    //         "jr {restore_va}",         // jump to new addr of __restore asm function
+    //         restore_va = in(reg) restore_va,
+    //         in("a0") trap_cx_user_va,      // a0 = virt addr of Trap Context
+    //         in("a1") user_satp,        // a1 = phy addr of usr page table
+    //         options(noreturn)
+    //     );
+    // }
 }
 
 #[cfg(target_arch = "loongarch64")]
@@ -490,7 +491,7 @@ fn tlb_refill_handler() {
 /// 页修改例外：store 操作的虚地址在 TLB 中找到了匹配，且
 /// V=1，且特权等级合规的项，但是该页 表项的 D 位为 0，将触发该例外
 fn tlb_page_modify_handler() {
-    let pid = current_process().getpid();
+    let pid = current_task().getpid();
     trace!("PageModifyFault handler [PID]{}", pid);
     // 找到对应的页表项，修改D位为1
     // 出错虚拟地址
@@ -526,31 +527,4 @@ fn tlb_page_fault() {
     let tlbelo1 = tlbelo1::read();
     info!("tlbelo0 :{}", tlbelo0);
     info!("tlbelo1 :{}", tlbelo1);
-}
-
-pub use context::TrapContext;
-
-#[allow(unused_variables)]
-
-///wait ret
-#[cfg(target_arch = "riscv64")]
-pub fn wait_return() {
-    info!("new round of father waiting for child to return");
-    set_user_trap_entry();
-    let trap_cx_user_va: usize = current_trap_cx_user_va().into();
-    let user_satp = current_user_token();
-    debug!(
-        "[kernel] wait_return, trap_cx_user_va = {:#x}, user_satp = {:#x}",
-        trap_cx_user_va, user_satp
-    );
-
-    extern "C" {
-        fn __wait_return();
-    }
-    let entry_va = __wait_return as usize;
-    warn!("reset satp to {:#x}", user_satp);
-    unsafe {
-        satp::write(user_satp);
-        asm!("sfence.vma");
-    }
 }

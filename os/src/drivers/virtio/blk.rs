@@ -40,10 +40,8 @@ impl<H: Hal> VirtIoBlkDev<H, MmioTransport> {
 
 impl<H: Hal> VirtIoBlkDev<H, PciTransport> {
     pub fn new(header: *mut u8) -> Self {
-        let transport = unsafe {
-            enumerate_pci::<H>(header)
-                .expect("failed to create PciTransport")
-        };
+        let transport = enumerate_pci::<H>(header)
+                .expect("failed to create PciTransport");
 
         Self {
             inner: Mutex::new(

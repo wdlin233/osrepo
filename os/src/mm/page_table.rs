@@ -230,7 +230,7 @@ impl PageTableEntry {
 /// page table structure
 pub struct PageTable {
     root_ppn: PhysPageNum,
-    frames: Vec<FrameTracker>,
+    frames: Vec<Arc<FrameTracker>>,
 }
 
 /// Assume that it won't oom when creating/mapping.
@@ -266,7 +266,7 @@ impl PageTable {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
-        #[cfg(target_arch = "riscv64")]
+        //#[cfg(target_arch = "riscv64")]
         for (i, idx) in idxs.iter().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
@@ -396,6 +396,9 @@ impl PageTable {
     }
     pub fn reset_w(&mut self, vpn: VirtPageNum) {
         self.find_pte_create(vpn).unwrap().reset_w();
+    }
+    pub fn clear(&mut self) {
+        self.frames.clear();
     }
 }
 

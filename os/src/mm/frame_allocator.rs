@@ -3,6 +3,7 @@
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
 use crate::sync::UPSafeCell;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
@@ -152,24 +153,4 @@ pub fn frame_alloc_contiguous(count: usize) -> (Vec<FrameTracker>, PhysPageNum) 
     let (frames, root_ppn) = FRAME_ALLOCATOR.exclusive_access().alloc_coniguous(count);
     let frame_trackers: Vec<FrameTracker> = frames.iter().map(|&p| FrameTracker::new(p)).collect();
     (frame_trackers, root_ppn)    
-}
-
-#[allow(unused)]
-/// a simple test for frame allocator
-pub fn frame_allocator_test() {
-    let mut v: Vec<FrameTracker> = Vec::new();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    v.clear();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    drop(v);
-    use crate::println;
-    println!("frame_allocator_test passed!");
 }
