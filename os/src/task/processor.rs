@@ -4,9 +4,8 @@
 //! the current running state of CPU is recorded,
 //! and the replacement and transfer of control flow of different applications are executed.
 
-use super::__switch;
 use super::{fetch_task, TaskStatus};
-use super::{ProcessControlBlock, TaskContext};
+use super::{ProcessControlBlock};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 use crate::mm::MapPermission;
@@ -14,7 +13,7 @@ use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
-use polyhal::kcontext::KContext;
+use polyhal::kcontext::{context_switch, KContext};
 use polyhal_trap::trapframe::TrapFrame;
 use core::arch::asm;
 //use core::str::next_code_point;
@@ -102,7 +101,7 @@ pub fn run_tasks() {
             // release processor manually
             drop(processor);
             unsafe {
-                __switch(idle_task_cx_ptr, next_task_cx_ptr);
+                context_switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
         } else {
             //warn!("no tasks available in run_tasks");
@@ -151,7 +150,7 @@ pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     drop(processor);
     //debug!("in schedule, to switch, currrent ra is : {},current sp is :{}, next ra is :{}, next sp is : {}",unsafe{(*switched_task_cx_ptr).get_ra()},unsafe{(*switched_task_cx_ptr).get_sp()},unsafe{(*idle_task_cx_ptr).get_ra()},unsafe{(*idle_task_cx_ptr).get_sp()});
     unsafe {
-        __switch(switched_task_cx_ptr, idle_task_cx_ptr);
+        context_switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
 }
 

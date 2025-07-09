@@ -13,10 +13,14 @@
 //! to [`syscall()`].
 #[cfg(target_arch = "loongarch64")]
 mod trap;
+pub mod context;
+
+pub use context::{MachineContext, UserContext, MachineContextConversion};
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use crate::mm::VirtAddr;
 use crate::println;
+use crate::signal::{check_if_any_sig_for_current_task, handle_signal};
 pub use crate::signal::SignalFlags;
 use crate::syscall::syscall;
 use crate::task::{
@@ -47,6 +51,7 @@ use loongarch64::{
     },
     time::get_timer_freq,
 };
+use polyhal_trap::trap::run_user_task;
 use riscv::register::{
     mtvec::TrapMode,
     satp,
@@ -147,6 +152,20 @@ pub fn enable_timer_interrupt() {
         crmd::set_ie(true);
 
         println!("Interrupt enable: {:?}", ecfg::read().lie());
+    }
+}
+
+/// trap entry
+#[no_mangle]
+pub fn trap_entry() {
+    info!("(trap_entry) into trap entry");
+    loop {
+        if let Some(signo) = check_if_any_sig_for_current_task() {
+            debug!("(trap_entry) found signo in trap_return");
+            handle_signal(signo);
+        }
+        let ctx = current_trap_cx();
+        run_user_task(ctx);
     }
 }
 

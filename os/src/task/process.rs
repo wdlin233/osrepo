@@ -22,7 +22,7 @@ use crate::signal::{SigTable, SignalFlags};
 use crate::sync::UPSafeCell;
 use crate::syscall::CloneFlags;
 use crate::task::manager::insert_into_thread_group;
-use crate::task::{KernelStack, TaskContext};
+use crate::task::{KernelStack};
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
@@ -754,9 +754,9 @@ pub enum TaskStatus {
 }
 
 fn blank_kcontext(ksp: usize) -> KContext {
-    use crate::hal::trap::trap_return;
+    use crate::hal::trap::trap_entry;
     let mut kcx = KContext::blank(); // 包括 s 寄存器
-    kcx[KContextArgs::KPC] = trap_return as usize; // ra
+    kcx[KContextArgs::KPC] = trap_entry as usize; // ra
     kcx[KContextArgs::KSP] = ksp; // sp: kstack_ptr, 存放了trap上下文后的栈地址, 内核栈地址
     kcx[KContextArgs::KTP] = read_current_tp(); // tp
     kcx

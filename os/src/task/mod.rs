@@ -10,13 +10,11 @@
 //! might not be what you expect.
 
 mod aux;
-mod context;
 mod alloc;
 mod manager;
 mod process;
 mod processor;
 mod stride;
-mod switch;
 
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
@@ -28,11 +26,9 @@ use lazy_static::*;
 use manager::fetch_task;
 use polyhal::kcontext::KContext;
 use spin::Lazy;
-use switch::__switch;
 
 use crate::signal::{send_signal_to_thread_group, SignalFlags};
 pub use aux::{Aux, AuxType};
-pub use context::TaskContext;
 pub use alloc::{pid_alloc, KernelStack, PidHandle};
 pub use manager::{
     add_block_task, add_task, tid2task, process_num, remove_from_tid2task, remove_task,
