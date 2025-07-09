@@ -1,108 +1,91 @@
 //! medeleg register
 
-use bit_field::BitField;
-
-/// medeleg register
-#[derive(Clone, Copy, Debug)]
-pub struct Medeleg {
-    bits: usize,
+read_write_csr! {
+    /// `medeleg` register
+    Medeleg: 0x302,
+    mask: 0xb3ff,
 }
 
-impl Medeleg {
-    /// Returns the contents of the register as raw bits
-    #[inline]
-    pub fn bits(&self) -> usize {
-        self.bits
-    }
-
+read_write_csr_field! {
+    Medeleg,
     /// Instruction Address Misaligned Delegate
-    #[inline]
-    pub fn instruction_misaligned(&self) -> bool {
-        self.bits.get_bit(0)
-    }
-
-    /// Instruction Access Fault Delegate
-    #[inline]
-    pub fn instruction_fault(&self) -> bool {
-        self.bits.get_bit(1)
-    }
-
-    /// Illegal Instruction Delegate
-    #[inline]
-    pub fn illegal_instruction(&self) -> bool {
-        self.bits.get_bit(2)
-    }
-
-    /// Breakpoint Delegate
-    #[inline]
-    pub fn breakpoint(&self) -> bool {
-        self.bits.get_bit(3)
-    }
-
-    /// Load Address Misaligned Delegate
-    #[inline]
-    pub fn load_misaligned(&self) -> bool {
-        self.bits.get_bit(4)
-    }
-
-    /// Load Access Fault Delegate
-    #[inline]
-    pub fn load_fault(&self) -> bool {
-        self.bits.get_bit(5)
-    }
-
-    /// Store/AMO Address Misaligned Delegate
-    #[inline]
-    pub fn store_misaligned(&self) -> bool {
-        self.bits.get_bit(6)
-    }
-
-    /// Store/AMO Access Fault Delegate
-    #[inline]
-    pub fn store_fault(&self) -> bool {
-        self.bits.get_bit(7)
-    }
-
-    /// Environment Call from U-mode Delegate
-    #[inline]
-    pub fn user_env_call(&self) -> bool {
-        self.bits.get_bit(8)
-    }
-
-    /// Environment Call from S-mode Delegate
-    #[inline]
-    pub fn supervisor_env_call(&self) -> bool {
-        self.bits.get_bit(9)
-    }
-
-    /// Environment Call from M-mode Delegate
-    #[inline]
-    pub fn machine_env_call(&self) -> bool {
-        self.bits.get_bit(11)
-    }
-
-    /// Instruction Page Fault Delegate
-    #[inline]
-    pub fn instruction_page_fault(&self) -> bool {
-        self.bits.get_bit(12)
-    }
-
-    /// Load Page Fault Delegate
-    #[inline]
-    pub fn load_page_fault(&self) -> bool {
-        self.bits.get_bit(13)
-    }
-
-    /// Store/AMO Page Fault Delegate
-    #[inline]
-    pub fn store_page_fault(&self) -> bool {
-        self.bits.get_bit(15)
-    }
+    instruction_misaligned: 0,
 }
 
-read_csr_as!(Medeleg, 0x302, __read_medeleg);
-set!(0x302, __set_medeleg);
-clear!(0x302, __clear_medeleg);
+read_write_csr_field! {
+    Medeleg,
+    /// Instruction Access Fault Delegate
+    instruction_fault: 1,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Illegal Instruction Delegate
+    illegal_instruction: 2,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Breakpoint Delegate
+    breakpoint: 3,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Load Address Misaligned Delegate
+    load_misaligned: 4,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Load Access Fault Delegate
+    load_fault: 5,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Store/AMO Address Misaligned Delegate
+    store_misaligned: 6,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Store/AMO Access Fault Delegate
+    store_fault: 7,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Environment Call from U-mode Delegate
+    user_env_call: 8,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Environment Call from S-mode Delegate
+    supervisor_env_call: 9,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Instruction Page Fault Delegate
+    instruction_page_fault: 12,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Load Page Fault Delegate
+    load_page_fault: 13,
+}
+
+read_write_csr_field! {
+    Medeleg,
+    /// Store/AMO Page Fault Delegate
+    store_page_fault: 15,
+}
+
+set!(0x302);
+clear!(0x302);
 
 set_clear_csr!(
     /// Instruction Address Misaligned Delegate
@@ -135,9 +118,6 @@ set_clear_csr!(
     /// Environment Call from S-mode Delegate
     , set_supervisor_env_call, clear_supervisor_env_call, 1 << 9);
 set_clear_csr!(
-    /// Environment Call from M-mode Delegate
-    , set_machine_env_call, clear_machine_env_call, 1 << 11);
-set_clear_csr!(
     /// Instruction Page Fault Delegate
     , set_instruction_page_fault, clear_instruction_page_fault, 1 << 12);
 set_clear_csr!(
@@ -146,3 +126,27 @@ set_clear_csr!(
 set_clear_csr!(
     /// Store/AMO Page Fault Delegate
     , set_store_page_fault, clear_store_page_fault, 1 << 15);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_medeleg() {
+        let mut m = Medeleg::from_bits(0);
+
+        test_csr_field!(m, instruction_misaligned);
+        test_csr_field!(m, instruction_fault);
+        test_csr_field!(m, illegal_instruction);
+        test_csr_field!(m, breakpoint);
+        test_csr_field!(m, load_misaligned);
+        test_csr_field!(m, load_fault);
+        test_csr_field!(m, store_misaligned);
+        test_csr_field!(m, store_fault);
+        test_csr_field!(m, user_env_call);
+        test_csr_field!(m, supervisor_env_call);
+        test_csr_field!(m, instruction_page_fault);
+        test_csr_field!(m, load_page_fault);
+        test_csr_field!(m, store_page_fault);
+    }
+}

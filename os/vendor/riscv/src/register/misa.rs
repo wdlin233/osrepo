@@ -1,46 +1,59 @@
 //! misa register
 
-use core::num::NonZeroUsize;
-
-/// misa register
-#[derive(Clone, Copy, Debug)]
-pub struct Misa {
-    bits: NonZeroUsize,
+#[cfg(target_arch = "riscv32")]
+read_only_csr! {
+    /// `misa` register
+    Misa: 0x301,
+    mask: 0xc3ff_ffff,
+    sentinel: 0,
 }
 
-/// Machine XLEN
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum MXL {
-    XLEN32,
-    XLEN64,
-    XLEN128,
+#[cfg(not(target_arch = "riscv32"))]
+read_only_csr! {
+    /// `misa` register
+    Misa: 0x301,
+    mask: 0xc000_0000_03ff_ffff,
+    sentinel: 0,
+}
+
+csr_field_enum! {
+    /// Base integer ISA width
+    XLEN {
+        default: XLEN32,
+        XLEN32 = 1,
+        XLEN64 = 2,
+        XLEN128 = 3,
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+read_only_csr_field! {
+    Misa,
+    /// Effective xlen in M-mode (i.e., `MXLEN`).
+    mxl,
+    XLEN: [30:31],
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+read_only_csr_field! {
+    Misa,
+    /// Effective xlen in M-mode (i.e., `MXLEN`).
+    mxl,
+    XLEN: [62:63],
 }
 
 impl Misa {
-    /// Returns the contents of the register as raw bits
-    pub fn bits(&self) -> usize {
-        self.bits.get()
-    }
-
-    /// Returns the machine xlen.
-    pub fn mxl(&self) -> MXL {
-        let value = match () {
-            #[cfg(target_pointer_width = "32")]
-            () => (self.bits() >> 30) as u8,
-            #[cfg(target_pointer_width = "64")]
-            () => (self.bits() >> 62) as u8,
-        };
-        match value {
-            1 => MXL::XLEN32,
-            2 => MXL::XLEN64,
-            3 => MXL::XLEN128,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Returns true when the atomic extension is implemented.
+    /// Returns true when a given extension is implemented.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let misa = unsafe { riscv::register::misa::try_read() }.unwrap();
+    /// assert!(misa.has_extension('A')); // panics if atomic extension is not implemented
+    /// ```
+    #[inline]
     pub fn has_extension(&self, extension: char) -> bool {
-        let bit = extension as u8 - 65;
+        let bit = ext_char_to_bit(extension);
         if bit > 25 {
             return false;
         }
@@ -48,13 +61,39 @@ impl Misa {
     }
 }
 
-read_csr!(0x301, __read_misa);
-
-/// Reads the CSR
 #[inline]
-pub fn read() -> Option<Misa> {
-    let r = unsafe { _read() };
-    // When misa is hardwired to zero it means that the misa csr
-    // isn't implemented.
-    NonZeroUsize::new(r).map(|bits| Misa { bits })
+const fn ext_char_to_bit(extension: char) -> u8 {
+    (extension as u8).saturating_sub(b'A')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::result::Error;
+
+    #[test]
+    fn test_misa() {
+        (1..=3)
+            .zip([XLEN::XLEN32, XLEN::XLEN64, XLEN::XLEN128])
+            .for_each(|(raw, exp_xlen)| {
+                assert_eq!(XLEN::try_from(raw), Ok(exp_xlen));
+                assert_eq!(usize::from(exp_xlen), raw);
+
+                let misa = Misa::from_bits(raw << (usize::BITS - 2));
+                assert_eq!(misa.try_mxl(), Ok(exp_xlen));
+                assert_eq!(misa.mxl(), exp_xlen);
+            });
+
+        (0..62).map(|b| 1 << b).for_each(|invalid_mxl| {
+            assert_eq!(
+                Misa::from_bits(invalid_mxl).try_mxl(),
+                Err(Error::InvalidVariant(0))
+            );
+        });
+
+        ('A'..='Z').for_each(|ext| {
+            assert!(!Misa::from_bits(0).has_extension(ext));
+            assert!(Misa::from_bits(1 << ext_char_to_bit(ext)).has_extension(ext));
+        });
+    }
 }

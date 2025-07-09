@@ -1,126 +1,113 @@
 //! sstatus register
 
-pub use super::mstatus::FS;
-use bit_field::BitField;
-use core::mem::size_of;
+pub use super::misa::XLEN;
+pub use super::mstatus::{FS, XS};
 
-/// Supervisor Status Register
-#[derive(Clone, Copy, Debug)]
-pub struct Sstatus {
-    bits: usize,
+#[cfg(target_arch = "riscv32")]
+const MASK: usize = 0x800d_e122;
+#[cfg(not(target_arch = "riscv32"))]
+const MASK: usize = 0x8000_0003_000d_e122;
+
+read_write_csr! {
+    /// Supervisor Status Register
+    Sstatus: 0x100,
+    mask: MASK,
 }
 
-/// Supervisor Previous Privilege Mode
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum SPP {
-    Supervisor = 1,
-    User = 0,
+csr_field_enum! {
+    /// Supervisor Previous Privilege Mode
+    SPP {
+        default: User,
+        /// Previous privilege mode is User mode.
+        User = 0,
+        /// Previous privilege mode is Supervisor mode.
+        Supervisor = 1,
+    }
+}
+
+read_write_csr_field! {
+    Sstatus,
+    /// Supervisor Interrupt Enable
+    sie: 1,
+}
+
+read_write_csr_field! {
+    Sstatus,
+    /// Supervisor Previous Interrupt Enable
+    spie: 5,
+}
+
+read_write_csr_field! {
+    Sstatus,
+    /// Supervisor Previous Privilege Mode
+    spp,
+    SPP: [8:8],
+}
+
+read_write_csr_field! {
+    Sstatus,
+    /// The status of the floating-point unit
+    fs,
+    FS: [13:14],
+}
+
+read_only_csr_field! {
+    Sstatus,
+    /// The status of additional user-mode extensions
+    /// and associated state
+    xs,
+    XS: [15:16],
+}
+
+read_write_csr_field! {
+    Sstatus,
+    /// Permit Supervisor User Memory access
+    sum: 18,
+}
+
+read_write_csr_field! {
+    Sstatus,
+    /// Make eXecutable Readable
+    mxr: 19,
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+read_write_csr_field! {
+    Sstatus,
+    /// Effective xlen in U-mode (i.e., `UXLEN`).
+    uxl,
+    XLEN: [32:33],
+}
+
+#[cfg(target_arch = "riscv32")]
+read_write_csr_field! {
+    Sstatus,
+    /// Whether either the FS field or XS field
+    /// signals the presence of some dirty state
+    sd: 31,
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+read_write_csr_field! {
+    Sstatus,
+    /// Whether either the FS field or XS field
+    /// signals the presence of some dirty state
+    sd: 63,
 }
 
 impl Sstatus {
-    /// Returns the contents of the register as raw bits
+    /// Effective xlen in U-mode (i.e., `UXLEN`).
+    ///
+    /// In RISCV-32, UXL does not exist, and `UXLEN` is always [`XLEN::XLEN32`].
     #[inline]
-    pub fn bits(&self) -> usize {
-        self.bits
-    }
-
-    /// User Interrupt Enable
-    #[inline]
-    pub fn uie(&self) -> bool {
-        self.bits.get_bit(0)
-    }
-
-    /// Supervisor Interrupt Enable
-    #[inline]
-    pub fn sie(&self) -> bool {
-        self.bits.get_bit(1)
-    }
-
-    /// User Previous Interrupt Enable
-    #[inline]
-    pub fn upie(&self) -> bool {
-        self.bits.get_bit(4)
-    }
-
-    /// Supervisor Previous Interrupt Enable
-    #[inline]
-    pub fn spie(&self) -> bool {
-        self.bits.get_bit(5)
-    }
-
-    /// Supervisor Previous Privilege Mode
-    #[inline]
-    pub fn spp(&self) -> SPP {
-        match self.bits.get_bit(8) {
-            true => SPP::Supervisor,
-            false => SPP::User,
-        }
-    }
-
-    /// The status of the floating-point unit
-    #[inline]
-    pub fn fs(&self) -> FS {
-        match self.bits.get_bits(13..15) {
-            0 => FS::Off,
-            1 => FS::Initial,
-            2 => FS::Clean,
-            3 => FS::Dirty,
-            _ => unreachable!(),
-        }
-    }
-
-    /// The status of additional user-mode extensions
-    /// and associated state
-    #[inline]
-    pub fn xs(&self) -> FS {
-        match self.bits.get_bits(15..17) {
-            0 => FS::Off,
-            1 => FS::Initial,
-            2 => FS::Clean,
-            3 => FS::Dirty,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Permit Supervisor User Memory access
-    #[inline]
-    pub fn sum(&self) -> bool {
-        self.bits.get_bit(18)
-    }
-
-    /// Make eXecutable Readable
-    #[inline]
-    pub fn mxr(&self) -> bool {
-        self.bits.get_bit(19)
-    }
-
-    /// Whether either the FS field or XS field
-    /// signals the presence of some dirty state
-    #[inline]
-    pub fn sd(&self) -> bool {
-        self.bits.get_bit(size_of::<usize>() * 8 - 1)
-    }
-
-    #[inline]
-    pub fn set_spie(&mut self, val: bool) {
-        self.bits.set_bit(5, val);
-    }
-
-    #[inline]
-    pub fn set_sie(&mut self, val: bool) {
-        self.bits.set_bit(1, val);
-    }
-
-    #[inline]
-    pub fn set_spp(&mut self, val: SPP) {
-        self.bits.set_bit(8, val == SPP::Supervisor);
+    #[cfg(target_arch = "riscv32")]
+    pub fn uxl(&self) -> XLEN {
+        XLEN::XLEN32
     }
 }
 
-read_csr_as!(Sstatus, 0x100, __read_sstatus);
-write_csr!(0x100, __write_sstatus);
-set!(0x100, __set_sstatus);
-clear!(0x100, __clear_sstatus);
+set!(0x100);
+clear!(0x100);
 
 set_clear_csr!(
     /// User Interrupt Enable
@@ -135,15 +122,14 @@ set_csr!(
     /// Supervisor Previous Interrupt Enable
     , set_spie, 1 << 5);
 set_clear_csr!(
-    /// Make eXecutable Readable
-    , set_mxr, clear_mxr, 1 << 19);
-set_clear_csr!(
     /// Permit Supervisor User Memory access
     , set_sum, clear_sum, 1 << 18);
+set_clear_csr!(
+    /// Make eXecutable Readable
+    , set_mxr, clear_mxr, 1 << 19);
 
 /// Supervisor Previous Privilege Mode
 #[inline]
-#[cfg(riscv)]
 pub unsafe fn set_spp(spp: SPP) {
     match spp {
         SPP::Supervisor => _set(1 << 8),
@@ -153,9 +139,56 @@ pub unsafe fn set_spp(spp: SPP) {
 
 /// The status of the floating-point unit
 #[inline]
-#[cfg(riscv)]
 pub unsafe fn set_fs(fs: FS) {
     let mut value = _read();
-    value.set_bits(13..15, fs as usize);
+    value &= !(0x3 << 13); // clear previous value
+    value |= (fs as usize) << 13;
     _write(value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sstatus() {
+        let mut sstatus = Sstatus::from_bits(0);
+
+        test_csr_field!(sstatus, sie);
+        test_csr_field!(sstatus, spie);
+
+        [SPP::User, SPP::Supervisor].into_iter().for_each(|spp| {
+            test_csr_field!(sstatus, spp: spp);
+        });
+
+        [FS::Off, FS::Initial, FS::Clean, FS::Dirty]
+            .into_iter()
+            .for_each(|fs| {
+                test_csr_field!(sstatus, fs: fs);
+            });
+
+        [
+            XS::AllOff,
+            XS::NoneDirtyOrClean,
+            XS::NoneDirtySomeClean,
+            XS::SomeDirty,
+        ]
+        .into_iter()
+        .for_each(|xs| {
+            let sstatus = Sstatus::from_bits(xs.into_usize() << 15);
+            assert_eq!(sstatus.xs(), xs);
+            assert_eq!(sstatus.try_xs(), Ok(xs));
+        });
+
+        test_csr_field!(sstatus, sum);
+        test_csr_field!(sstatus, mxr);
+
+        [XLEN::XLEN32, XLEN::XLEN64, XLEN::XLEN128]
+            .into_iter()
+            .for_each(|xlen| {
+                test_csr_field!(sstatus, uxl: xlen);
+            });
+
+        test_csr_field!(sstatus, sd);
+    }
 }
