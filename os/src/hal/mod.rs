@@ -4,7 +4,7 @@ pub mod trap;
 
 use core::arch::global_asm;
 
-global_asm!(include_str!("entry.asm"));
+//global_asm!(include_str!("entry.asm"));
 pub fn clear_bss() {
     extern "C" {
         fn sbss();
@@ -34,5 +34,5 @@ extern "C" {
     #[cfg(target_arch = "loongarch64")] pub fn sbss();
     pub fn ebss();
     pub fn ekernel();
-   #[cfg(target_arch = "riscv64")] pub fn strampoline();
+   #[cfg(target_arch = "riscv64")] pub fn sigreturn_trampoline();
 }

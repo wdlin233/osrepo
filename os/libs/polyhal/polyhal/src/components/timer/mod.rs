@@ -18,4 +18,4 @@ pub fn current_time() -> Duration {
     Duration::from_nanos(Time::now().raw() as _)
 }
 
-ph_ctor!(ARCH_INIT_TIMER, CtorType::Platform, init);
+//ph_ctor!(ARCH_INIT_TIMER, CtorType::Platform, init);

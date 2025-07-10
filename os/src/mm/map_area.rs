@@ -10,7 +10,7 @@ use crate::{
     },
     syscall::MmapFlags,
 };
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
 
 #[derive(Clone)]
@@ -192,6 +192,13 @@ impl MapArea {
             mmap_file: MmapFile::new(file, offset),
             mmap_flags: mmap_flags,
             groupid: groupid,
+        }
+    }
+    pub fn map_given_frames(&mut self, page_table: &mut PageTable, frames: Vec<Arc<FrameTracker>>) {
+        for (vpn, frame) in self.vpn_range.clone().into_iter().zip(frames.into_iter()) {
+            let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+            page_table.map(vpn, frame.ppn, pte_flags);
+            self.data_frames.insert(vpn, frame);
         }
     }
 }

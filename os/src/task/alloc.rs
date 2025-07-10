@@ -2,7 +2,7 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
+    KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{frame_alloc, translated_ref, FrameTracker, PhysAddr};

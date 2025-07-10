@@ -30,7 +30,6 @@ use crate::task::{
 use crate::timer::check_timer;
 
 use crate::{
-    config::TRAMPOLINE,
     timer::{get_time, set_next_trigger},
 };
 #[cfg(target_arch = "loongarch64")]
@@ -59,10 +58,10 @@ use riscv::register::{
     sie, stval, stvec,
 };
 
-#[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("trap_rv.s"));
-#[cfg(target_arch = "loongarch64")]
-global_asm!(include_str!("trap_la.s"));
+// #[cfg(target_arch = "riscv64")]
+// global_asm!(include_str!("trap_rv.s"));
+// #[cfg(target_arch = "loongarch64")]
+// global_asm!(include_str!("trap_la.s"));
 
 /// Initialize trap handling
 pub fn init() {
@@ -107,28 +106,29 @@ pub fn init() {
 /// set trap entry for traps happen in kernel(supervisor) mode
 #[inline]
 fn set_kernel_trap_entry() {
-    #[cfg(target_arch = "riscv64")]
-    extern "C" {
-        fn __trap_from_kernel();
-    }
-    #[cfg(target_arch = "riscv64")]
-    unsafe {
-        stvec::write(__trap_from_kernel as usize, TrapMode::Direct);
-    }
+    // #[cfg(target_arch = "riscv64")]
+    // extern "C" {
+    //     fn __trap_from_kernel();
+    // }
+    // #[cfg(target_arch = "riscv64")]
+    // unsafe {
+    //     stvec::write(__trap_from_kernel as usize, TrapMode::Direct);
+    // }
 
-    #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(trap::kernel_trap_entry as usize);
+    // #[cfg(target_arch = "loongarch64")]
+    // eentry::set_eentry(trap::kernel_trap_entry as usize);
 }
 /// set trap entry for traps happen in user mode
 #[inline]
 fn set_user_trap_entry() {
-    #[cfg(target_arch = "riscv64")]
-    unsafe {
-        stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
-    }
+    unimplemented!();
+    // #[cfg(target_arch = "riscv64")]
+    // unsafe {
+    //     stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
+    // }
 
-    #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
+    // #[cfg(target_arch = "loongarch64")]
+    // eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
 }
 
 /// enable timer interrupt in supervisor mode

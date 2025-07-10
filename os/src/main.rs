@@ -62,9 +62,71 @@ use crate::{
 pub mod system;
 pub mod users;
 
-use crate::hal::{clear_bss, utils::console::CONSOLE};
+use crate::{config::KERNEL_ADDR_OFFSET, hal::{clear_bss, utils::console::CONSOLE}};
 use config::FLAG;
-use core::arch::global_asm;
+use polyhal_trap::{trap::TrapType, trapframe::TrapFrame};
+use core::arch::{global_asm, asm};
+
+#[polyhal::arch_interrupt]
+fn kernel_interrupt(_ctx: &mut TrapFrame, _trap_type: TrapType) {
+    // // trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
+    unimplemented!()
+    // match trap_type {
+    //     Breakpoint => return,
+    //     SysCall => {
+    //         // jump to next instruction anyway
+    //         ctx.syscall_ok();
+    //         let args = ctx.args();
+    //         // get system call return value
+    //         // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
+
+    //         let result = syscall(ctx[TrapFrameArgs::SYSCALL], [args[0], args[1], args[2]]);
+    //         // cx is changed during sys_exec, so we have to call it again
+    //         ctx[TrapFrameArgs::RET] = result as usize;
+    //     }
+    //     StorePageFault(_paddr) | LoadPageFault(_paddr) | InstructionPageFault(_paddr) => {
+    //         /*
+    //         println!(
+    //             "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+    //             scause.cause(),
+    //             stval,
+    //             current_trap_cx().sepc,
+    //         );
+    //         */
+    //         current_add_signal(SignalFlags::SIGSEGV);
+    //     }
+    //     IllegalInstruction(_) => {
+    //         current_add_signal(SignalFlags::SIGILL);
+    //     }
+    //     Timer => {
+    //         suspend_current_and_run_next();
+    //     }
+    //     _ => {
+    //         warn!("unsuspended trap type: {:?}", trap_type);
+    //     }
+    // }
+    // // handle signals (handle the sent signal)
+    // // println!("[K] trap_handler:: handle_signals");
+    // handle_signals();
+
+    // // check error signals (if error then exit)
+    // if let Some((errno, msg)) = check_signals_error_of_current() {
+    //     println!("[kernel] {}", msg);
+    //     exit_current_and_run_next(errno);
+    // }
+}
+
+/// ADD KERNEL_ADDR_OFFSET and jump to rust_main
+#[no_mangle]
+pub fn trampoline(hartid: usize) {
+    unsafe {
+        asm!("add sp, sp, {}", in(reg) KERNEL_ADDR_OFFSET);
+        asm!("la t0, main");
+        asm!("add t0, t0, {}", in(reg) KERNEL_ADDR_OFFSET);
+        asm!("mv a0, {}", in(reg) hartid);
+        asm!("jalr zero, 0(t0)");
+    }
+}
 
 #[no_mangle]
 pub fn main(cpu: usize) -> ! {

@@ -1,5 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use crate::config::KERNEL_PGNUM_OFFSET;
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
 use crate::mm::MemorySet;
@@ -225,6 +226,10 @@ impl PageTableEntry {
         let new_flags: usize = (self.bits & 0xFF) as usize | flags.bits().clone();
         self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
     }
+    pub fn set_flags(&mut self, flags: PTEFlags) {
+        let new_flags = flags.bits().clone();
+        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
+    }
 }
 
 /// page table structure
@@ -242,6 +247,18 @@ impl PageTable {
             root_ppn: frame.ppn,
             frames: vec![frame],
         }
+    }
+    pub fn new_from_kernel() -> Self {
+        use crate::mm::KERNEL_SPACE;
+        let frame = frame_alloc().unwrap();
+        let kernel = KERNEL_SPACE.exclusive_access();
+        let root_ppn = kernel.get_mut().page_table.root_ppn;
+        // 第一级页表
+        let index = VirtPageNum::from(KERNEL_PGNUM_OFFSET).indexes()[0];
+        frame.ppn.get_pte_array()[index..].copy_from_slice(
+            &root_ppn.get_pte_array()[index..],
+        );
+        PageTable { root_ppn: frame.ppn, frames: vec![frame] }
     }
     /// Temporarily used to get arguments from user space.
     #[cfg(target_arch = "riscv64")]
@@ -399,6 +416,9 @@ impl PageTable {
     }
     pub fn clear(&mut self) {
         self.frames.clear();
+    }
+    pub fn set_flags(&mut self, vpn: VirtPageNum, flags: PTEFlags) {
+        self.find_pte_create(vpn).unwrap().set_flags(flags | PTEFlags::V);
     }
 }
 

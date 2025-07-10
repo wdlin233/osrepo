@@ -525,7 +525,6 @@ pub fn sys_log(_logtype: isize, _bufp: *const u8, _len: usize) -> isize {
 pub fn sys_exit_group(exit_code: i32) -> isize {
     exit_current_group_and_run_next(exit_code);
     unreachable!();
-    -1
 }
 
 pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {

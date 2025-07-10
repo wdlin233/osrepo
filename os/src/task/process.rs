@@ -597,7 +597,7 @@ impl ProcessControlBlock {
         let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
             Arc::clone(&parent.memory_set)
         } else {
-            Arc::new(MemorySet::from_existed_user(&parent.memory_set))
+            Arc::new(MemorySetInner::from_existed_user(&parent.memory_set))
         };
         // 检查是否共享文件系统信息
         //filesystem information.  This includes the root

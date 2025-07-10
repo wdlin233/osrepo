@@ -4,7 +4,7 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    DL_INTERP_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE
+    DL_INTERP_OFFSET, KERNEL_ADDR_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE
 };
 use crate::fs::{map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlags, NONE_MODE, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
@@ -19,10 +19,11 @@ use crate::mm::page_fault_handler::{
 use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
 #[cfg(target_arch = "riscv64")]
 use crate::hal::{
-    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
+    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, sigreturn_trampoline,
 };
 use crate::mm::page_table::flush_tlb;
 use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, translated_refmut, UserBuffer};
+use crate::println;
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::task::{current_task, Aux, AuxType};
@@ -45,7 +46,6 @@ use riscv::register::{
 };
 use xmas_elf::ElfFile;
 
-#[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
 lazy_static! {
     /// The kernel's initial memory mapping(kernel address space)
@@ -106,12 +106,6 @@ impl MemorySet {
     pub fn push(&self, map_area: MapArea, data: Option<&[u8]>) {
         self.inner.get_unchecked_mut().push(map_area, data);
     }
-    #[cfg(target_arch = "riscv64")]
-    #[inline(always)]
-    pub fn map_trampoline(&self) {
-        self.inner.get_unchecked_mut().map_trampoline();
-    }
-    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn new_kernel() -> Self {
         Self::new(MemorySetInner::new_kernel())
@@ -121,12 +115,6 @@ impl MemorySet {
         let (memory_set, user_heap_bottom, entry_point, auxv) =
             MemorySetInner::from_elf(elf_data);
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
-    }
-    #[inline(always)]
-    pub fn from_existed_user(user_space: &MemorySet) -> Self {
-        Self::new(MemorySetInner::from_existed_user(
-            user_space.inner.get_unchecked_mut(),
-        ))
     }
     #[inline(always)]
     pub fn activate(&self) {
@@ -252,6 +240,13 @@ impl MemorySetInner {
             areas: Vec::new(),
         }
     }
+    /// Create a new `MemorySet` from the kernel's page table.
+    pub fn new_from_kernel() -> Self {
+        Self { 
+            page_table: PageTable::new_from_kernel(), 
+            areas: Vec::new(), 
+        }
+    }
     /// Get he page table token
     pub fn token(&self) -> usize {
         self.page_table.token()
@@ -327,17 +322,7 @@ impl MemorySetInner {
     pub fn push_lazily(&mut self, map_area: MapArea) {
         self.areas.push(map_area);
     }
-    #[cfg(target_arch = "riscv64")]
-    /// Mention that trampoline is not collected by areas.
-    fn map_trampoline(&mut self) {
-        self.page_table.map(
-            VirtAddr::from(TRAMPOLINE).into(),
-            PhysAddr::from(strampoline as usize).into(),
-            PTEFlags::R | PTEFlags::X,
-        );
-    }
 
-    #[cfg(target_arch = "riscv64")]
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
         use core::iter::Map;
@@ -345,23 +330,52 @@ impl MemorySetInner {
         use crate::mm::map_area::MapAreaType;
 
         let mut memory_set = Self::new_bare();
-        // map trampoline
-        memory_set.map_trampoline();
         // map kernel sections
-        info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
-        info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
-        info!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
-        info!(
-            ".bss [{:#x}, {:#x})",
+        println!("kernel satp: {:#x}", memory_set.token());
+        println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
+        println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
+        println!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
+        println!(
+            ".bss [{:#x}, {:#x})", 
             sbss_with_stack as usize, ebss as usize
         );
-        info!("mapping .text section");
+        println!(
+            "sigreturn_trampoline : [{:#x}, {:#x})",
+            sigreturn_trampoline as usize,
+            sigreturn_trampoline as usize + PAGE_SIZE
+        );
+        println!(
+            "physical memory: [{:#x},{:#x})",
+            ekernel as usize, MEMORY_END
+        );
+        let s_sig_trap = sigreturn_trampoline as usize;
+        let e_sig_trap = sigreturn_trampoline as usize + PAGE_SIZE;
         memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
+                (s_sig_trap).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::X,
+                MapAreaType::Elf,
+            ),
+            None,
+        );
+        memory_set.push(
+            MapArea::new(
+                (e_sig_trap).into(),
                 (etext as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::X,
+                MapAreaType::Elf,
+            ),
+            None,
+        );
+        memory_set.push(
+            MapArea::new(
+                (s_sig_trap).into(),
+                (e_sig_trap).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::X | MapPermission::U,
                 MapAreaType::Elf,
             ),
             None,
@@ -411,13 +425,14 @@ impl MemorySetInner {
             None,
         );
         info!("mapping memory-mapped registers");
-        for pair in MMIO {
-            use crate::mm::map_area::MapAreaType;
-
+        for (addr, size) in MMIO {
+            let start = *addr + KERNEL_ADDR_OFFSET;
+            let end = start + *size;
+            println!("map mmio device,[{:#x},{:#x})", start, end);
             memory_set.push(
                 MapArea::new(
-                    (*pair).0.into(),
-                    ((*pair).0 + (*pair).1).into(),
+                    start.into(),
+                    end.into(),
                     MapType::Identical,
                     MapPermission::R | MapPermission::W,
                     MapAreaType::MMIO,
@@ -425,6 +440,7 @@ impl MemorySetInner {
                 None,
             );
         }
+        println!("create new kernel successfully!");
         memory_set
     }
 
@@ -552,25 +568,96 @@ impl MemorySetInner {
         (max_end_vpn, head_va.into())
     }
     /// Create a new address space by copy code&data from a exited process's address space.
-    pub fn from_existed_user(user_space: &Self) -> Self {
-        let mut memory_set = Self::new_bare();
-        #[cfg(target_arch = "riscv64")]
-        // map trampoline
-        memory_set.map_trampoline();
+    pub fn from_existed_user(user_space: &Arc<MemorySet>) -> MemorySet {
+        let mut memory_set = Self::new_from_kernel();
         // copy data sections/trap_context/user_stack
-        for area in user_space.areas.iter() {
-            let new_area = MapArea::from_another(area);
+        for area in user_space.get_mut().areas.iter_mut() {
+            if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
+                continue;
+            }
+            let mut new_area = MapArea::from_another(area);
+            if area.area_type == MapAreaType::Mmap 
+                && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+            {
+                GROUP_SHARE.lock().add_area(new_area.groupid);
+            }
+            if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+                //已经分配且独占/被写过的部分以及读共享部分按cow处理
+                //其余是未分配部分，直接clone即可
+                if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {
+                    let frames = area.data_frames.values().cloned().collect();
+                    memory_set.push_with_given_frames(new_area, frames);
+                    continue;
+                }
+                new_area.data_frames = area.data_frames.clone();
+                for (vpn, _) in area.data_frames.iter() {
+                    let vpn = *vpn;
+                    let pte = user_space.get_mut().page_table.translate(vpn).unwrap();
+                    let mut pte_flags = pte.flags();
+                    let src_ppn = pte.ppn();
+                    //清空可写位，设置COW位
+                    //下面两步不合起来是因为flags只有8位，全都用掉了
+                    //所以Cow位没有放到flags里面
+                    let need_cow = pte_flags.contains(PTEFlags::W)
+                        || pte.is_cow();
+                    pte_flags &= !PTEFlags::W;
+                    user_space.get_mut().page_table.set_flags(vpn, pte_flags);
+                    if need_cow {
+                        user_space.get_mut().page_table.set_cow(vpn);
+                    }
+                    // 设置新的pagetable
+                    memory_set.page_table.map(vpn, src_ppn, pte_flags);
+                    if need_cow {
+                        memory_set.page_table.set_cow(vpn);
+                    }
+                }
+                memory_set.push_lazily(new_area);
+                continue;
+            }
+            // let mut page_table = &mut user_space.page_table;
+            // ELF是cow
+            if area.area_type == MapAreaType::Elf {
+                for vpn in area.vpn_range {
+                    let pte = user_space.get_mut().translate(vpn).unwrap();
+                    let pte_flags = pte.flags() & !PTEFlags::W;
+                    let src_ppn = pte.ppn();
+                    //清空可写位，设置COW位
+                    //下面两步不合起来是因为flags只有8位，全都用掉了
+                    //所以Cow位没有放到flags里面
+                    user_space
+                        .get_mut()
+                        .page_table
+                        .set_flags(vpn, pte_flags);
+                    user_space.get_mut().page_table.set_cow(vpn);
+                    // 设置新的pagetable
+                    memory_set.page_table.map(vpn, src_ppn, pte_flags);
+                    memory_set.page_table.set_cow(vpn);
+                }
+                new_area.data_frames = area.data_frames.clone();
+                memory_set.push_lazily(new_area);
+                continue;
+            }
+            // 映射相同的Frame
+            if area.area_type == MapAreaType::Shm {
+                let frames = area.data_frames.values().cloned().collect();
+                memory_set.push_with_given_frames(new_area, frames);
+                continue;
+            }
+
+            //既不是cow也不是mmap还不是shm
             memory_set.push(new_area, None);
+
             // copy data from another space
             for vpn in area.vpn_range {
                 let src_ppn = user_space.translate(vpn).unwrap().ppn();
                 let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
                 dst_ppn
-                    .get_bytes_array()
-                    .copy_from_slice(src_ppn.get_bytes_array());
+                    .bytes_array_mut()
+                    .copy_from_slice(src_ppn.bytes_array_mut());
             }
         }
-        memory_set
+        flush_tlb();
+        MemorySet::new(memory_set)
     }
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
@@ -759,6 +846,10 @@ impl MemorySetInner {
             debug!("[load_dl] encounter a static elf");
             None
         }
+    }
+    fn push_with_given_frames(&mut self, mut map_area: MapArea, frames: Vec<Arc<FrameTracker>>) {
+        map_area.map_given_frames(&mut self.page_table, frames);
+        self.areas.push(map_area);
     }
 }
 

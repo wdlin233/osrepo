@@ -19,7 +19,6 @@ pub const MSEC_PER_SEC: usize = 1000;
 /// kernel stack size
 pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
 /// kernel stack top address
-pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1; // trampoline address for loongarch64
 pub const KSTACK_TOP: usize = usize::MAX - PAGE_SIZE + 1;
 
 pub const THREAD_MAX_NUM: usize = 3000;
@@ -47,7 +46,7 @@ pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
 //#[cfg(target_arch = "riscv64")]
 /// physical memory end address
-pub const MEMORY_END: usize = 0x8800_0000;
+pub const MEMORY_END: usize = 0x8800_0000 + KERNEL_ADDR_OFFSET;
 //#[cfg(target_arch = "riscv64")]
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;
@@ -76,3 +75,6 @@ pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 
 pub const PRE_ALLOC_PAGES: usize = 8;
 pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;
+
+pub const KERNEL_ADDR_OFFSET: usize = 0xffff_ffc0_0000_0000;
+pub const KERNEL_PGNUM_OFFSET: usize = KERNEL_ADDR_OFFSET >> PAGE_SIZE_BITS;
