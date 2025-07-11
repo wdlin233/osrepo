@@ -2,6 +2,7 @@
 //! controls all the frames in the operating system.
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
+use crate::mm::address::KernelAddr;
 use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -115,10 +116,9 @@ pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();
     }
-    #[cfg(target_arch = "riscv64")]
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
+        PhysAddr::from(KernelAddr::from(ekernel as usize)).ceil(),
+        PhysAddr::from(KernelAddr::from(MEMORY_END)).floor(),
     );
     #[cfg(target_arch = "loongarch64")]
     {

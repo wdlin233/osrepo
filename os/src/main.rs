@@ -129,11 +129,11 @@ pub fn trampoline(hartid: usize) {
 }
 
 #[no_mangle]
-pub fn main(cpu: usize) -> ! {
+pub fn main(hartid: usize) -> ! {
     clear_bss();
     println!("{}", FLAG);
     println!("[kernel] Hello, world!");
-    println!("cpu: {}", cpu);
+    println!("cpu: {}", hartid);
     logging::init();
     log::error!("Logging init success");
     

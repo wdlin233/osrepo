@@ -6,6 +6,7 @@
 /// 因此11-11-11-14,最高位是次高位的扩展
 ///
 use super::{translated_byte_buffer, PageTableEntry};
+use crate::config::KERNEL_ADDR_OFFSET;
 use crate::phys_to_virt;
 use crate::{
     config::{PAGE_SIZE, PAGE_SIZE_BITS},
@@ -224,7 +225,6 @@ impl VirtPageNum {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
@@ -250,12 +250,14 @@ impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
+        let kernel_va = KernelAddr::from(pa).0;
+        unsafe { core::slice::from_raw_parts_mut(kernel_va as *mut PageTableEntry, 512) }
     }
     /// Get the reference of page(array of bytes)
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
+        let kernel_va = KernelAddr::from(pa).0;
+        unsafe { core::slice::from_raw_parts_mut(kernel_va as *mut u8, 4096) }
     }
     /// Get mutable reference of physical address as type T
     pub fn as_mut<T>(&self) -> &'static mut T {
@@ -424,23 +426,41 @@ pub fn remove_bad_address(va: usize) {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct KernelAddr(pub usize);
 
-impl From<usize> for KernelAddr {
-    fn from(v: usize) -> Self {
-        return Self(v);
-    }
-}
-
-impl From<PhysAddr> for KernelAddr {
-    fn from(v: PhysAddr) -> Self {
-        return Self(v.0);
-    }
-}
-
 impl KernelAddr {
     pub fn get_mut<T>(&self) -> &'static mut T {
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
     }
     pub fn get_ref<T>(&self) -> &'static T {
         unsafe { (self.0 as *const T).as_ref().unwrap() }
+    }
+}
+
+impl From<usize> for KernelAddr {
+    fn from(v: usize) -> Self {
+        Self(v)
+    }
+}
+
+impl From<PhysAddr> for KernelAddr {
+    fn from(v: PhysAddr) -> Self {
+        Self(v.0 + KERNEL_ADDR_OFFSET)
+    }
+}
+
+impl From<KernelAddr> for PhysAddr {
+    fn from(v: KernelAddr) -> Self {
+        Self(v.0 - KERNEL_ADDR_OFFSET)
+    }
+}
+
+impl From<KernelAddr> for VirtAddr {
+    fn from(v: KernelAddr) -> Self {
+        Self(v.0)
+    }
+}
+
+impl From<KernelAddr> for PhysPageNum {
+    fn from(value: KernelAddr) -> Self {
+        PhysAddr::from(value).floor()
     }
 }
