@@ -3,8 +3,7 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, open, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat,
-    OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
+    convert_kstat_to_statx, open, open_device_file, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET
 }; //::{link, unlink}
 
 use crate::mm::{
@@ -12,10 +11,10 @@ use crate::mm::{
     translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
 use crate::syscall::{
-    process, FaccessatFileMode, FaccessatMode, FcntlCmd, Iovec, PollEvents, PollFd, RLimit, TimeVal
+    process, FaccessatFileMode, FaccessatMode, FcntlCmd, Iovec, PollEvents, PollFd, RLimit, TimeVal,
 };
 use crate::task::{
-    block_current_and_run_next, current_process, current_user_token, suspend_current_and_run_next,
+    block_current_and_run_next, current_task, current_user_token, suspend_current_and_run_next,
 };
 use crate::timer::{get_time_ms, TimeSpec};
 use crate::users::User;
@@ -26,9 +25,46 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: usize) -> isize {
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    //let path = data_flow!({ c_ptr_to_string(path) });
+    let path = translated_str(token, path);
+
+    // assert!(path == "/proc/self/exe", "unsupported other path!");
+    if path == "/proc/self/exe" {
+        debug!("fs_info={}", inner.fs_info.exe());
+        let size_needed = inner.fs_info.exe_as_bytes().len();
+        debug!("the size need is : {}", size_needed);
+        let mut buffer = UserBuffer::new(vec![
+            unsafe {
+                core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), size_needed)
+            }
+        ]);
+        let res = buffer.write(inner.fs_info.exe_as_bytes());
+        return res as isize;
+    }
+    debug!("[sys_read_linkat] got path : {}", inner.fs_info.get_cwd());
+    let abs_path = inner.get_abs_path(dirfd, &path);
+    let mut linkbuf = vec![0u8; bufsize];
+    let file = open(&abs_path, OpenFlags::empty(), NONE_MODE)
+        .unwrap()
+        .file()
+        .unwrap();
+    let readcnt = file.inode.read_link(&mut linkbuf, bufsize).unwrap();
+    // let mut buffer = UserBuffer::new(translated_byte_buffer(token, buf, readcnt).unwrap());
+    let mut buffer =
+        UserBuffer::new_single(unsafe { core::slice::from_raw_parts_mut(buf as *mut _, readcnt) });
+    buffer.write(&linkbuf);
+    readcnt as isize
+
+    // Ok(res)
+}
+
 //lseek
 pub fn sys_lseek(fd: usize, offset: isize, whence: usize) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
 
     if fd >= inner.fd_table.len() || inner.fd_table.try_get(fd).is_none() {
@@ -46,7 +82,7 @@ pub fn sys_lseek(fd: usize, offset: isize, whence: usize) -> isize {
 
 //readv
 pub fn sys_readv(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
@@ -103,7 +139,7 @@ pub fn sys_readv(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     debug!("in sys write with buf: {:x?}, len: {}", buf, len);
-    let process = current_process();
+    let process = current_task().unwrap();
     debug!("current pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.clone();
@@ -165,7 +201,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     debug!("in sys read");
     // let token = current_user_token();
-    let process = current_process();
+    let process = current_task().unwrap();
     debug!("current pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.clone();
@@ -205,7 +241,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
 /// open sys
 pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     debug!("in sys open");
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     let path = translated_str(token, path);
@@ -231,21 +267,11 @@ pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
 
     inner.fs_info.insert(abs_path, new_fd);
     new_fd as isize
-    // if let Some(dentry) = open_file(inode, path.as_str(), OpenFlags::from_bits(flags as i32).unwrap()) {
-    //     let mut inner = process.inner_exclusive_access();
-    //     let fd = inner.alloc_fd();
-    //     let file = cast_inode_to_file(dentry.inode());
-    //     inner.fd_table.try_get(fd) = file;
-    //     fd as isize
-    // } else {
-    //     -1
-    // }
-    //unimplemented!()
 }
 /// close syscall
 pub fn sys_close(fd: usize) -> isize {
     debug!("in sys close");
-    let process = current_process();
+    let process = current_task().unwrap();
     debug!("in close, pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() || fd < 0 {
@@ -261,8 +287,8 @@ pub fn sys_close(fd: usize) -> isize {
 }
 /// pipe syscall
 pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
     info!("[sys_pipe2] fd is {:x},flags is {}", fd as usize, flags);
 
     let mut pipe_flags = OpenFlags::empty();
@@ -365,7 +391,7 @@ pub fn sys_dup(fd: usize) -> isize {
     //     "kernel:pid[{}] sys_dup",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
@@ -392,7 +418,7 @@ pub fn sys_dup(fd: usize) -> isize {
 }
 
 pub fn sys_dup3(old: usize, new: usize, flags: u32) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
 
     if old >= inner.fd_table.len()
@@ -419,7 +445,7 @@ pub fn sys_dup3(old: usize, new: usize, flags: u32) -> isize {
 
 pub fn sys_fstat(fd: usize, st: *mut Kstat) -> isize {
     debug!("in sys fast");
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() || inner.fd_table.try_get(fd).is_none() {
         return -1;
@@ -441,11 +467,15 @@ pub fn sys_fstat(fd: usize, st: *mut Kstat) -> isize {
 }
 
 pub fn sys_getcwd(buf: *const u8, size: usize) -> isize {
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
     let cwdlen = inner.fs_info.cwd().len();
     if (buf as isize) < 0 || is_bad_address(buf as usize) || (size as isize) < 0 || size <= cwdlen {
-        return -1;
+        return SysErrNo::EFAULT as isize;
+    }
+    let cwdlen = inner.fs_info.cwd().len();
+    if size <= cwdlen {
+        return SysErrNo::ERANGE as isize;
     }
     let mut buffer =
         UserBuffer::new(safe_translated_byte_buffer(inner.memory_set.clone(), buf, size).unwrap());
@@ -464,7 +494,7 @@ pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
     // let old_path = translated_str(token, old_name);
     // let new_path = translated_str(token, new_name);
     // //ROOT_INODE.
-    // // let curdir = current_process()
+    // // let curdir = current_task()
     // //     .inner_exclusive_access()
     // //     .work_dir
     // //     .clone();
@@ -480,13 +510,8 @@ pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
 
 /// YOUR JOB: Implement unlinkat.
 pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
-    //unimplemented!()
-    // // trace!(
-    // //     "kernel:pid[{}] sys_unlinkat(name: 0x{:x?})",
-    // //     current_task().unwrap().process.upgrade().unwrap().getpid(), name
-    // // );
     debug!("in sys unlink");
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
 
     let token = inner.get_user_token();
@@ -519,7 +544,7 @@ pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
 
 /// change work dir
 pub fn sys_chdir(path: *const u8) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     if (path as isize) <= 0 || is_bad_address(path as usize) {
@@ -550,8 +575,8 @@ pub fn sys_chdir(path: *const u8) -> isize {
 
 /// get dentries
 pub fn sys_getdents64(fd: usize, buf: *const u8, len: usize) -> isize {
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() || inner.fd_table.try_get(fd).is_none() {
         return -1;
     }
@@ -573,7 +598,7 @@ pub fn sys_getdents64(fd: usize, buf: *const u8, len: usize) -> isize {
 
 /// mkdirat
 pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     let path = translated_str(token, path);
@@ -650,7 +675,7 @@ pub fn sys_statx(
     statxbuf: *mut Statx,
 ) -> isize {
     debug!("in sys statx");
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
@@ -709,8 +734,8 @@ pub fn sys_ioctl(_fd: usize, _cmd: usize, _arg: usize) -> isize {
 pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
     const FD_CLOEXEC: usize = 1;
 
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
 
     if fd >= inner.fd_table.len() || (fd as isize) < 0 {
         return SysErrNo::EBADF as isize;
@@ -778,8 +803,8 @@ pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
 
 //writev
 pub fn sys_writev(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
     if (fd as isize) < 0 || fd >= inner.fd_table.len() {
@@ -831,8 +856,8 @@ pub fn sys_writev(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
 }
 
 /// https://man7.org/linux/man-pages/man2/ppoll.2.html
-pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isize {
-    let process = current_process();
+pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, _mask: usize) -> isize {
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
@@ -850,7 +875,7 @@ pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isiz
     let wait_time: isize = if tmo_p == 0 {
         -1
     } else {
-        let timespec = unsafe { *translated_ref(token, tmo_p as *const TimeSpec) };
+        let timespec = *translated_ref(token, tmo_p as *const TimeSpec);
         (timespec.tv_sec * 1000000000 + timespec.tv_nsec) as isize
     };
     if wait_time == 0 {
@@ -861,9 +886,9 @@ pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isiz
     drop(inner);
     drop(process);
     loop {
-        let process = current_process();
+        let process = current_task().unwrap();
         let inner = process.inner_exclusive_access();
-        let token = inner.get_user_token();
+        let _token = inner.get_user_token();
         let mut resnum = 0;
         for i in 0..nfds {
             if fds[i].fd < 0 {
@@ -895,7 +920,7 @@ pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isiz
 }
 
 pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
@@ -921,8 +946,8 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
 
 //send file
 pub fn sys_sendfile(outfd: usize, infd: usize, offset_ptr: usize, count: usize) -> isize {
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
     if (infd as isize) < 0
@@ -1020,9 +1045,9 @@ pub fn sys_sendfile(outfd: usize, infd: usize, offset_ptr: usize, count: usize) 
 
 // faccessat
 pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let uid = process.getuid();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     if (path as isize) <= 0 {
         return SysErrNo::EFAULT as isize;
@@ -1118,7 +1143,7 @@ pub fn sys_utimensat(dirfd: isize, path: *const u8, times: *const TimeVal, _flag
     if dirfd == -1 {
         return SysErrNo::EBADF as isize;
     }
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     let path = if !path.is_null() {
@@ -1169,7 +1194,6 @@ pub fn sys_utimensat(dirfd: isize, path: *const u8, times: *const TimeVal, _flag
     return 0;
 }
 
-
 pub fn sys_prlimit(
     pid: usize,
     resource: u32,
@@ -1182,7 +1206,7 @@ pub fn sys_prlimit(
     }
 
     if pid == 0 {
-        let process = current_process();
+        let process = current_task().unwrap();
         let mut inner = process.inner_exclusive_access();
         let token = inner.get_user_token();
         let fd_table = &mut inner.fd_table;
@@ -1202,4 +1226,23 @@ pub fn sys_prlimit(
     }
 
     return 0;
+}
+
+pub fn sys_getrandom(buf: *const u8, buflen: usize, flags: u32) -> isize {
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    if (buf as isize) < 0 || is_bad_address(buf as usize) || buf.is_null(){
+        return SysErrNo::EFAULT as isize;
+    }
+    if (flags as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    match open_device_file("/dev/random").unwrap().read(UserBuffer::new_single(unsafe {
+        core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), buflen)
+    })) {
+        Ok(size) => size as isize,
+        Err(_) => SysErrNo::EIO as isize, // check TODO
+    }
 }

@@ -158,7 +158,7 @@ pub fn sys_basicsh() -> isize {
     syscall6(
         SYSCALL_EXEC,
         [
-            "/musl/busybox\0".as_ptr() as usize,
+            "busybox\0".as_ptr() as usize,
             [
                 "busybox\0".as_ptr() as isize,
                 "sh\0".as_ptr() as isize,
@@ -177,13 +177,13 @@ pub fn sys_basicsh() -> isize {
         ],
     )
 }
-pub fn sys_busyboxsh(test: &str) -> isize {
+pub fn sys_busyboxsh(test: &str, cwd: &str) -> isize {
     syscall6(
         SYSCALL_EXEC,
         [
-            "/musl/busybox\0".as_ptr() as usize,
+            cwd.as_ptr() as usize,
             [
-                "busybox\0".as_ptr() as isize,
+                cwd.as_ptr() as isize,
                 "sh\0".as_ptr() as isize,
                 test.as_ptr() as isize,
                 //"./test-ltp.sh\0".as_ptr() as isize,

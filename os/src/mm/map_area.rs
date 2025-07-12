@@ -10,14 +10,13 @@ use crate::{
     },
     syscall::MmapFlags,
 };
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
 
 #[derive(Clone)]
 pub struct MapArea {
     pub vpn_range: VPNRange,
     pub data_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
-    #[cfg(target_arch = "riscv64")]
     pub map_type: MapType,
     pub map_perm: MapPermission,
     pub area_type: MapAreaType,
@@ -36,7 +35,7 @@ impl MapArea {
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_type: MapType,
         map_perm: MapPermission,
         area_type: MapAreaType,
     ) -> Self {
@@ -51,7 +50,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type,
             map_perm,
             area_type,
@@ -64,7 +62,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type: another.map_type,
             map_perm: another.map_perm,
             area_type: another.area_type,
@@ -76,7 +73,6 @@ impl MapArea {
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         // only Framed type in LA64
         let ppn: PhysPageNum;
-        #[cfg(target_arch = "riscv64")]
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
@@ -84,28 +80,27 @@ impl MapArea {
             MapType::Framed => {
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
-                self.data_frames.insert(vpn, Arc::new(frame));
+                self.data_frames.insert(vpn, frame);
             }
         }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            let frame = frame_alloc().unwrap();
-            ppn = frame.ppn;
-            self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
-        }
+        // #[cfg(target_arch = "loongarch64")]
+        // {
+        //     let frame = frame_alloc().unwrap();
+        //     ppn = frame.ppn;
+        //     self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
+        // }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         //debug!("in map area, map one, to page table map");
         page_table.map(vpn, ppn, pte_flags);
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        #[cfg(target_arch = "riscv64")]
         if self.map_type == MapType::Framed {
             self.data_frames.remove(&vpn);
         }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            self.data_frames.remove(&vpn);
-        }
+        // #[cfg(target_arch = "loongarch64")]
+        // {
+        //     self.data_frames.remove(&vpn);
+        // }
         page_table.unmap(vpn);
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
@@ -139,21 +134,22 @@ impl MapArea {
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
-    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
-        #[cfg(target_arch = "riscv64")]
+    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8], offset: usize) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
+        let mut page_offset = offset;
         let mut current_vpn = self.vpn_range.get_start();
         let len = data.len();
         loop {
-            let src = &data[start..len.min(start + PAGE_SIZE)];
+            let src = &data[start..len.min(start + PAGE_SIZE - page_offset)];
             let dst = &mut page_table
                 .translate(current_vpn)
                 .unwrap()
                 .ppn()
-                .get_bytes_array()[..src.len()];
+                .get_bytes_array()[page_offset..(page_offset + src.len())];
             dst.copy_from_slice(src);
-            start += PAGE_SIZE;
+            start += PAGE_SIZE - page_offset;
+            page_offset = 0;
             if start >= len {
                 break;
             }
@@ -190,7 +186,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type: map_type,
             map_perm: map_perm,
             area_type: area_type,
@@ -199,9 +194,15 @@ impl MapArea {
             groupid: groupid,
         }
     }
+    pub fn map_given_frames(&mut self, page_table: &mut PageTable, frames: Vec<Arc<FrameTracker>>) {
+        for (vpn, frame) in self.vpn_range.clone().into_iter().zip(frames.into_iter()) {
+            let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+            page_table.map(vpn, frame.ppn, pte_flags);
+            self.data_frames.insert(vpn, frame);
+        }
+    }
 }
 
-#[cfg(target_arch = "riscv64")]
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
 /// Only framed type in LA64
@@ -210,7 +211,6 @@ pub enum MapType {
     Framed,
 }
 
-#[cfg(target_arch = "riscv64")]
 bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
     pub struct MapPermission: u8 {
@@ -244,15 +244,28 @@ bitflags! {
     }
 }
 
-impl Default for MapPermission {
-    // alloc_user_res
-    fn default() -> Self {
+impl MapPermission {
+    pub fn rwu() -> Self {
+        #[cfg(target_arch = "riscv64")]
+        return MapPermission::R
+            | MapPermission::W
+            | MapPermission::U;  
+        #[cfg(target_arch = "loongarch64")]
+        return MapPermission::W | MapPermission::PLVL | MapPermission::PLVH;
+    }
+    pub fn rw() -> Self {
+        #[cfg(target_arch = "riscv64")]
+        return MapPermission::R | MapPermission::W;
+        #[cfg(target_arch = "loongarch64")]
+        return MapPermission::W;
+    }
+    pub fn ru() -> Self {
         #[cfg(target_arch = "riscv64")]
         return MapPermission::R | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
         return MapPermission::PLVL | MapPermission::PLVH; // as PLV3, user mode
     }
-}
+}   
 
 /// Map area type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

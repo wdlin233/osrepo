@@ -9,8 +9,8 @@ use core::{
 
 use crate::config::CLOCK_FREQ;
 use crate::sync::UPSafeCell;
-use crate::task::TaskControlBlock;
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+use crate::task::ProcessControlBlock;
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -176,7 +176,7 @@ pub struct TimerCondVar {
     /// The time when the timer expires, in milliseconds
     pub expire_ms: usize,
     /// The task to be woken up when the timer expires
-    pub task: Arc<TaskControlBlock>,
+    pub task: Arc<ProcessControlBlock>,
 }
 
 impl PartialEq for TimerCondVar {
@@ -206,7 +206,7 @@ lazy_static! {
 }
 
 /// Add a timer
-pub fn add_timer(expire_ms: usize, task: Arc<TaskControlBlock>) {
+pub fn add_timer(expire_ms: usize, task: Arc<ProcessControlBlock>) {
     // trace!(
     //     "kernel:pid[{}] add_timer",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
@@ -216,7 +216,7 @@ pub fn add_timer(expire_ms: usize, task: Arc<TaskControlBlock>) {
 }
 
 /// Remove a timer
-pub fn remove_timer(task: Arc<TaskControlBlock>) {
+pub fn remove_timer(task: Arc<ProcessControlBlock>) {
     //trace!("kernel:pid[{}] remove_timer", current_task().unwrap().process.upgrade().unwrap().getpid());
     //trace!("kernel: remove_timer");
     let mut timers = TIMERS.exclusive_access();

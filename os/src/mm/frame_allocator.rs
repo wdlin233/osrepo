@@ -2,7 +2,9 @@
 //! controls all the frames in the operating system.
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
+use crate::mm::address::KernelAddr;
 use crate::sync::UPSafeCell;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
@@ -114,10 +116,9 @@ pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();
     }
-    #[cfg(target_arch = "riscv64")]
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
+        PhysAddr::from(KernelAddr::from(ekernel as usize)).ceil(),
+        PhysAddr::from(KernelAddr::from(MEMORY_END)).floor(),
     );
     #[cfg(target_arch = "loongarch64")]
     {
@@ -134,11 +135,12 @@ pub fn init_frame_allocator() {
 }
 
 /// Allocate a physical page frame in FrameTracker style
-pub fn frame_alloc() -> Option<FrameTracker> {
+pub fn frame_alloc() -> Option<Arc<FrameTracker>> {
     FRAME_ALLOCATOR
         .exclusive_access()
         .alloc()
         .map(FrameTracker::new)
+        .map(Arc::new)
 }
 
 /// Deallocate a physical page frame with a given ppn
@@ -151,24 +153,4 @@ pub fn frame_alloc_contiguous(count: usize) -> (Vec<FrameTracker>, PhysPageNum) 
     let (frames, root_ppn) = FRAME_ALLOCATOR.exclusive_access().alloc_coniguous(count);
     let frame_trackers: Vec<FrameTracker> = frames.iter().map(|&p| FrameTracker::new(p)).collect();
     (frame_trackers, root_ppn)    
-}
-
-#[allow(unused)]
-/// a simple test for frame allocator
-pub fn frame_allocator_test() {
-    let mut v: Vec<FrameTracker> = Vec::new();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    v.clear();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    drop(v);
-    use crate::println;
-    println!("frame_allocator_test passed!");
 }

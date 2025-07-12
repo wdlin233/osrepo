@@ -41,9 +41,9 @@ pub fn syscall(id: usize, args0: usize, args1: usize, args2: usize) -> isize {
 pub fn sys_busyboxsh(test: &str) -> isize {
     syscall(
         SYSCALL_EXEC,
-        "/busybox\0".as_ptr() as usize,
+        "/musl/busybox\0".as_ptr() as usize,
         [
-            "busybox\0".as_ptr() as isize,
+            "/musl/busybox\0".as_ptr() as isize,
             "sh\0".as_ptr() as isize,
             test.as_ptr() as isize,
             //"./test-ltp.sh\0".as_ptr() as isize,

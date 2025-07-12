@@ -1,7 +1,8 @@
 use super::sys_gettid;
 use crate::alloc::string::ToString;
 use crate::mm::MemorySet;
-use crate::task::exit_current_group_and_run_next;
+use crate::signal::{send_access_signal, send_signal_to_thread_group};
+use crate::task::{exit_current_group_and_run_next, move_child_process_to_init, remove_all_from_thread_group, PROCESS_GROUP};
 use crate::timer::get_time_ms;
 use crate::{
     config::PAGE_SIZE,
@@ -13,9 +14,9 @@ use crate::{
     signal::SignalFlags,
     syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
     task::{
-        add_task, block_current_and_run_next, current_process, current_task, current_user_token,
-        exit_current_and_run_next, mmap, munmap, pid2process, process_num,
-        suspend_current_and_run_next, CloneFlags, TmsInner,
+        add_task, block_current_and_run_next, current_task, current_user_token,
+        exit_current_and_run_next, mmap, munmap, tid2task, process_num,
+        suspend_current_and_run_next, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -30,7 +31,7 @@ pub struct TimeVal {
 
 //sys info
 pub fn sys_sysinfo(info: *mut SysInfo) -> isize {
-    let token = current_process().inner_exclusive_access().get_user_token();
+    let token = current_task().unwrap().inner_exclusive_access().get_user_token();
     *translated_refmut(token, info) = SysInfo::new(get_time_ms() / 1000, 1 << 56, process_num());
     0
 }
@@ -43,10 +44,10 @@ pub fn sys_exit(exit_code: i32) -> ! {
     //     "kernel:pid[{}] sys_exit",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    let current_process = current_process();
-    let pid = current_process.getpid();
+    let current_task = current_task().unwrap();
+    let pid = current_task.getpid();
     debug!("exiting pid is:{},exit code is:{}", pid, exit_code);
-    drop(current_process);
+    drop(current_task);
     exit_current_and_run_next(exit_code);
     debug!("exit ok");
     panic!("Unreachable in sys_exit!");
@@ -70,19 +71,20 @@ pub fn sys_fork(
     //     "kernel:pid[{}] sys_fork",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
+    use crate::syscall::CloneFlags;
     debug!("(sys_fork) flags: {}, stack_ptr: {:#x}, parent_tid_ptr: {:#x}, tls_ptr: {:#x}, child_tid_ptr: {:#x}",
         flags, stack_ptr, parent_tid_ptr, tls_ptr, child_tid_ptr);
     let flags = CloneFlags::from_bits(flags as u32).unwrap();
-    let current_process = current_process();
-    //current_process.inner_exclusive_access().is_blocked+=1;
-    let new_process = current_process.fork(
+    let current_task = current_task().unwrap();
+    //current_task.inner_exclusive_access().is_blocked+=1;
+    let new_process = current_task.fork(
         flags,
         stack_ptr,
         parent_tid_ptr as *mut u32,
         tls_ptr,
         child_tid_ptr as *mut u32,
     );
-    //debug!("sys_fork: current process pid is : {}",current_process.getpid());
+    //debug!("sys_fork: current process pid is : {}",current_task.getpid());
     let new_pid = new_process.getpid();
     debug!("(sys_fork) the new pid is :{}", new_pid);
 
@@ -99,9 +101,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     // );
     //unimplemented!()
     debug!("in sys exec");
-    let current_process = current_process();
-    debug!("current process id is :{}", current_process.getpid());
-    let mut inner = current_process.inner_exclusive_access();
+    let current_task = current_task().unwrap();
+    debug!("current process id is :{}", current_task.getpid());
+    let inner = current_task.inner_exclusive_access();
     //debug!("get inner ok");
     let mut argv = Vec::<String>::new();
     let mut env = Vec::<String>::new();
@@ -109,14 +111,30 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let token = inner.get_user_token();
     unsafe {
         //debug!("in unsafe");
+        debug!("the pathp is :{:?}", pathp);
+        debug!("the path is :{}", translated_str(token, pathp));
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);
-        if path.ends_with(".sh") {
+        if path.contains("/musl") {
+            debug!("in set cwd");
+            inner.fs_info.set_cwd(String::from("/musl"));
+        }
+        if path.contains("/glibc") {
+            inner.fs_info.set_cwd(String::from("/glibc"));
+        }
+        if path.ends_with(".sh") && path.contains("/musl") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
             argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
-            path = String::from("/musl/busybox");
+            path = String::from("/busybox");
+        }
+        if path.ends_with(".sh") && path.contains("/glic") {
+            //.sh文件不是可执行文件，需要用busybox的sh来启动
+            debug!("push busybox");
+            argv.push(String::from("/glibc/busybox"));
+            argv.push(String::from("sh"));
+            path = String::from("/glibc/busybox");
         }
 
         //处理argv参数
@@ -145,6 +163,10 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             if arg_str_ptr == 0 {
                 break;
             }
+            debug!(
+                "the argv is : {}",
+                translated_str(token, arg_str_ptr as *const u8)
+            );
             argv.push(translated_str(token, arg_str_ptr as *const u8));
             args = args.add(1);
         }
@@ -178,6 +200,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_enough);
     }
     let cwd = if !path.starts_with('/') {
+        //debug!("the path is not start with / ");
         inner.fs_info.cwd()
     } else {
         "/"
@@ -193,7 +216,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let elf_data = app_inode.inode.read_all().unwrap();
     drop(inner);
     let len = argv.len();
-    current_process.exec(&elf_data, argv, &mut env);
+    current_task.exec(&elf_data, argv, &mut env);
     debug!("in sys exec, return argv len is :{}", len);
     0
 }
@@ -205,57 +228,74 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
 /// block to wait
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize {
     //debug!("kernel: sys_waitpid");
-    {
-        let process = current_process();
-        //debug!("{} is waiting child",process.getpid());
-        // find a child process
+    if (pid as i32) == i32::MIN {
+        return SysErrNo::ESRCH as isize;
+    }
+    if options < 0 || options > 100 {
+        return SysErrNo::EINVAL as isize;
+    }
+    loop {
+        let mut process_group = PROCESS_GROUP.exclusive_access();
+        let process = current_task().unwrap();
         let inner = process.inner_exclusive_access();
-        if !inner
-            .children
+        if !process_group.contains_key(&process.getpid()) {
+            return SysErrNo::ECHILD as isize;
+        }
+        // 放入 Fork 出来的子进程
+        let children = process_group.get_mut(&process.getpid()).unwrap();
+        if !children.iter().any(|p| pid == -1 || pid as usize == p.getpid()) {
+            return SysErrNo::ECHILD as isize;
+        }
+        // 寻找符合条件的进程组
+        let pair = children
             .iter()
-            .any(|p| pid == -1 || pid as usize == p.getpid())
-        {
-            //debug!("can not find the child");
-            return -1;
-            // ---
-            //- release current PCB
-        }
-    }
-    if options == 0 {
-        loop {
-            let process = current_process();
-            let mut inner = process.inner_exclusive_access();
+            .enumerate()
+            .find(|(_, p)| {
+                // ++++ temporarily access child PCB exclusively
+                p.inner_exclusive_access().is_group_exit() && (pid == -1 || pid as usize == p.getpid())
+                // ++++ release child PCB
+            })
+            .map(|(idx, t)| (idx, Arc::clone(t)));
+        
+        if let Some((idx, child)) = pair {
+            let found_pid = child.getpid();
+            let child_inner = child.inner_exclusive_access();
+            // ++++ temporarily access child PCB exclusively
+            let exit_code = child_inner.sig_table.exit_code();
             debug!(
-                "in sys waitpid, inner fd table len is :{}",
-                inner.fd_table.len()
+                "sys_waitpid: found child pid {}, exit_code {}",
+                found_pid, exit_code
             );
-            let pair = inner.children.iter().enumerate().find(|(_, p)| {
-                // ++++ temporarily access child PCB exclusively
-                p.inner_exclusive_access().is_zombie && (pid == -1 || pid as usize == p.getpid())
-                // ++++ release child PCB
-            });
-            if let Some((idx, _)) = pair {
-                let child = inner.children.remove(idx);
-                // confirm that child will be deallocated after being removed from children list
-                assert_eq!(Arc::strong_count(&child), 1);
-                let found_pid = child.getpid();
-                // ++++ temporarily access child PCB exclusively
-                let exit_code = child.inner_exclusive_access().exit_code;
-                debug!(
-                    "sys_waitpid: found child pid {}, exit_code {}",
-                    found_pid, exit_code
-                );
-                // ++++ release child PCB
-                *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
-                return found_pid as isize;
-            } else {
-                drop(inner);
-                debug!("sys_waitpid: no child found, block current process");
-                block_current_and_run_next();
+            if exit_code_ptr as usize != 0x0 {
+                if exit_code >= 128 && exit_code <= 255 {
+                    *translated_refmut(child_inner.memory_set.token(), exit_code_ptr) = exit_code;    
+                } else {
+                    *translated_refmut(child_inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
+                }
             }
+            drop(child_inner);
+            // 从进程组中删除子进程
+            children.remove(idx);
+            drop(inner);
+            drop(process);
+            drop(process_group);
+            // 从线程组移除
+            remove_all_from_thread_group(found_pid);
+            // 转移子进程
+            move_child_process_to_init(found_pid);
+            assert_eq!(Arc::strong_count(&child), 1,
+                "process{} can't recycled", child.getpid()
+            );
+            return found_pid as isize;
+        } else {
+            drop(inner);
+            drop(process);
+            drop(process_group);
+            debug!("sys_waitpid: no child found, block current process");
+            block_current_and_run_next();
         }
     }
-    -2
+      
 }
 
 /// getpid syscall
@@ -264,54 +304,51 @@ pub fn sys_getpid() -> isize {
     //     "kernel: sys_getpid pid:{}",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    current_task().unwrap().process.upgrade().unwrap().getpid() as isize
+    current_task().unwrap().getpid() as isize
 }
 /// getppid syscall
 pub fn sys_getppid() -> isize {
-    current_task().unwrap().process.upgrade().unwrap().getppid() as isize
+    current_task().unwrap().getppid() as isize
 }
 
 /// getuid syscall
 pub fn sys_getuid() -> isize {
-    current_task().unwrap().process.upgrade().unwrap().getuid() as isize
+    current_task().unwrap().getuid() as isize
 }
 ///
 pub fn sys_geteuid() -> isize {
-    current_task().unwrap().process.upgrade().unwrap().getuid() as isize
+    current_task().unwrap().getuid() as isize
 }
 /// getgid syscall
 pub fn sys_getgid() -> isize {
-    current_task().unwrap().process.upgrade().unwrap().getgid() as isize
+    current_task().unwrap().getgid() as isize
 }
 
 /// set tid addr
 pub fn sys_set_tid_addr(tidptr: usize) -> isize {
     current_task()
         .unwrap()
-        .process
-        .upgrade()
-        .unwrap()
         .set_clear_child_tid(tidptr);
     sys_gettid()
 }
 
 /// kill syscall
-pub fn sys_kill(pid: usize, signal: u32) -> isize {
+pub fn sys_kill(pid: isize, signal: usize) -> isize {
     // trace!(
     //     "kernel:pid[{}] sys_kill",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    use crate::task::pid2process;
-    if let Some(process) = pid2process(pid) {
-        if let Some(flag) = SignalFlags::from_bits(signal as usize) {
-            process.inner_exclusive_access().signals |= flag;
-            0
-        } else {
-            -1
-        }
-    } else {
-        -1
+    if signal == 0 {
+        return 0;
     }
+    let sig = SignalFlags::from_sig(signal);
+    match pid {
+        _ if pid > 0 => send_signal_to_thread_group(pid as usize , sig),
+        0 => send_signal_to_thread_group(current_task().unwrap().getpid(), sig),
+        -1 => send_access_signal(current_task().unwrap().gettid(), sig),
+        _ => send_signal_to_thread_group(-pid as usize, sig),
+    }
+    return 0;
 }
 
 /// get_time syscall
@@ -331,7 +368,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     0
 }
 //
-pub fn sys_clockgettime(clockid: usize, tp: *mut TimeVal) -> isize {
+pub fn sys_clockgettime(_clockid: usize, tp: *mut TimeVal) -> isize {
     let ms = crate::timer::get_time_ms();
     let time = TimeVal {
         sec: ms / 1000,
@@ -343,7 +380,7 @@ pub fn sys_clockgettime(clockid: usize, tp: *mut TimeVal) -> isize {
 
 /// get times
 pub fn sys_tms(tms: *mut TmsInner) -> isize {
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let process_tms = inner.tms.inner;
     drop(inner);
@@ -374,7 +411,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     if flags.contains(MmapFlags::MAP_FIXED) && addr == 0 {
         return SysErrNo::EPERM as isize;
     }
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if fd == usize::MAX {
@@ -427,7 +464,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
 /// YOUR JOB: Implement munmap.
 pub fn sys_munmap(addr: usize, len: usize) -> isize {
     debug!("[sys_munmap] addr={:#x}, len={:#x}", addr, len);
-    let process = current_process();
+    let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if is_bad_address(addr) {
@@ -439,7 +476,7 @@ pub fn sys_munmap(addr: usize, len: usize) -> isize {
 // change data segment size
 pub fn sys_brk(path: usize) -> isize {
     debug!("in sys brk, the path is : {}", path);
-    let process = current_process();
+    let process = current_task().unwrap();
     let fromer_addr: usize = process.change_program_brk(0);
     debug!("in sys brk, the fromer addr is : {}", fromer_addr);
     if path == 0 {
@@ -463,35 +500,14 @@ pub fn sys_brk(path: usize) -> isize {
 }
 // like sys_spawn a unnecessary syscall
 
-/// YOUR JOB: Implement spawn.
-/// HINT: fork + exec =/= spawn
-pub fn sys_spawn(path: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_spawn(path: 0x{path:x?})",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
-    // let token = current_user_token();
-    // let path = translated_str(token, path);
-    // if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
-    //     let all_data = app_inode.read_all();
-    //     let task = current_task().unwrap().spwan(all_data.as_slice());
-    //     let new_pid = task.getpid();
-    //     add_task(task);
-    //     new_pid as isize
-    // } else {
-    //     -1
-    // }
-    -1
-}
 
-// YOUR JOB: Set task priority.
 pub fn sys_set_priority(prio: isize) -> isize {
     // debug!(
     //     "kernel:pid[{}] sys_set_priority(prio: {})",
     //     current_task().unwrap().process.upgrade().unwrap().getpid(),
     //     prio
     // );
-    let process = current_process();
+    let process = current_task().unwrap();
     let mut inner = process.inner_exclusive_access();
     if prio >= 2 {
         inner.priority = prio as usize;
@@ -509,7 +525,6 @@ pub fn sys_log(_logtype: isize, _bufp: *const u8, _len: usize) -> isize {
 pub fn sys_exit_group(exit_code: i32) -> isize {
     exit_current_group_and_run_next(exit_code);
     unreachable!();
-    -1
 }
 
 pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
@@ -528,12 +543,23 @@ pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
         addr, len, map_perm
     );
 
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.get_mut();
     let start_vpn = VirtAddr::from(addr).floor();
     let end_vpn = VirtAddr::from(addr + len).ceil();
     //修改各段的mappermission
     memory_set.mprotect(start_vpn, end_vpn, map_perm);
     return 0;
+}
+
+pub fn sys_set_robust_list(head: usize, len: usize) -> isize {
+    if len != crate::task::RobustList::HEAD_SIZE {
+        return SysErrNo::EINVAL as isize;
+    }
+    let process = current_task().unwrap();
+    let mut inner = process.inner_exclusive_access();
+    inner.robust_list.head = head;
+    //inner.robust_list.len = len;
+    0
 }

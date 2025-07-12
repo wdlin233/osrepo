@@ -4,7 +4,12 @@
 #[macro_use]
 extern crate user_lib;
 
-const TESTS: &[&str] = &["busybox_testcode.sh\0", "basic_testcode.sh\0",];
+const TESTS: &[&str] = &[
+    "glibc/busybox_testcode.sh\0",
+    //"/musl/busybox_testcode.sh\0",
+    // "musl/basic_testcode.sh\0",
+    // "glibc/basic_testcode.sh\0",
+];
 
 const TEST_NUM: usize = TESTS.len();
 
@@ -17,7 +22,12 @@ pub fn main() -> i32 {
         println!("Usertests: Running {}", test);
         let pid = fork();
         if pid == 0 {
-            run_busyboxsh(test);
+            let cwd = if test.contains("/musl") {
+                "/musl/busybox\0"
+            } else {
+                "/glibc/busybox\0"
+            };
+            run_busyboxsh(test, cwd);
             panic!("unreachable!");
         } else {
             pids[i] = pid;

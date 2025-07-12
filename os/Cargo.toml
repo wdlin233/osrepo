@@ -16,14 +16,16 @@ xmas-elf = "0.7.0"
 virtio-drivers = "0.6.0"
 spin = "0.10"
 bit_field = "0.10.1"
-#ext4_rs = { path = "libs/ext4_rs" }
 lwext4_rust= { path = "./libs/lwext4_rsut"}
 lru = "0.12"
 hashbrown = "0.12.0"
 num_enum = { version = "0.7.2", default-features = false }
+polyhal = { path = "./libs/polyhal/polyhal", features = ["trap"] }
+polyhal-boot = { path = "./libs/polyhal/polyhal-boot" }
+polyhal-trap = { path = "./libs/polyhal/polyhal-trap" }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
+riscv = { version = "0.10.1"}
 buddy_system_allocator = "0.6"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
