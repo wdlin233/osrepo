@@ -1,9 +1,9 @@
 //! The panic handler and backtrace
-
-use crate::hal::utils::shutdown;
-use core::arch::asm;
+use polyhal::{
+    instruction::shutdown,
+    println,
+};
 use core::panic::PanicInfo;
-    use crate::println;
 
 #[panic_handler]
 /// panic handler

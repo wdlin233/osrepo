@@ -1,62 +1,62 @@
 use super::main;
 use core::arch::global_asm;
 
-#[link_section = ".bss.stack"]
-static mut BOOT_STACK: [u8; 4096 * 16] = [0; 4096 * 16];
-const BOOT_STACK_SIZE: usize = 4096 * 16;
+const BOOT_STACK_SIZE: usize = 4096 * 16 * 2;
 
 // 条件编译：RISC-V 启动代码
 //#[cfg(target_arch = "riscv64")]
-global_asm!(
-    r#"
-    .section .text.entry
-    .globl _start
-_start:
-    mv tp,a0
-    slli t0, a0, 8  # t0 = hart_id << 16(4096 * 8)
-    la sp, boot_stack_top
-    sub sp, sp, t0  # sp = stack top - hart_id * stack_size
+/*
+//     .section .text.entry
+//     .globl _start
+// _start:
+//     mv tp,a0
+//     slli t0, a0, 8  # t0 = hart_id << 16(4096 * 8)
+//     la sp, boot_stack_top
+//     sub sp, sp, t0  # sp = stack top - hart_id * stack_size
 
-    la t0, boot_pagetable
-    li t1, 8 << 60
-    srli t0, t0, 12
-    or t0, t0, t1
-    csrw satp, t0
-    sfence.vma
+//     la t0, boot_pagetable
+//     li t1, 8 << 60
+//     srli t0, t0, 12
+//     or t0, t0, t1
+//     csrw satp, t0
+//     sfence.vma
 
-    call trampoline 
+//     call trampoline 
 
-    .section .bss.stack
-    .globl boot_stack_lower_bound
-boot_stack_lower_bound:
-    .space {boot_stack_size}
+//     .section .bss.stack
+//     .globl boot_stack_lower_bound
+// boot_stack_lower_bound:
+//     .space {boot_stack_size}
     
-    .globl boot_stack_top
-boot_stack_top:
+//     .globl boot_stack_top
+// boot_stack_top:
 
-.section .data
-    .align 12
-boot_pagetable:
-    # we need 2 pte here
-    # 0x0000_0000_8000_0000 -> 0x0000_0000_8000_0000
-    # 0xffff_fc00_8000_0000 -> 0x0000_0000_8000_0000
-    .quad 0
-    .quad 0
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
-    .zero 8 * 255
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
-    .zero 8 * 253
+// .section .data
+//     .align 12
+// boot_pagetable:
+//     # we need 2 pte here
+//     # 0x0000_0000_8000_0000 -> 0x0000_0000_8000_0000
+//     # 0xffff_fc00_8000_0000 -> 0x0000_0000_8000_0000
+//     .quad 0
+//     .quad 0
+//     .quad (0x80000 << 10) | 0xcf # VRWXAD
+//     .zero 8 * 255
+//     .quad (0x80000 << 10) | 0xcf # VRWXAD
+//     .zero 8 * 253
 
-    .section .text.trampoline
-    .align 12
-    .global sigreturn_trampoline
+//     .section .text.trampoline
+//     .align 12
+//     .global sigreturn_trampoline
+*/
+global_asm!(
+     r#"
 sigreturn_trampoline:
     li	a7,139
-    ecall
-    "#,
-    boot_stack_size = const BOOT_STACK_SIZE,
-    //rust_main = sym super::main,
-    //boot_stack_top = sym BOOT_STACK.as_ptr(),
+     ecall
+     "#,
+//     boot_stack_size = const BOOT_STACK_SIZE,
+//     //rust_main = sym super::main,
+//     //boot_stack_top = sym BOOT_STACK.as_ptr(),
 );
 
 /// The earliest entry point for the primary CPU.

@@ -7,7 +7,6 @@ use crate::config::{
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{frame_alloc, translated_ref, FrameTracker, PhysAddr};
 use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum, MapType};
-use crate::phys_to_virt;
 use crate::sync::UPSafeCell;
 use alloc::{
     sync::{Arc, Weak},

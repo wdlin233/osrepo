@@ -11,8 +11,6 @@ lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = "0.4"
 bitflags = "1.2.1"
 xmas-elf = "0.7.0"
-# old version: virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
-# virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "61ece50" }
 virtio-drivers = "0.6.0"
 spin = "0.10"
 bit_field = "0.10.1"
@@ -23,14 +21,13 @@ num_enum = { version = "0.7.2", default-features = false }
 polyhal = { path = "./libs/polyhal/polyhal", features = ["trap"] }
 polyhal-boot = { path = "./libs/polyhal/polyhal-boot" }
 polyhal-trap = { path = "./libs/polyhal/polyhal-trap" }
+buddy_system_allocator = "0.11.0"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 riscv = { version = "0.10.1"}
-buddy_system_allocator = "0.6"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongarch64 = { version = "*", package = "loongArch64" }
-buddy_system_allocator = "0.11.0"
 
 
 [profile.dev]

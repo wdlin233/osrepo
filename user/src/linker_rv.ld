@@ -27,7 +27,6 @@ SECTIONS
         end_bss = .;
     }
     /DISCARD/ : {
-        *(.eh_frame)
-        *(.debug*)
+        *(.comment) *(.gnu*) *(.note*) *(.eh_frame*)
     }
 }

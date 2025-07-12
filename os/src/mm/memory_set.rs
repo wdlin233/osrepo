@@ -1,5 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
-use super::{frame_alloc, FrameTracker};
+use super::frame_alloc;
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
@@ -39,12 +39,13 @@ use core::iter::Map;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::*;
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 use riscv::register::{
     satp,
     scause::{Exception, Trap},
 };
 use xmas_elf::ElfFile;
+ use crate::mm::frame_allocator::FrameTracker;
 
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
 lazy_static! {
@@ -325,123 +326,124 @@ impl MemorySetInner {
 
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
-        use core::iter::Map;
+        // use core::iter::Map;
 
-        use crate::mm::map_area::MapAreaType;
+        // use crate::mm::map_area::MapAreaType;
 
-        let mut memory_set = Self::new_bare();
-        // map kernel sections
-        println!("kernel satp: {:#x}", memory_set.token());
-        println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
-        println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
-        println!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
-        println!(
-            ".bss [{:#x}, {:#x})", 
-            sbss_with_stack as usize, ebss as usize
-        );
-        println!(
-            "sigreturn_trampoline : [{:#x}, {:#x})",
-            sigreturn_trampoline as usize,
-            sigreturn_trampoline as usize + PAGE_SIZE
-        );
-        println!(
-            "physical memory: [{:#x},{:#x})",
-            ekernel as usize, MEMORY_END
-        );
-        let s_sig_trap = sigreturn_trampoline as usize;
-        let e_sig_trap = sigreturn_trampoline as usize + PAGE_SIZE;
-        memory_set.push(
-            MapArea::new(
-                (stext as usize).into(),
-                (s_sig_trap).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (e_sig_trap).into(),
-                (etext as usize).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (s_sig_trap).into(),
-                (e_sig_trap).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X | MapPermission::U,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        info!("mapping .rodata section");
-        memory_set.push(
-            MapArea::new(
-                (srodata as usize).into(),
-                (erodata as usize).into(),
-                MapType::Identical,
-                MapPermission::R,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        info!("mapping .data section");
-        memory_set.push(
-            MapArea::new(
-                (sdata as usize).into(),
-                (edata as usize).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        info!("mapping .bss section");
-        memory_set.push(
-            MapArea::new(
-                (sbss_with_stack as usize).into(),
-                (ebss as usize).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        info!("mapping physical memory");
-        memory_set.push(
-            MapArea::new(
-                (ekernel as usize).into(),
-                MEMORY_END.into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-                MapAreaType::Physical,
-            ),
-            None,
-        );
-        info!("mapping memory-mapped registers");
-        for (addr, size) in MMIO {
-            let start = *addr + KERNEL_ADDR_OFFSET;
-            let end = start + *size;
-            println!("map mmio device,[{:#x},{:#x})", start, end);
-            memory_set.push(
-                MapArea::new(
-                    start.into(),
-                    end.into(),
-                    MapType::Identical,
-                    MapPermission::R | MapPermission::W,
-                    MapAreaType::MMIO,
-                ),
-                None,
-            );
-        }
-        println!("create new kernel successfully!");
-        memory_set
+        // let mut memory_set = Self::new_bare();
+        // // map kernel sections
+        // println!("kernel satp: {:#x}", memory_set.token());
+        // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
+        // println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
+        // println!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
+        // println!(
+        //     ".bss [{:#x}, {:#x})", 
+        //     sbss_with_stack as usize, ebss as usize
+        // );
+        // println!(
+        //     "sigreturn_trampoline : [{:#x}, {:#x})",
+        //     sigreturn_trampoline as usize,
+        //     sigreturn_trampoline as usize + PAGE_SIZE
+        // );
+        // println!(
+        //     "physical memory: [{:#x},{:#x})",
+        //     ekernel as usize, MEMORY_END
+        // );
+        // let s_sig_trap = sigreturn_trampoline as usize;
+        // let e_sig_trap = sigreturn_trampoline as usize + PAGE_SIZE;
+        // memory_set.push(
+        //     MapArea::new(
+        //         (stext as usize).into(),
+        //         (s_sig_trap).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // memory_set.push(
+        //     MapArea::new(
+        //         (e_sig_trap).into(),
+        //         (etext as usize).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // memory_set.push(
+        //     MapArea::new(
+        //         (s_sig_trap).into(),
+        //         (e_sig_trap).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X | MapPermission::U,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // info!("mapping .rodata section");
+        // memory_set.push(
+        //     MapArea::new(
+        //         (srodata as usize).into(),
+        //         (erodata as usize).into(),
+        //         MapType::Identical,
+        //         MapPermission::R,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // info!("mapping .data section");
+        // memory_set.push(
+        //     MapArea::new(
+        //         (sdata as usize).into(),
+        //         (edata as usize).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::W,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // info!("mapping .bss section");
+        // memory_set.push(
+        //     MapArea::new(
+        //         (sbss_with_stack as usize).into(),
+        //         (ebss as usize).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::W,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // info!("mapping physical memory");
+        // memory_set.push(
+        //     MapArea::new(
+        //         (ekernel as usize).into(),
+        //         MEMORY_END.into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::W,
+        //         MapAreaType::Physical,
+        //     ),
+        //     None,
+        // );
+        // info!("mapping memory-mapped registers");
+        // for (addr, size) in MMIO {
+        //     let start = *addr + KERNEL_ADDR_OFFSET;
+        //     let end = start + *size;
+        //     println!("map mmio device,[{:#x},{:#x})", start, end);
+        //     memory_set.push(
+        //         MapArea::new(
+        //             start.into(),
+        //             end.into(),
+        //             MapType::Identical,
+        //             MapPermission::R | MapPermission::W,
+        //             MapAreaType::MMIO,
+        //         ),
+        //         None,
+        //     );
+        // }
+        // println!("create new kernel successfully!");
+        // memory_set
+        unimplemented!()
     }
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
@@ -661,10 +663,10 @@ impl MemorySetInner {
     }
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
-        let satp = self.page_table.token();
-        #[cfg(target_arch = "riscv64")]
+        debug!("activate memory set, satp = {:#x}", self.token());
+        let _satp = self.page_table.token();
         unsafe {
-            satp::write(satp);
+            //satp::write(satp);
             asm!("sfence.vma"); 
         }
     }

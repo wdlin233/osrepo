@@ -7,7 +7,6 @@
 ///
 use super::{translated_byte_buffer, PageTableEntry};
 use crate::config::KERNEL_ADDR_OFFSET;
-use crate::phys_to_virt;
 use crate::{
     config::{PAGE_SIZE, PAGE_SIZE_BITS},
     task::current_user_token,

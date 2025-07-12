@@ -62,49 +62,53 @@ use crate::{
 pub mod system;
 pub mod users;
 
-use crate::{config::KERNEL_ADDR_OFFSET, hal::{clear_bss, utils::console::CONSOLE}};
+use crate::{config::KERNEL_ADDR_OFFSET, hal::{clear_bss, utils::console::CONSOLE}, signal::{send_signal_to_thread, SignalFlags}, syscall::syscall, task::{current_task, suspend_current_and_run_next}};
 use config::FLAG;
-use polyhal_trap::{trap::TrapType, trapframe::TrapFrame};
+
+use polyhal_trap::trap::TrapType::{self, *};
+use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
+use polyhal_boot::define_entry;
+use polyhal::percpu::get_local_thread_pointer;
+use polyhal::{percpu, println};
 use core::arch::{global_asm, asm};
 
 #[polyhal::arch_interrupt]
-fn kernel_interrupt(_ctx: &mut TrapFrame, _trap_type: TrapType) {
-    // // trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
-    unimplemented!()
-    // match trap_type {
-    //     Breakpoint => return,
-    //     SysCall => {
-    //         // jump to next instruction anyway
-    //         ctx.syscall_ok();
-    //         let args = ctx.args();
-    //         // get system call return value
-    //         // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
+fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
+    trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
+    match trap_type {
+        Breakpoint => return,
+        SysCall => {
+            // jump to next instruction anyway
+            ctx.syscall_ok();
+            let args = ctx.args();
+            // get system call return value
+            // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
 
-    //         let result = syscall(ctx[TrapFrameArgs::SYSCALL], [args[0], args[1], args[2]]);
-    //         // cx is changed during sys_exec, so we have to call it again
-    //         ctx[TrapFrameArgs::RET] = result as usize;
-    //     }
-    //     StorePageFault(_paddr) | LoadPageFault(_paddr) | InstructionPageFault(_paddr) => {
-    //         /*
-    //         println!(
-    //             "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
-    //             scause.cause(),
-    //             stval,
-    //             current_trap_cx().sepc,
-    //         );
-    //         */
-    //         current_add_signal(SignalFlags::SIGSEGV);
-    //     }
-    //     IllegalInstruction(_) => {
-    //         current_add_signal(SignalFlags::SIGILL);
-    //     }
-    //     Timer => {
-    //         suspend_current_and_run_next();
-    //     }
-    //     _ => {
-    //         warn!("unsuspended trap type: {:?}", trap_type);
-    //     }
-    // }
+            let result = syscall(ctx[TrapFrameArgs::SYSCALL], [args[0], args[1], args[2], args[3], args[4], args[5]]);
+            // cx is changed during sys_exec, so we have to call it again
+            ctx[TrapFrameArgs::RET] = result as usize;
+        }
+        StorePageFault(_paddr) | LoadPageFault(_paddr) | InstructionPageFault(_paddr) => {
+            /*
+            println!(
+                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+                scause.cause(),
+                stval,
+                current_trap_cx().sepc,
+            );
+            */
+            send_signal_to_thread(current_task().unwrap().gettid(), SignalFlags::SIGSEGV);
+        }
+        IllegalInstruction(_) => {
+            send_signal_to_thread(current_task().unwrap().gettid(), SignalFlags::SIGILL);
+        }
+        Timer => {
+            suspend_current_and_run_next();
+        }
+        _ => {
+            warn!("unsuspended trap type: {:?}", trap_type);
+        }
+    }
     // // handle signals (handle the sent signal)
     // // println!("[K] trap_handler:: handle_signals");
     // handle_signals();
@@ -116,39 +120,42 @@ fn kernel_interrupt(_ctx: &mut TrapFrame, _trap_type: TrapType) {
     // }
 }
 
-/// ADD KERNEL_ADDR_OFFSET and jump to rust_main
-#[no_mangle]
-pub fn trampoline(hartid: usize) {
-    unsafe {
-        asm!("add sp, sp, {}", in(reg) KERNEL_ADDR_OFFSET);
-        asm!("la t0, main");
-        asm!("add t0, t0, {}", in(reg) KERNEL_ADDR_OFFSET);
-        asm!("mv a0, {}", in(reg) hartid);
-        asm!("jalr zero, 0(t0)");
-    }
-}
-
 #[no_mangle]
 pub fn main(hartid: usize) -> ! {
-    clear_bss();
     println!("{}", FLAG);
     println!("[kernel] Hello, world!");
     println!("cpu: {}", hartid);
     logging::init();
     log::error!("Logging init success");
-    
+    check_percpu(hartid);
+
     mm::init();
-    #[cfg(target_arch = "riscv64")] 
-    mm::remap_test();
-    hal::trap::init();
-    #[cfg(target_arch = "loongarch64")] 
-    print_machine_info();
-    hal::trap::enable_timer_interrupt();
-    #[cfg(target_arch = "riscv64")] 
-    timer::set_next_trigger();
 
     fs::list_apps();
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable section for kernel!");
 }
+
+#[percpu]
+static mut TEST_PERCPU: usize = 0;
+
+fn check_percpu(hartid: usize) {
+    log::debug!(
+        "hart {} percpu base: {:#x}",
+        hartid,
+        get_local_thread_pointer()
+    );
+    assert_eq!(*TEST_PERCPU, 0);
+    *TEST_PERCPU.ref_mut() = hartid;
+    assert_eq!(*TEST_PERCPU, hartid);
+}
+
+fn secondary(hartid: usize) {
+    check_percpu(hartid);
+    println!("Secondary Hart ID: {}", hartid);
+    loop {}
+}
+
+
+define_entry!(main, secondary);

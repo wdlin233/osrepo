@@ -65,7 +65,6 @@ use riscv::register::{
 
 /// Initialize trap handling
 pub fn init() {
-    #[cfg(target_arch = "riscv64")]
     set_kernel_trap_entry();
     #[cfg(target_arch = "loongarch64")]
     {

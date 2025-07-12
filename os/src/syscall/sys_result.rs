@@ -175,7 +175,7 @@ impl SysError {
 }
 
 extern "C" {
-    fn ekernel();
+    fn _end();
 }
 
 #[derive(Debug)]
@@ -212,7 +212,7 @@ impl SysInfo {
             uptime: newuptime,
             loads: [0; 3],
             totalram: newtotalram,
-            freeram: newtotalram - ekernel as usize,
+            freeram: newtotalram - _end as usize,
             sharedram: 0,
             bufferram: 0,
             totalswap: 0,

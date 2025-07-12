@@ -3,9 +3,8 @@ use crate::config::KERNEL_HEAP_SIZE;
 use buddy_system_allocator::LockedHeap;
 
 #[global_allocator]
-#[cfg(target_arch = "riscv64")]
 /// heap allocator instance
-static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
+static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::empty();
 
 #[alloc_error_handler]
 /// panic when heap allocation error occurs

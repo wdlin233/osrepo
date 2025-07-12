@@ -1,5 +1,5 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
-use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use crate::config::KERNEL_PGNUM_OFFSET;
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
@@ -232,6 +232,8 @@ impl PageTableEntry {
     }
 }
 
+ use crate::mm::frame_allocator::FrameTracker;
+
 /// page table structure
 pub struct PageTable {
     root_ppn: PhysPageNum,
@@ -242,23 +244,25 @@ pub struct PageTable {
 impl PageTable {
     /// Create a new page table
     pub fn new() -> Self {
-        let frame = frame_alloc().unwrap();
-        PageTable {
-            root_ppn: frame.ppn,
-            frames: vec![frame],
-        }
+        unimplemented!();
+        // let frame = frame_alloc().unwrap();
+        // PageTable {
+        //     root_ppn: frame.ppn,
+        //     frames: vec![frame],
+        // }
     }
     pub fn new_from_kernel() -> Self {
-        use crate::mm::KERNEL_SPACE;
-        let frame = frame_alloc().unwrap();
-        let kernel = KERNEL_SPACE.exclusive_access();
-        let root_ppn = kernel.get_mut().page_table.root_ppn;
-        // 第一级页表
-        let index = VirtPageNum::from(KERNEL_PGNUM_OFFSET).indexes()[0];
-        frame.ppn.get_pte_array()[index..].copy_from_slice(
-            &root_ppn.get_pte_array()[index..],
-        );
-        PageTable { root_ppn: frame.ppn, frames: vec![frame] }
+        unimplemented!()
+        // use crate::mm::KERNEL_SPACE;
+        // let frame = frame_alloc().unwrap();
+        // let kernel = KERNEL_SPACE.exclusive_access();
+        // let root_ppn = kernel.get_mut().page_table.root_ppn;
+        // // 第一级页表
+        // let index = VirtPageNum::from(KERNEL_PGNUM_OFFSET).indexes()[0];
+        // frame.ppn.get_pte_array()[index..].copy_from_slice(
+        //     &root_ppn.get_pte_array()[index..],
+        // );
+        // PageTable { root_ppn: frame.ppn, frames: vec![frame] }
     }
     /// Temporarily used to get arguments from user space.
     #[cfg(target_arch = "riscv64")]
@@ -279,43 +283,44 @@ impl PageTable {
         }
     }
     /// Find PageTableEntry by VirtPageNum, create a frame for a 4KB page table if not exist
-    pub fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        let idxs = vpn.indexes();
-        let mut ppn = self.root_ppn;
-        let mut result: Option<&mut PageTableEntry> = None;
-        //#[cfg(target_arch = "riscv64")]
-        for (i, idx) in idxs.iter().enumerate() {
-            let pte = &mut ppn.get_pte_array()[*idx];
-            if i == 2 {
-                result = Some(pte);
-                break;
-            }
-            if !pte.is_valid() {
-                let frame = frame_alloc().unwrap();
-                *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
-                self.frames.push(frame);
-            }
-            ppn = pte.ppn();
-        }
-        #[cfg(target_arch = "loongarch64")]
-        for i in 0..3 {
-            let pte = &mut ppn.get_pte_array()[idxs[i]];
-            if i == 2 {
-                //找到叶子节点，叶子节点的页表项是否合法由调用者来处理
-                result = Some(pte);
-                break;
-            }
-            if pte.is_zero() {
-                let frame = frame_alloc().unwrap();
-                // 页目录项只保存地址
-                *pte = PageTableEntry {
-                    bits: frame.ppn.0 << PAGE_SIZE_BITS,
-                };
-                self.frames.push(frame);
-            }
-            ppn = pte.directory_ppn();
-        }
-        result
+    pub fn find_pte_create(&mut self, _vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+        unimplemented!()
+        // let idxs = vpn.indexes();
+        // let mut ppn = self.root_ppn;
+        // let mut result: Option<&mut PageTableEntry> = None;
+        // //#[cfg(target_arch = "riscv64")]
+        // for (i, idx) in idxs.iter().enumerate() {
+        //     let pte = &mut ppn.get_pte_array()[*idx];
+        //     if i == 2 {
+        //         result = Some(pte);
+        //         break;
+        //     }
+        //     if !pte.is_valid() {
+        //         let frame = frame_alloc();
+        //         *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
+        //         self.frames.push(frame);
+        //     }
+        //     ppn = pte.ppn();
+        // }
+        // #[cfg(target_arch = "loongarch64")]
+        // for i in 0..3 {
+        //     let pte = &mut ppn.get_pte_array()[idxs[i]];
+        //     if i == 2 {
+        //         //找到叶子节点，叶子节点的页表项是否合法由调用者来处理
+        //         result = Some(pte);
+        //         break;
+        //     }
+        //     if pte.is_zero() {
+        //         let frame = frame_alloc().unwrap();
+        //         // 页目录项只保存地址
+        //         *pte = PageTableEntry {
+        //             bits: frame.ppn.0 << PAGE_SIZE_BITS,
+        //         };
+        //         self.frames.push(frame);
+        //     }
+        //     ppn = pte.directory_ppn();
+        // }
+        // result
     }
     /// Find PageTableEntry by VirtPageNum
     pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {

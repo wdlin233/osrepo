@@ -5,13 +5,14 @@ use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        address::StepByOne, frame_alloc, group::GROUP_SHARE, FrameTracker, PTEFlags, PageTable,
+        address::StepByOne, frame_alloc, group::GROUP_SHARE, PTEFlags, PageTable,
         PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
     },
     syscall::MmapFlags,
 };
 use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
+ use crate::mm::frame_allocator::FrameTracker;
 
 #[derive(Clone)]
 pub struct MapArea {
@@ -43,7 +44,7 @@ impl MapArea {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         debug!(
-            "MapArea::new start floor = {}, end ceil = {}",
+            "MapArea::new(as vpn) start floor = {:#x}, end ceil = {:#x}",
             start_va.floor().0,
             end_va.ceil().0
         );
@@ -70,28 +71,29 @@ impl MapArea {
             groupid: another.groupid,
         }
     }
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        // only Framed type in LA64
-        let ppn: PhysPageNum;
-        match self.map_type {
-            MapType::Identical => {
-                ppn = PhysPageNum(vpn.0);
-            }
-            MapType::Framed => {
-                let frame = frame_alloc().unwrap();
-                ppn = frame.ppn;
-                self.data_frames.insert(vpn, frame);
-            }
-        }
+    pub fn map_one(&mut self, _page_table: &mut PageTable, _vpn: VirtPageNum) {
+        unimplemented!();
+        // // only Framed type in LA64
+        // let ppn: PhysPageNum;
+        // match self.map_type {
+        //     MapType::Identical => {
+        //         ppn = PhysPageNum(vpn.0);
+        //     }
+        //     MapType::Framed => {
+        //         let frame = frame_alloc().unwrap();
+        //         ppn = frame.ppn;
+        //         self.data_frames.insert(vpn, frame);
+        //     }
+        // }
         // #[cfg(target_arch = "loongarch64")]
         // {
         //     let frame = frame_alloc().unwrap();
         //     ppn = frame.ppn;
         //     self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
         // }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        //let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         //debug!("in map area, map one, to page table map");
-        page_table.map(vpn, ppn, pte_flags);
+        //page_table.map(vpn, ppn, pte_flags);
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {

@@ -62,9 +62,9 @@ endif
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
 ifeq ($(ARCH),riscv64)
-build: env kernel config
+build: env config kernel
 else ifeq ($(ARCH),loongarch64)
-build: env kernel config
+build: env config kernel
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif

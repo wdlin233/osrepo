@@ -1,8 +1,9 @@
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use spin::{Lazy, Mutex};
 
-use super::{FrameTracker, VirtPageNum};
+use super::VirtPageNum;
 pub const GROUP_SIZE: usize = 0x1000;
+ use crate::mm::frame_allocator::FrameTracker;
 
 //共享空间管理器,mmap专用，因为只有mmap会在有固定内容但没加载时fork
 pub static GROUP_SHARE: Lazy<Mutex<GroupManager>> = Lazy::new(|| Mutex::new(GroupManager::new()));

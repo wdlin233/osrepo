@@ -72,13 +72,3 @@ macro_rules! print {
         $crate::hal::utils::console::_print(format_args!("{}", format_args!($($arg)*)))
     };
 }
-
-/// Println! macro to the host console using the format string and arguments.
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => {
-        $crate::print!($($arg)*);
-        $crate::print!("\n")
-    };
-}

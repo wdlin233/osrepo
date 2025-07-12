@@ -12,19 +12,14 @@ mod map_area;
 mod memory_set;
 mod page_fault_handler;
 mod page_table;
-
-#[cfg(target_arch = "riscv64")]
 mod heap_allocator;
-#[cfg(target_arch = "loongarch64")]
-pub mod system_allocator; // heap allocator
 
 pub use address::VPNRange;
 pub use address::{
     copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr, VirtPageNum,
 };
-pub use frame_allocator::{frame_alloc, frame_alloc_contiguous, frame_dealloc, FrameTracker};
-#[cfg(target_arch = "riscv64")]
+pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 pub use map_area::MapType;
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
 #[cfg(target_arch = "riscv64")]
@@ -36,37 +31,42 @@ pub use page_table::{
     translated_refmut, translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
 };
 
-#[cfg(target_arch = "loongarch64")]
-use crate::config::VIRT_BIAS;
+use polyhal::common::PageAlloc;
+use polyhal::instruction::{ebreak, shutdown};
+use polyhal::mem::{get_fdt, get_mem_areas};
+use polyhal::println;
 
-#[cfg(target_arch = "loongarch64")]
-use crate::mm::system_allocator::init_heap;
+pub struct PageAllocImpl;
+
+impl PageAlloc for PageAllocImpl {
+    fn alloc(&self) -> polyhal::PhysAddr {
+        frame_allocator::frame_alloc(1)
+    }
+
+    fn dealloc(&self, paddr: polyhal::PhysAddr) {
+        frame_allocator::frame_dealloc(paddr);
+    }
+}
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
-    #[cfg(target_arch = "riscv64")]
     heap_allocator::init_heap();
-    #[cfg(target_arch = "loongarch64")]
-    system_allocator::init_heap();
     info!("Heap allocator initialized");
+    polyhal::common::init(&PageAllocImpl);
+    get_mem_areas().for_each(|(start, size)| {
+        println!("init memory region {:#x} - {:#x}", start, start + size);
+        frame_allocator::add_frame_range(*start, start + size);
+    });
 
-    frame_allocator::init_frame_allocator();
-    info!("Frame allocator initialized");
+    if let Ok(fdt) = get_fdt() {
+        fdt.all_nodes().for_each(|x| {
+            if let Some(mut compatibles) = x.compatible() {
+                log::debug!("Node Compatiable: {:?}", compatibles.next());
+            }
+        });
+    }
 
-    #[cfg(target_arch = "riscv64")]
-    KERNEL_SPACE.exclusive_access().activate();
-}
-
-#[macro_export]
-macro_rules! virt_to_phys {
-    ($va:expr) => {
-        $va - crate::config::VIRT_BIAS
-    };
-}
-/// Translate a physical address to a virtual address.
-#[macro_export]
-macro_rules! phys_to_virt {
-    ($pa:expr) => {
-        $pa + crate::config::VIRT_BIAS
-    };
+    // test
+    ebreak();
+    //shutdown();
 }
