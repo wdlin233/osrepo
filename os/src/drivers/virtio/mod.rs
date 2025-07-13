@@ -24,27 +24,27 @@ static QUEUE_FRAMES: Lazy<Mutex<Vec<Arc<FrameTracker>>>> = Lazy::new(|| Mutex::n
 pub struct VirtIoHalImpl;
 
 unsafe impl Hal for VirtIoHalImpl {
-    fn dma_alloc(_pages: usize, _direction: BufferDirection) -> (usize, NonNull<u8>) {
-        unimplemented!()
-        // let mut ppn_base = PhysPageNum(0);
-        // for i in 0..pages {
-        //     let frame = frame_alloc().unwrap();
-        //     // debug!("alloc paddr: {:?}", frame);
-        //     if i == 0 {
-        //         ppn_base = frame.ppn;
-        //     }
-        //     assert_eq!(frame.ppn.0, ppn_base.0 + i);
-        //     QUEUE_FRAMES.lock().push(frame.into()); // expected `Arc<FrameTracker>`, found `FrameTracker
-        // }
-        // let pa: PhysAddr = ppn_base.into();
-        // #[cfg(target_arch = "riscv64")]
-        // unsafe {
-        //     (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
-        // }
-        // #[cfg(target_arch = "loongarch64")]
-        // unsafe {
-        //     (pa.0, NonNull::new_unchecked((pa.0 | 0x9000000000000000) as *mut u8))
-        // }
+    fn dma_alloc(pages: usize, direction: BufferDirection) -> (usize, NonNull<u8>) {
+        let frames = 
+        let mut ppn_base = PhysPageNum(0);
+        for i in 0..pages {
+            let frame = frame_alloc().unwrap();
+            // debug!("alloc paddr: {:?}", frame);
+            if i == 0 {
+                ppn_base = frame.ppn;
+            }
+            assert_eq!(frame.ppn.0, ppn_base.0 + i);
+            QUEUE_FRAMES.lock().push(frame.into()); // expected `Arc<FrameTracker>`, found `FrameTracker
+        }
+        let pa: PhysAddr = ppn_base.into();
+        #[cfg(target_arch = "riscv64")]
+        unsafe {
+            (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
+        }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe {
+            (pa.0, NonNull::new_unchecked((pa.0 | 0x9000000000000000) as *mut u8))
+        }
     }
 
     unsafe fn dma_dealloc(pa: usize, _vaddr: NonNull<u8>, pages: usize) -> i32 {

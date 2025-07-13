@@ -1,6 +1,6 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 use super::frame_alloc;
-use super::{PTEFlags, PageTable, PageTableEntry};
+use super::PageTableEntry;
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
@@ -32,6 +32,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use polyhal::{PageTable, PageTableWrapper};
 use core::arch::asm;
 use core::error;
 #[cfg(target_arch = "loongarch64")]
@@ -54,7 +55,6 @@ lazy_static! {
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
 }
 
-#[cfg(target_arch = "riscv64")]
 /// the kernel token
 pub fn kernel_token() -> usize {
     KERNEL_SPACE.exclusive_access().token()
@@ -228,7 +228,7 @@ impl MemorySet {
 /// address space
 pub struct MemorySetInner {
     /// page table
-    pub page_table: PageTable,
+    pub page_table: Arc<PageTableWrapper>,
     /// areas
     pub areas: Vec<MapArea>,
 }
@@ -237,20 +237,13 @@ impl MemorySetInner {
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
         Self {
-            page_table: PageTable::new(),
+            page_table: Arc::new(PageTableWrapper::alloc()),
             areas: Vec::new(),
         }
     }
-    /// Create a new `MemorySet` from the kernel's page table.
-    pub fn new_from_kernel() -> Self {
-        Self { 
-            page_table: PageTable::new_from_kernel(), 
-            areas: Vec::new(), 
-        }
-    }
     /// Get he page table token
-    pub fn token(&self) -> usize {
-        self.page_table.token()
+    pub fn token(&self) -> PageTable {
+        self.page_table.0
     }
 
     pub fn insert_framed_area_with_hint(
@@ -309,14 +302,9 @@ impl MemorySetInner {
     /// Assuming that there are no conflicts in the virtual address
     /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        // debug!(
-        //     "in mem set inner push, the map area is, start : {}, end :{}",
-        //     map_area.vpn_range.get_start().0,
-        //     map_area.vpn_range.get_end().0
-        // );
-        map_area.map(&mut self.page_table);
+        map_area.map(&self.page_table);
         if let Some(data) = data {
-            map_area.copy_data(&mut self.page_table, data, 0);
+            map_area.copy_data(&self.page_table, data, 0);
         }
         self.areas.push(map_area);
     }

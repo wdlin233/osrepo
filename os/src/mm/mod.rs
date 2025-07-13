@@ -5,7 +5,7 @@
 //! map area and memory set, is implemented here.
 //!
 //! Every task or process has a memory_set to control its virtual memory.
-mod address;
+//mod address;
 mod frame_allocator; // frame allocator
 mod group;
 mod map_area;
@@ -13,6 +13,7 @@ mod memory_set;
 mod page_fault_handler;
 mod page_table;
 mod heap_allocator;
+mod addr_range;
 
 pub use address::VPNRange;
 pub use address::{
@@ -39,10 +40,12 @@ use polyhal::println;
 pub struct PageAllocImpl;
 
 impl PageAlloc for PageAllocImpl {
+    #[inline]
     fn alloc(&self) -> polyhal::PhysAddr {
-        frame_allocator::frame_alloc(1)
+        frame_allocator::frame_alloc_persist().expect("No memory left to allocate")
     }
 
+    #[inline]
     fn dealloc(&self, paddr: polyhal::PhysAddr) {
         frame_allocator::frame_dealloc(paddr);
     }

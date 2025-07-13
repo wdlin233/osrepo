@@ -1,23 +1,20 @@
-#[cfg(target_arch = "loongarch64")]
-use core::iter::Map;
-
 use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        address::StepByOne, frame_alloc, group::GROUP_SHARE, PTEFlags, PageTable,
-        PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
+        addr_range::VAddrRange, address::StepByOne, frame_alloc, group::GROUP_SHARE,
     },
     syscall::MmapFlags,
 };
 use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
+use polyhal::{MappingFlags, MappingSize, PageTableWrapper, VirtAddr};
  use crate::mm::frame_allocator::FrameTracker;
 
 #[derive(Clone)]
 pub struct MapArea {
-    pub vpn_range: VPNRange,
-    pub data_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
+    pub vaddr_range: VAddrRange,
+    pub data_frames: BTreeMap<VirtAddr, Arc<FrameTracker>>,
     pub map_type: MapType,
     pub map_perm: MapPermission,
     pub area_type: MapAreaType,
@@ -41,15 +38,15 @@ impl MapArea {
         area_type: MapAreaType,
     ) -> Self {
         //info!("MapArea::new: {:#x} - {:#x}", start_va.0, end_va.0);
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
+        let start_vpn: VirtAddr = start_va.floor();
+        let end_vpn: VirtAddr = end_va.ceil();
         debug!(
-            "MapArea::new(as vpn) start floor = {:#x}, end ceil = {:#x}",
-            start_va.floor().0,
-            end_va.ceil().0
+            "MapArea::new(as virtaddr, aligned) start floor = {}, end ceil = {}",
+            start_vpn,
+            end_vpn
         );
         Self {
-            vpn_range: VPNRange::new(start_vpn, end_vpn),
+            vaddr_range: VAddrRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
             map_type,
             map_perm,
@@ -61,7 +58,7 @@ impl MapArea {
     }
     pub fn from_another(another: &Self) -> Self {
         Self {
-            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
+            vaddr_range: VAddrRange::new(another.vaddr_range.get_start(), another.vaddr_range.get_end()),
             data_frames: BTreeMap::new(),
             map_type: another.map_type,
             map_perm: another.map_perm,
@@ -71,100 +68,77 @@ impl MapArea {
             groupid: another.groupid,
         }
     }
-    pub fn map_one(&mut self, _page_table: &mut PageTable, _vpn: VirtPageNum) {
-        unimplemented!();
-        // // only Framed type in LA64
-        // let ppn: PhysPageNum;
-        // match self.map_type {
-        //     MapType::Identical => {
-        //         ppn = PhysPageNum(vpn.0);
-        //     }
-        //     MapType::Framed => {
-        //         let frame = frame_alloc().unwrap();
-        //         ppn = frame.ppn;
-        //         self.data_frames.insert(vpn, frame);
-        //     }
-        // }
-        // #[cfg(target_arch = "loongarch64")]
-        // {
-        //     let frame = frame_alloc().unwrap();
-        //     ppn = frame.ppn;
-        //     self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
-        // }
-        //let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
-        //debug!("in map area, map one, to page table map");
-        //page_table.map(vpn, ppn, pte_flags);
+    pub fn map_one(&mut self, page_table: &Arc<PageTableWrapper>, vaddr: VirtAddr) {
+        let p_tracker = frame_alloc().expect("cant allocate frame");
+        page_table.map_page(
+            vaddr, // aligned
+            p_tracker.paddr,
+            self.map_perm.into(),
+            MappingSize::Page4KB,
+        );
+        self.data_frames.insert(vaddr, p_tracker);
     }
-    pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        if self.map_type == MapType::Framed {
-            self.data_frames.remove(&vpn);
-        }
-        // #[cfg(target_arch = "loongarch64")]
-        // {
-        //     self.data_frames.remove(&vpn);
-        // }
-        page_table.unmap(vpn);
+    pub fn unmap_one(&mut self, page_table: &Arc<PageTableWrapper>, vaddr: VirtAddr) {
+        self.data_frames.remove(&vaddr);
+        page_table.unmap_page(vaddr);
     }
-    pub fn map(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
+    pub fn map(&mut self, page_table: &Arc<PageTableWrapper>) {
+        for vaddr in self.vaddr_range {
+            self.map_one(page_table, vaddr);
         }
     }
-    pub fn unmap(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            self.unmap_one(page_table, vpn);
+    pub fn unmap(&mut self, page_table: &Arc<PageTableWrapper>) {
+        for vaddr in self.vaddr_range {
+            self.unmap_one(page_table, vaddr);
         }
     }
     /// Used in RV64
-    pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
-        for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
+    pub fn shrink_to(&mut self, page_table: &Arc<PageTableWrapper>, new_end: VirtAddr) {
+        for vpn in VAddrRange::new(new_end, self.vaddr_range.get_end()) {
             self.unmap_one(page_table, vpn)
         }
-        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
+        self.vaddr_range = VAddrRange::new(self.vaddr_range.get_start(), new_end);
     }
     /// Used in RV64
-    pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
-        debug!("in map area, append to, the new end is : {}", new_end.0);
+    pub fn append_to(&mut self, page_table: &Arc<PageTableWrapper>, new_end: VirtAddr) {
         debug!(
-            "in map area, append to, the start is : {}",
-            self.vpn_range.get_start().0
+            "(MapArea, append_to) the start is : {} and the new end is : {}",
+            self.vaddr_range.get_start(),
+            new_end
         );
-        for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
+        for vpn in VAddrRange::new(self.vaddr_range.get_end(), new_end) {
             self.map_one(page_table, vpn)
         }
-        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
+        self.vaddr_range = VAddrRange::new(self.vaddr_range.get_start(), new_end);
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
-    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8], offset: usize) {
+    pub fn copy_data(&mut self, page_table: &Arc<PageTableWrapper>, data: &[u8], offset: usize) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut page_offset = offset;
-        let mut current_vpn = self.vpn_range.get_start();
+        let mut current_vpn = self.vaddr_range.get_start();
         let len = data.len();
         loop {
             let src = &data[start..len.min(start + PAGE_SIZE - page_offset)];
             let dst = &mut page_table
                 .translate(current_vpn)
                 .unwrap()
-                .ppn()
-                .get_bytes_array()[page_offset..(page_offset + src.len())];
+                .0
+                .slice_mut_with_len(src.len());
             dst.copy_from_slice(src);
             start += PAGE_SIZE - page_offset;
             page_offset = 0;
             if start >= len {
                 break;
             }
-            current_vpn.step();
+            current_vpn = current_vpn + PAGE_SIZE; // aka step()
         }
-    }
-    pub fn flags(&self) -> PTEFlags {
-        PTEFlags::from_bits(self.map_perm.bits).unwrap()
     }
     pub fn new_mmap(
         start_va: VirtAddr,
         end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_type: MapType,
         map_perm: MapPermission,
         area_type: MapAreaType,
         file: Option<Arc<OSInode>>,
@@ -172,11 +146,11 @@ impl MapArea {
         mmap_flags: MmapFlags,
     ) -> Self {
         debug!(
-            "MapArea::new_mmap: {:#x} - {:#x}, offset: {}, flags: {:?}",
-            start_va.0, end_va.0, offset, mmap_flags
+            "MapArea::new_mmap: {} - {}, offset: {}, flags: {:?}",
+            start_va, end_va, offset, mmap_flags
         );
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
+        let start_vpn: VirtAddr = start_va.floor();
+        let end_vpn: VirtAddr = end_va.ceil();
         let groupid;
         if mmap_flags.contains(MmapFlags::MAP_SHARED) {
             groupid = 0;
@@ -186,7 +160,7 @@ impl MapArea {
         }
         //info!("start_vpn: {:x}", start_vpn.0);
         Self {
-            vpn_range: VPNRange::new(start_vpn, end_vpn),
+            vaddr_range: VAddrRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
             map_type: map_type,
             map_perm: map_perm,
@@ -196,10 +170,9 @@ impl MapArea {
             groupid: groupid,
         }
     }
-    pub fn map_given_frames(&mut self, page_table: &mut PageTable, frames: Vec<Arc<FrameTracker>>) {
-        for (vpn, frame) in self.vpn_range.clone().into_iter().zip(frames.into_iter()) {
-            let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
-            page_table.map(vpn, frame.ppn, pte_flags);
+    pub fn map_given_frames(&mut self, page_table: &mut Arc<PageTableWrapper>, frames: Vec<Arc<FrameTracker>>) {
+        for (vpn, frame) in self.vaddr_range.clone().into_iter().zip(frames.into_iter()) {
+            page_table.map_page(vpn, frame.paddr, self.map_perm.into(), MappingSize::Page4KB);
             self.data_frames.insert(vpn, frame);
         }
     }
@@ -207,9 +180,8 @@ impl MapArea {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
-/// Only framed type in LA64
 pub enum MapType {
-    Identical,
+    Identical, // not used now
     Framed,
 }
 
@@ -227,45 +199,22 @@ bitflags! {
     }
 }
 
-///  PTEFlags 的一个子集
-/// 主要含有几个读写标志位和存在位，对于其它控制位
-/// 在后面的映射中将会固定为同一种
-/// 特权等级（PLV），2 比特。该页表项对应的特权等级。
-/// 当 RPLV=0 时，该页表项可以被任何特权等级不低于 PLV 的程序访问；
-/// 当 RPLV=1 时，该页表项仅可以被特权等级等于 PLV 的程序访问
-/// 受限特权等级使能（RPLV），1 比特。页表项是否仅被对应特权等级的程序访问的控制位。
-#[cfg(target_arch = "loongarch64")]
-bitflags! {
-    pub struct MapPermission: usize {
-        const NX = 1 << 62;
-        const NR = 1 << 61;
-        const W = 1 << 8;
-        const PLVL = 1 << 2;
-        const PLVH = 1 << 3;
-        const RPLV = 1 << 63;
-    }
-}
-
-impl MapPermission {
-    pub fn rwu() -> Self {
-        #[cfg(target_arch = "riscv64")]
-        return MapPermission::R
-            | MapPermission::W
-            | MapPermission::U;  
-        #[cfg(target_arch = "loongarch64")]
-        return MapPermission::W | MapPermission::PLVL | MapPermission::PLVH;
-    }
-    pub fn rw() -> Self {
-        #[cfg(target_arch = "riscv64")]
-        return MapPermission::R | MapPermission::W;
-        #[cfg(target_arch = "loongarch64")]
-        return MapPermission::W;
-    }
-    pub fn ru() -> Self {
-        #[cfg(target_arch = "riscv64")]
-        return MapPermission::R | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")]
-        return MapPermission::PLVL | MapPermission::PLVH; // as PLV3, user mode
+impl Into<MappingFlags> for MapPermission {
+    fn into(self) -> MappingFlags {
+        let mut flags = MappingFlags::empty();
+        if self.contains(MapPermission::R) {
+            flags |= MappingFlags::R;
+        }
+        if self.contains(MapPermission::W) {
+            flags |= MappingFlags::W;
+        }
+        if self.contains(MapPermission::X) {
+            flags |= MappingFlags::X;
+        }
+        if self.contains(MapPermission::U) {
+            flags |= MappingFlags::U;
+        }
+        flags
     }
 }   
 
@@ -306,26 +255,5 @@ impl MmapFile {
 
     pub fn new(file: Option<Arc<OSInode>>, offset: usize) -> Self {
         Self { file, offset }
-    }
-}
-
-// RV passed, compatible with LA
-impl MapPermission {
-    /// Convert from port to MapPermission
-    pub fn from_port(port: usize) -> Self {
-        #[cfg(target_arch = "riscv64")]
-        let bits = (port as u8) << 1;
-        #[cfg(target_arch = "loongarch64")]
-        let bits = port << 1;
-        MapPermission::from_bits(bits).unwrap()
-    }
-
-    /// Add user permission for MapPermission
-    /// LA, 保留现有权限，添加用户模式所需的 PLV3 组合位
-    pub fn with_user(self) -> Self {
-        #[cfg(target_arch = "riscv64")]
-        return self | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")]
-        return self | MapPermission::PLVL | MapPermission::PLVH;
     }
 }
