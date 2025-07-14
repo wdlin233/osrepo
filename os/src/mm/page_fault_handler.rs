@@ -1,17 +1,14 @@
+use crate::config::PAGE_SIZE_BITS;
 use alloc::sync::Arc;
 use core::arch::asm;
-use crate::config::PAGE_SIZE_BITS;
 
 use crate::{
-    fs::{
-        SEEK_CUR, SEEK_SET,
-        vfs::File,
-    }, 
-    mm::{
-        group::GROUP_SHARE, map_area::MapArea, page_table::flush_tlb, 
-        translated_byte_buffer, PageTable, UserBuffer, VirtAddr, PTEFlags,
-    },
     config::PAGE_SIZE,
+    fs::{vfs::File, SEEK_CUR, SEEK_SET},
+    mm::{
+        group::GROUP_SHARE, map_area::MapArea, page_table::flush_tlb, translated_byte_buffer,
+        PTEFlags, PageTable, UserBuffer, VirtAddr,
+    },
 };
 
 ///堆触发的lazy alocation，必是写
@@ -34,7 +31,7 @@ pub fn mmap_read_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut 
         //page_table.set_flags(vpn, pte_flags);
         let ppn = frame.ppn;
         vma.data_frames.insert(vpn, frame);
-        page_table.map(vpn, ppn, pte_flags);
+        page_table.map(vpn, ppn, pte_flags, false);
         if need_cow {
             page_table.set_cow(vpn);
         }

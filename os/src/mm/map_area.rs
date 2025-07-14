@@ -94,8 +94,14 @@ impl MapArea {
             self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        let cow = if self.map_perm.contains(MapPermission::W) || self.area_type == MapAreaType::Elf
+        {
+            true
+        } else {
+            false
+        };
         //debug!("in map area, map one, to page table map");
-        page_table.map(vpn, ppn, pte_flags);
+        page_table.map(vpn, ppn, pte_flags, cow);
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         #[cfg(target_arch = "riscv64")]

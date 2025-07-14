@@ -66,6 +66,8 @@ pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_EXIT_GROUP: usize = 94;
 /// set_tid_address syscall
 pub const SYSCALL_TID_ADDRESS: usize = 96;
+/// futex
+pub const SYSCALL_FUTEX: usize = 98;
 /// set tobustlist syscall
 pub const SYSCALL_SETROBUSTLIST: usize = 99;
 /// sleep syscall
@@ -203,6 +205,14 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_FUTEX => sys_futex(
+            args[0] as *mut i32,
+            args[1] as u32,
+            args[2] as i32,
+            args[3] as *const Timespec,
+            args[4] as *mut u32,
+            args[5] as i32,
+        ),
         SYSCALL_SETROBUSTLIST => sys_set_robust_list(args[0], args[1]),
         SYSCALL_READLINKAT => sys_readlinkat(
             args[0] as isize,
@@ -342,11 +352,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as *mut RLimit,
         ),
         SYSCALL_MPROTECT => sys_mprotect(args[0], args[1], args[2] as u32),
-        SYSCALL_GETRANDOM => sys_getrandom(
-            args[0] as *mut u8,
-            args[1],
-            args[2] as u32,
-        ),
+        SYSCALL_GETRANDOM => sys_getrandom(args[0] as *mut u8, args[1], args[2] as u32),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

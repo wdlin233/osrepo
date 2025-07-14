@@ -28,6 +28,84 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
+// sys futex
+pub fn sys_futex(
+    uaddr: *mut i32,
+    futex_op: u32,
+    val: i32,
+    timeoutp: *const Timespec,
+    uaddr2: *mut u32,
+    _val3: i32,
+) -> isize {
+    let cmd = FutexCmd::from_bits(futex_op & 0x7f).unwrap();
+    let opt = FutexOpt::from_bits_truncate(futex_op);
+    if uaddr.align_offset(4) != 0 {
+        return Err(SysErrNo::EINVAL);
+    }
+
+    let task = current_task().unwrap();
+    let task_inner = task.inner_lock();
+    let pa = task_inner
+        .memory_set
+        .translate_va(VirtAddr::from(uaddr as usize))
+        .unwrap();
+
+    let private = opt.contains(FutexOpt::FUTEX_PRIVATE_FLAG);
+
+    let key = if private {
+        FutexKey::new(pa, task.pid())
+    } else {
+        FutexKey::new(pa, 0)
+    };
+
+    log::debug!(
+        "[sys_futex] uaddr = {:x}, key = {:?}, cmd = {:?}, val = {},opt={:?}",
+        uaddr as usize,
+        key,
+        cmd,
+        val,
+        opt
+    );
+
+    match cmd {
+        FutexCmd::FUTEX_WAIT => {
+            let futex_word = data_flow!({ *uaddr });
+            log::debug!("[sys_futex] futex_word = {}", futex_word,);
+            if futex_word != val {
+                return Err(SysErrNo::EAGAIN);
+            }
+            if !timeoutp.is_null() {
+                let timeout = data_flow!({ *timeoutp });
+                log::debug!("[sys_futex] timeout={:?}", timeout);
+                add_futex_timer(get_time_spec() + timeout, current_task().unwrap());
+            }
+            drop(task_inner);
+            drop(task);
+            futex_wait(key)
+        }
+        FutexCmd::FUTEX_WAKE => {
+            drop(task_inner);
+            drop(task);
+            Ok(futex_wake_up(key, val))
+        }
+        FutexCmd::FUTEX_REQUEUE => {
+            let pa2 = task_inner
+                .memory_set
+                .translate_va(VirtAddr::from(uaddr2 as usize))
+                .ok_or(SysErrNo::EINVAL)?;
+            let new_key = if private {
+                FutexKey::new(pa2, task.pid())
+            } else {
+                FutexKey::new(pa2, 0)
+            };
+            drop(task_inner);
+            drop(task);
+            Ok(futex_requeue(key, val, new_key, timeoutp as i32))
+        }
+        _ => unimplemented!(),
+    }
+}
+
 //sys info
 pub fn sys_sysinfo(info: *mut SysInfo) -> isize {
     let token = current_process().inner_exclusive_access().get_user_token();
@@ -120,14 +198,15 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         if path.contains("/glibc") {
             inner.fs_info.set_cwd(String::from("/glibc"));
         }
-        if path.ends_with(".sh") && path.contains("/musl") {
+        if path.ends_with(".sh") && (path.contains("/musl") || inner.fs_info.get_cwd() == "/musl") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
             argv.push(String::from("/musl/busybox"));
             argv.push(String::from("sh"));
             path = String::from("/musl/busybox");
         }
-        if path.ends_with(".sh") && path.contains("/glibc") {
+        if path.ends_with(".sh") && (path.contains("/glibc") || inner.fs_info.get_cwd() == "/glibc")
+        {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
             argv.push(String::from("/glibc/busybox"));
@@ -228,7 +307,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
     //debug!("kernel: sys_waitpid");
     {
         let process = current_process();
-        //debug!("{} is waiting child",process.getpid());
+        //debug!("{} is waiting child", process.getpid());
         // find a child process
         let inner = process.inner_exclusive_access();
         if !inner
@@ -236,8 +315,11 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
             .iter()
             .any(|p| pid == -1 || pid as usize == p.getpid())
         {
-            //debug!("can not find the child");
-            return -1;
+            //debug!("can not find the child, the options is : {}", options);
+            if options == 1 {
+                return 0;
+            }
+            return -10 as isize;
             // ---
             //- release current PCB
         }

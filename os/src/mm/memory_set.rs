@@ -301,6 +301,7 @@ impl MemorySetInner {
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
             PTEFlags::R | PTEFlags::X,
+            false,
         );
     }
 
@@ -397,7 +398,7 @@ impl MemorySetInner {
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
-    pub fn from_elf(elf_data: &[u8], heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8], _heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
         let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
         #[cfg(target_arch = "riscv64")]
@@ -567,8 +568,8 @@ impl MemorySetInner {
         });
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
-
+        //let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
+        let mut user_heap_bottom: usize = max_end_va.0;
         // guard page
         user_heap_bottom += PAGE_SIZE;
         info!(
@@ -644,11 +645,12 @@ impl MemorySetInner {
                 }
                 #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(
-                    start_va, 
-                    end_va, 
+                    start_va,
+                    end_va,
                     MapType::Framed,
-                    map_perm, 
-                    MapAreaType::Elf);
+                    map_perm,
+                    MapAreaType::Elf,
+                );
                 #[cfg(target_arch = "loongarch64")]
                 let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
 
@@ -762,7 +764,7 @@ impl MemorySetInner {
         if pte.is_some() && pte.unwrap().is_valid() {
             return false;
         }
-        //println!("vpn={:#X},enter lazy2", vpn.0);
+        //debug!("vpn={:#X},enter lazy2", vpn.0);
         //mmap
         if let Some(area) = self
             .areas
@@ -1244,7 +1246,7 @@ impl MemorySetInner {
         // }
     }
     pub fn cow_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
-        //info!("cow_page_fault: vpn = {:#x}", vpn.0);
+        info!("cow_page_fault: vpn = {:#x}", vpn.0);
         #[cfg(target_arch = "riscv64")]
         {
             if scause == Trap::Exception(Exception::LoadPageFault)

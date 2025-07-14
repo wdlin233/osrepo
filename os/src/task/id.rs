@@ -417,6 +417,7 @@ impl TaskUserRes {
     pub fn trap_cx_user_va(&self) -> usize {
         //debug!("in task user res, trap cx user va, to get trap cx bottom from tid");
         if self.is_exec {
+            //debug!("in trap cx user va, is exec");
             trap_cx_bottom_from_tid(self.tid)
         } else {
             trap_cx_bottom_from_tid(self.tid - 1)

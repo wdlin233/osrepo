@@ -333,7 +333,7 @@ impl PageTable {
     }
     /// set the map between virtual page number and physical page number
     #[allow(unused)]
-    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags, is_cow: bool) {
         let pte = self.find_pte_create(vpn).unwrap();
         // info!(
         //     "map vpn {:?} to ppn {:?} with flags {:?}",
@@ -344,6 +344,9 @@ impl PageTable {
         #[cfg(target_arch = "riscv64")]
         {
             *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+            if is_cow {
+                pte.set_cow();
+            }
         }
         #[cfg(target_arch = "loongarch64")]
         {
