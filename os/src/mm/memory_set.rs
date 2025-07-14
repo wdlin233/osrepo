@@ -187,6 +187,13 @@ impl MemorySet {
     ) -> Option<(PhysAddr, MappingFlags)> {
         self.inner.get_unchecked_ref().translate(vpn)
     }
+    #[inline(always)]
+    pub fn shm(
+        &self, addr: usize, size: usize, map_perm: MapPermission,
+        pages: Vec<Arc<FrameTracker>>,
+    ) -> usize {
+        self.get_mut().shm(addr, size, map_perm, pages)
+    }
 }
 
 /// address space
@@ -400,6 +407,7 @@ impl MemorySetInner {
         let mut memory_set = Self::new_bare();
         // copy data sections/trap_context/user_stack
         for area in user_space.get_mut().areas.iter_mut() {
+            
             if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
                 continue;
             }
@@ -1061,5 +1069,22 @@ impl MemorySetInner {
                 }
             );
         }
+    }
+    pub fn shm(&mut self, addr: usize, size: usize, map_perm: MapPermission, pages: Vec<Arc<FrameTracker>>) -> usize {
+        if addr == 0 {
+            let vaddr = self.find_insert_addr(MMAP_TOP, size);
+            self.push_with_given_frames(
+                MapArea::new(
+                    VirtAddr::from(vaddr),
+                    VirtAddr::from(vaddr + size),
+                    MapType::Framed,
+                    map_perm,
+                    MapAreaType::Shm,
+                ),
+                pages,
+            );
+            return vaddr;
+        }
+        panic!("[shm_attach] unimplement attach addr");
     }
 }

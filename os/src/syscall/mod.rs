@@ -33,11 +33,13 @@ pub const SYSCALL_READV: usize = 65;
 pub const SYSCALL_WRITEV: usize = 66;
 pub const SYSCALL_SENDFILE: usize = 71;
 pub const SYSCALL_READLINKAT: usize = 78;
+pub const SYSCALL_FSTATAT: usize = 79;
 pub const SYSCALL_FSTAT: usize = 80;
 pub const SYSCALL_UTIMENSAT: usize = 88;
 pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_EXIT_GROUP: usize = 94;
 pub const SYSCALL_TID_ADDRESS: usize = 96;
+pub const SYSCALL_FUTEX: usize = 98;
 pub const SYSCALL_SETROBUSTLIST: usize = 99;
 pub const SYSCALL_SLEEP: usize = 101;
 pub const SYSCALL_CLOCKGETTIME: usize = 113;
@@ -59,6 +61,9 @@ pub const SYSCALL_GETEUID: usize = 175;
 pub const SYSCALL_GETGID: usize = 176;
 pub const SYSCALL_GETTID: usize = 178;
 pub const SYSCALL_SYSINFO: usize = 179;
+pub const SYSCALL_SHMGET: usize = 194;
+pub const SYSCALL_SHMCTL: usize = 195;
+pub const SYSCALL_SHMAT: usize = 196;
 pub const SYSCALL_FORK: usize = 220;
 pub const SYSCALL_EXEC: usize = 221;
 pub const SYSCALL_BRK: usize = 214;
@@ -67,7 +72,6 @@ pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_WAITPID: usize = 260;
 pub const SYSCALL_STATX: usize = 291;
 pub const SYSCALL_PPOLL: usize = 73;
-pub const SYSCALL_FSTATAT: usize = 79;
 pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 pub const SYSCALL_PRLIMIT: usize = 261;
 pub const SYSCALL_MPROTECT: usize = 226;
@@ -105,6 +109,14 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_FUTEX => sys_futex(
+            args[0] as *mut i32,
+            args[1] as u32,
+            args[2] as i32,
+            args[3] as *const TimeSpec,
+            args[4] as *mut u32,
+            args[5] as i32,
+        ),
         SYSCALL_SETROBUSTLIST => sys_set_robust_list(args[0], args[1]),
         SYSCALL_READLINKAT => sys_readlinkat(
             args[0] as isize,
@@ -230,11 +242,10 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as *mut RLimit,
         ),
         SYSCALL_MPROTECT => sys_mprotect(args[0], args[1], args[2] as u32),
-        SYSCALL_GETRANDOM => sys_getrandom(
-            args[0] as *mut u8,
-            args[1],
-            args[2] as u32,
-        ),
+        SYSCALL_GETRANDOM => sys_getrandom(args[0] as *mut u8, args[1], args[2] as u32),
+        SYSCALL_SHMAT => sys_shmat(args[0] as i32, args[1], args[2] as i32),
+        SYSCALL_SHMCTL => sys_shmctl(args[0] as i32, args[1] as i32, args[2]),
+        SYSCALL_SHMGET => sys_shmget(args[0] as i32, args[1], args[2] as i32),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }

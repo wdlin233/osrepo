@@ -189,7 +189,7 @@ pub fn restore_frame() -> SyscallRet {
                 + size_of::<SignalStack>()
                 + size_of::<SignalFlags>()
                 + 128;
-        let mctx = *translated_refmut(
+        let _mctx = *translated_refmut(
             unsafe {
                 base_ptr.byte_add(offset_bytes_mctex) as *mut MachineContext
             }

@@ -14,6 +14,7 @@ mod page_fault_handler;
 mod page_table;
 mod heap_allocator;
 mod addr_range;
+mod shm;
 
 pub use frame_allocator::{frame_alloc, frame_dealloc, frames_alloc, FrameTracker};
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile, MapType};
@@ -23,6 +24,7 @@ pub use page_table::{
     translated_refmut, translated_str, UserBuffer, UserBufferIterator,
 };
 pub use addr_range::{insert_bad_address, is_bad_address, remove_bad_address, BAD_ADDRESS, VAddrRange};
+pub use shm::*;
 
 use polyhal::common::PageAlloc;
 use polyhal::instruction::{ebreak, shutdown};

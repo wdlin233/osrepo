@@ -15,6 +15,7 @@ mod manager;
 mod process;
 mod processor;
 mod stride;
+mod futex;
 
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
@@ -34,16 +35,16 @@ pub use manager::{
     add_block_task, add_task, tid2task, process_num, remove_from_tid2task, remove_task,
     wakeup_task, wakeup_task_by_pid, THREAD_GROUP, PROCESS_GROUP, insert_into_process_group,
     insert_into_thread_group, move_child_process_to_init, remove_all_from_thread_group,
-    TID_TO_TASK,
+    TID_TO_TASK, wakeup_futex_task,
 };
 pub use process::{
     ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
 };
-
 pub use processor::{
     current_task, current_trap_cx, mmap, munmap, run_tasks,
     schedule, take_current_task,
 };
+pub use futex::{FutexKey, futex_wait, futex_wake_up, futex_requeue};
 
 use core::arch::{asm, global_asm};
 

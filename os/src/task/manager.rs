@@ -134,6 +134,16 @@ pub fn wakeup_task(task: Arc<ProcessControlBlock>) {
     TASK_MANAGER.exclusive_access().remove_block(&task);
     add_task(task);
 }
+
+pub fn wakeup_futex_task(process: Arc<ProcessControlBlock>) {
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.task_status = TaskStatus::Ready;
+    //debug!("[futex wakeup task] thread={}", task.tid());
+    drop(process_inner);
+    TASK_MANAGER.exclusive_access().remove_block(&process);
+    add_task(process);
+}
+
 /// wake up a task by pid
 pub fn wakeup_task_by_pid(pid: usize) {
     //debug!("block task id:{}",pid);
