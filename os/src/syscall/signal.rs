@@ -2,7 +2,11 @@ use log::debug;
 
 use super::options::SignalMaskFlag;
 use crate::{
-    mm::{translated_ref, translated_refmut}, signal::{KSigAction, SigAction, SigInfo, SignalFlags, SIG_MAX_NUM}, task::{current_process, exit_current_and_run_next}, timer::TimeSpec, utils::SysErrNo
+    mm::{translated_ref, translated_refmut},
+    signal::{KSigAction, SigAction, SigInfo, SignalFlags, SIG_MAX_NUM},
+    task::{current_process, exit_current_and_run_next},
+    timer::TimeSpec,
+    utils::SysErrNo,
 };
 
 pub fn sys_sigprocmask(how: u32, set: *const SignalFlags, old_set: *mut SignalFlags) -> isize {
@@ -36,7 +40,7 @@ pub fn sys_sigaction(signo: usize, act: *const SigAction, old_act: *mut SigActio
     }
 
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     if old_act as usize != 0 {
         let sig_act = inner.sig_table.action(signo).act;
         // data_flow!({

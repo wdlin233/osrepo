@@ -176,3 +176,10 @@ pub fn insert_into_thread_group(pid: usize, process: &Arc<ProcessControlBlock>) 
 pub fn remove_all_from_thread_group(pid: usize) {
     THREAD_GROUP.lock().remove(&pid);
 }
+pub fn wakeup_futex_task(task: Arc<TaskControlBlock>) {
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_status = TaskStatus::Ready;
+    //debug!("[futex wakeup task] thread={}", task.tid());
+    drop(task_inner);
+    add_task(task);
+}

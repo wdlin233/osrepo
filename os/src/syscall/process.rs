@@ -11,7 +11,7 @@ use crate::{
         translated_refmut, translated_str, MapPermission, PhysAddr, VirtAddr,
     },
     signal::SignalFlags,
-    syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
+    syscall::{process, sys_result::SysInfo, FutexCmd, FutexOpt, MmapFlags, MmapProt},
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
         exit_current_and_run_next, mmap, munmap, pid2process, process_num,
@@ -40,12 +40,12 @@ pub fn sys_futex(
     let cmd = FutexCmd::from_bits(futex_op & 0x7f).unwrap();
     let opt = FutexOpt::from_bits_truncate(futex_op);
     if uaddr.align_offset(4) != 0 {
-        return Err(SysErrNo::EINVAL);
+        return -SysErrNo::EINVAL;
     }
 
-    let task = current_task().unwrap();
-    let task_inner = task.inner_lock();
-    let pa = task_inner
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let pa = inner
         .memory_set
         .translate_va(VirtAddr::from(uaddr as usize))
         .unwrap();
@@ -58,49 +58,50 @@ pub fn sys_futex(
         FutexKey::new(pa, 0)
     };
 
-    log::debug!(
-        "[sys_futex] uaddr = {:x}, key = {:?}, cmd = {:?}, val = {},opt={:?}",
-        uaddr as usize,
-        key,
-        cmd,
-        val,
-        opt
-    );
+    // log::debug!(
+    //     "[sys_futex] uaddr = {:x}, key = {:?}, cmd = {:?}, val = {},opt={:?}",
+    //     uaddr as usize,
+    //     key,
+    //     cmd,
+    //     val,
+    //     opt
+    // );
 
     match cmd {
         FutexCmd::FUTEX_WAIT => {
             let futex_word = data_flow!({ *uaddr });
-            log::debug!("[sys_futex] futex_word = {}", futex_word,);
+            //log::debug!("[sys_futex] futex_word = {}", futex_word,);
             if futex_word != val {
-                return Err(SysErrNo::EAGAIN);
+                return -SysErrNo::EAGAIN;
             }
             if !timeoutp.is_null() {
                 let timeout = data_flow!({ *timeoutp });
-                log::debug!("[sys_futex] timeout={:?}", timeout);
+                //log::debug!("[sys_futex] timeout={:?}", timeout);
                 add_futex_timer(get_time_spec() + timeout, current_task().unwrap());
             }
-            drop(task_inner);
-            drop(task);
+            drop(inner);
+            drop(process);
             futex_wait(key)
         }
         FutexCmd::FUTEX_WAKE => {
-            drop(task_inner);
-            drop(task);
-            Ok(futex_wake_up(key, val))
+            drop(inner);
+            drop(process);
+            futex_wake_up(key, val) as isize
         }
         FutexCmd::FUTEX_REQUEUE => {
             let pa2 = task_inner
                 .memory_set
                 .translate_va(VirtAddr::from(uaddr2 as usize))
-                .ok_or(SysErrNo::EINVAL)?;
+                .ok_or(SysErrNo::EINVAL)
+                .unwrap();
             let new_key = if private {
                 FutexKey::new(pa2, task.pid())
             } else {
                 FutexKey::new(pa2, 0)
             };
-            drop(task_inner);
-            drop(task);
-            Ok(futex_requeue(key, val, new_key, timeoutp as i32))
+            drop(inner);
+            drop(process);
+            futex_requeue(key, val, new_key, timeoutp as i32) as isize
         }
         _ => unimplemented!(),
     }
@@ -632,7 +633,7 @@ pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
     );
 
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.get_mut();
     let start_vpn = VirtAddr::from(addr).floor();
     let end_vpn = VirtAddr::from(addr + len).ceil();

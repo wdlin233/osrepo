@@ -1,12 +1,14 @@
 use spin::Mutex;
-use virtio_drivers::{transport, BufferDirection, Hal};
 use virtio_drivers::device::blk::VirtIOBlk;
 use virtio_drivers::transport::mmio::{MmioTransport, VirtIOHeader};
+use virtio_drivers::transport::pci::bus::{
+    BarInfo, Cam, Command, DeviceFunction, MemoryBarType, PciRoot,
+};
+use virtio_drivers::transport::pci::{virtio_device_type, PciTransport};
 use virtio_drivers::transport::Transport;
-use virtio_drivers::transport::pci::bus::{BarInfo, Cam, Command, DeviceFunction, MemoryBarType, PciRoot};
-use virtio_drivers::transport::pci::{PciTransport,virtio_device_type};
+use virtio_drivers::{transport, BufferDirection, Hal};
 
-use core::ptr::NonNull; 
+use core::ptr::NonNull;
 
 use crate::drivers::{BaseDriver, BlockDriver, DeviceType};
 
@@ -17,22 +19,19 @@ pub struct VirtIoBlkDev<H: Hal, T: Transport> {
     inner: Mutex<VirtIOBlk<H, T>>,
 }
 
-unsafe impl<H: Hal, T:Transport> Send for VirtIoBlkDev<H, T> {}
-unsafe impl<H: Hal, T:Transport> Sync for VirtIoBlkDev<H, T> {}
+unsafe impl<H: Hal, T: Transport> Send for VirtIoBlkDev<H, T> {}
+unsafe impl<H: Hal, T: Transport> Sync for VirtIoBlkDev<H, T> {}
 
 #[cfg(target_arch = "riscv64")]
 impl<H: Hal> VirtIoBlkDev<H, MmioTransport> {
     pub fn new(header: &'static mut VirtIOHeader) -> Self {
         // 转换为 NonNull 并创建 MmioTransport
         let ptr = NonNull::new(header as *mut _).unwrap();
-        let transport = unsafe { 
-            MmioTransport::new(ptr).expect("failed to create MmioTransport") 
-        };
-        
+        let transport = unsafe { MmioTransport::new(ptr).expect("failed to create MmioTransport") };
+
         Self {
             inner: Mutex::new(
-                VirtIOBlk::<H, MmioTransport>::new(transport)
-                    .expect("VirtIOBlk create failed")
+                VirtIOBlk::<H, MmioTransport>::new(transport).expect("VirtIOBlk create failed"),
             ),
         }
     }
@@ -40,15 +39,11 @@ impl<H: Hal> VirtIoBlkDev<H, MmioTransport> {
 
 impl<H: Hal> VirtIoBlkDev<H, PciTransport> {
     pub fn new(header: *mut u8) -> Self {
-        let transport = unsafe {
-            enumerate_pci::<H>(header)
-                .expect("failed to create PciTransport")
-        };
+        let transport = enumerate_pci::<H>(header).expect("failed to create PciTransport");
 
         Self {
             inner: Mutex::new(
-                VirtIOBlk::<H, PciTransport>::new(transport)
-                    .expect("VirtIOBlk create failed")
+                VirtIOBlk::<H, PciTransport>::new(transport).expect("VirtIOBlk create failed"),
             ),
         }
     }
@@ -83,12 +78,8 @@ impl<H: Hal, T: Transport> BlockDriver for VirtIoBlkDev<H, T> {
         self.inner.lock().write_blocks(block_id, buf).unwrap()
     }
 
-    fn flush(&mut self) {
-
-    }
+    fn flush(&mut self) {}
 }
-
-
 
 const fn align_up(addr: usize, align: usize) -> usize {
     (addr + align - 1) & !(align - 1)
@@ -98,19 +89,18 @@ pub struct PciRangeAllocator {
     start: usize,
     end: usize,
     current: usize,
-
 }
 
 impl PciRangeAllocator {
     /// Creates a new allocator from a memory range.
-    pub const fn new(pci_base:usize,pci_size:usize) -> Self {
+    pub const fn new(pci_base: usize, pci_size: usize) -> Self {
         Self {
-            start:pci_base,
-            end:pci_base+pci_size,
-            current:pci_base
+            start: pci_base,
+            end: pci_base + pci_size,
+            current: pci_base,
         }
     }
-    pub fn alloc_pci(&mut self,size: usize) -> Option<usize> {
+    pub fn alloc_pci(&mut self, size: usize) -> Option<usize> {
         debug!("alloc_pci: size = {:#x}", size);
         if !size.is_power_of_two() {
             return None;
@@ -124,7 +114,6 @@ impl PciRangeAllocator {
     }
 }
 
-
 fn enumerate_pci<H: Hal>(mmconfig_base: *mut u8) -> Option<PciTransport> {
     info!("mmconfig_base = {:#x}", mmconfig_base as usize);
 
@@ -134,7 +123,9 @@ fn enumerate_pci<H: Hal>(mmconfig_base: *mut u8) -> Option<PciTransport> {
     debug!("Enumerating PCI devices...");
     for (device_function, info) in pci_root.enumerate_bus(0) {
         if let Some(virtio_type) = virtio_device_type(&info) {
-            if virtio_type != virtio_drivers::transport::DeviceType::Block {continue;}
+            if virtio_type != virtio_drivers::transport::DeviceType::Block {
+                continue;
+            }
             // debug!(
             //     "Found virtio device {:?} at {}",
             //     virtio_type,
@@ -145,18 +136,28 @@ fn enumerate_pci<H: Hal>(mmconfig_base: *mut u8) -> Option<PciTransport> {
             let mut bar_index = 0;
             while bar_index < 6 {
                 let bar_info = pci_root.bar_info(device_function, bar_index).unwrap();
-                if let BarInfo::Memory { address_type, address, size, ..} = bar_info {
-                    if address == 0 && size != 0{
+                if let BarInfo::Memory {
+                    address_type,
+                    address,
+                    size,
+                    ..
+                } = bar_info
+                {
+                    if address == 0 && size != 0 {
                         let alloc_addr = pci_range_allocator.alloc_pci(size as usize).unwrap();
-                        match  address_type {
-                            MemoryBarType::Width64=>pci_root.set_bar_64(device_function, bar_index, alloc_addr as u64),
-                            MemoryBarType::Width32=>pci_root.set_bar_32(device_function, bar_index, alloc_addr as u32),
-                            _=>{}
+                        match address_type {
+                            MemoryBarType::Width64 => {
+                                pci_root.set_bar_64(device_function, bar_index, alloc_addr as u64)
+                            }
+                            MemoryBarType::Width32 => {
+                                pci_root.set_bar_32(device_function, bar_index, alloc_addr as u32)
+                            }
+                            _ => {}
                         }
                     }
                 }
                 bar_index += 1;
-                if bar_info.takes_two_entries(){
+                if bar_info.takes_two_entries() {
                     bar_index += 1;
                 }
             }
@@ -166,10 +167,9 @@ fn enumerate_pci<H: Hal>(mmconfig_base: *mut u8) -> Option<PciTransport> {
                 device_function,
                 Command::IO_SPACE | Command::MEMORY_SPACE | Command::BUS_MASTER,
             );
-         //   dump_bar_contents(&mut pci_root, device_function, 1);
+            //   dump_bar_contents(&mut pci_root, device_function, 1);
 
-            transport =
-                Some(PciTransport::new::<H>(&mut pci_root, device_function).unwrap());
+            transport = Some(PciTransport::new::<H>(&mut pci_root, device_function).unwrap());
             break;
         }
     }

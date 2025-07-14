@@ -530,7 +530,7 @@ impl ProcessControlBlock {
         user_sp -= 16;
         aux.push(Aux::new(AuxType::RANDOM, user_sp));
         for i in 0..0xf {
-            let mut p = user_sp + i;
+            let p = user_sp + i;
             *translated_refmut(new_token, p as *mut u8) = (i * 2) as u8;
         }
         user_sp -= user_sp % 16;
@@ -539,8 +539,8 @@ impl ProcessControlBlock {
         aux.push(Aux::new(AuxType::NULL, 0));
         for aux in aux.iter().rev() {
             user_sp -= core::mem::size_of::<Aux>();
-            let mut p = user_sp;
-            let mut pp = user_sp + size;
+            let p = user_sp;
+            let pp = user_sp + size;
             *translated_refmut(new_token, p as *mut usize) = aux.aux_type as usize;
             *translated_refmut(new_token, pp as *mut usize) = aux.value;
         }
@@ -551,7 +551,7 @@ impl ProcessControlBlock {
         user_sp -= envp.len() * size;
         let env_base = user_sp;
         for i in 0..envp.len() {
-            let mut p = user_sp + i * size;
+            let p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = envp[i];
         }
 
@@ -560,7 +560,7 @@ impl ProcessControlBlock {
         user_sp -= argv.len() * size;
         let argv_base = user_sp;
         for i in 0..argv.len() {
-            let mut p = user_sp + i * size;
+            let p = user_sp + i * size;
             *translated_refmut(new_token, p as *mut usize) = argv[i];
         }
 

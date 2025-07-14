@@ -11,6 +11,7 @@
 
 mod aux;
 mod context;
+mod futex;
 mod id;
 mod manager;
 mod process;
@@ -39,7 +40,7 @@ pub use context::TaskContext;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
-    wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
+    wakeup_futex_task, wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
 };
 pub use process::{
     CloneFlags, ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
@@ -288,7 +289,7 @@ pub fn current_token() -> usize {
 
 pub fn exit_current_group_and_run_next(exit_code: i32) {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let mut exit_code = exit_code;
     if inner.sig_table.not_exited() {
         //设置进程的SIGNAL_GROUP_EXIT标志并把终止代号放到current->signal->group_exit_code字段

@@ -410,7 +410,7 @@ impl MemorySetInner {
         let _magic = elf_header.pt1.magic;
         //assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
-        let mut max_end_vpn = VirtPageNum(0);
+        let max_end_vpn = VirtPageNum(0);
 
         auxv.push(Aux::new(
             AuxType::PHENT,

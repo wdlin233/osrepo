@@ -318,7 +318,7 @@ impl TaskUserRes {
     pub fn alloc_user_res(&mut self) {
         //debug!("in alloc user res");
         let process = self.process.upgrade().unwrap();
-        let mut process_inner = process.inner_exclusive_access();
+        let process_inner = process.inner_exclusive_access();
 
         // alloc user stack
         //debug!("to get ustack bottom, give tid, tid is : {}", self.tid);
@@ -366,7 +366,7 @@ impl TaskUserRes {
     fn dealloc_user_res(&self) {
         // dealloc tid
         let process = self.process.upgrade().unwrap();
-        let mut process_inner = process.inner_exclusive_access();
+        let process_inner = process.inner_exclusive_access();
         // dealloc ustack manually
         let ustack_bottom_va: VirtAddr = ustack_bottom_from_tid(self.ustack_base, self.tid).into();
         process_inner

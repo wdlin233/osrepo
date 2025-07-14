@@ -3,7 +3,9 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, open, open_device_file, remove_inode_idx, stat, File, FileClass, FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET
+    convert_kstat_to_statx, open, open_device_file, remove_inode_idx, stat, File, FileClass,
+    FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE,
+    SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
 
 use crate::mm::{
@@ -27,7 +29,7 @@ use alloc::vec::Vec;
 
 pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: usize) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     //let path = data_flow!({ c_ptr_to_string(path) });
     let path = translated_str(token, path);
@@ -37,11 +39,9 @@ pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: us
         debug!("fs_info={}", inner.fs_info.exe());
         let size_needed = inner.fs_info.exe_as_bytes().len();
         debug!("the size need is : {}", size_needed);
-        let mut buffer = UserBuffer::new(vec![
-            unsafe {
-                core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), size_needed)
-            }
-        ]);
+        let mut buffer = UserBuffer::new(vec![unsafe {
+            core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), size_needed)
+        }]);
         let res = buffer.write(inner.fs_info.exe_as_bytes());
         return res as isize;
     }
@@ -298,7 +298,7 @@ pub fn sys_close(fd: usize) -> isize {
 /// pipe syscall
 pub fn sys_pipe(fd: *mut u32, flags: u32) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     info!("[sys_pipe2] fd is {:x},flags is {}", fd as usize, flags);
 
     let mut pipe_flags = OpenFlags::empty();
@@ -478,7 +478,7 @@ pub fn sys_fstat(fd: usize, st: *mut Kstat) -> isize {
 
 pub fn sys_getcwd(buf: *const u8, size: usize) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let cwdlen = inner.fs_info.cwd().len();
     if (buf as isize) < 0 || is_bad_address(buf as usize) || (size as isize) < 0 || size <= cwdlen {
         return SysErrNo::EFAULT as isize;
@@ -591,7 +591,7 @@ pub fn sys_chdir(path: *const u8) -> isize {
 /// get dentries
 pub fn sys_getdents64(fd: usize, buf: *const u8, len: usize) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() || inner.fd_table.try_get(fd).is_none() {
         return -1;
     }
@@ -750,7 +750,7 @@ pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
     const FD_CLOEXEC: usize = 1;
 
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
 
     if fd >= inner.fd_table.len() || (fd as isize) < 0 {
         return SysErrNo::EBADF as isize;
@@ -819,7 +819,7 @@ pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
 //writev
 pub fn sys_writev(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
     if (fd as isize) < 0 || fd >= inner.fd_table.len() {
@@ -871,7 +871,7 @@ pub fn sys_writev(fd: usize, iov: *const u8, iovcnt: usize) -> isize {
 }
 
 /// https://man7.org/linux/man-pages/man2/ppoll.2.html
-pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isize {
+pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, _mask: usize) -> isize {
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
@@ -890,7 +890,7 @@ pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, mask: usize) -> isiz
     let wait_time: isize = if tmo_p == 0 {
         -1
     } else {
-        let timespec = unsafe { *translated_ref(token, tmo_p as *const TimeSpec) };
+        let timespec = *translated_ref(token, tmo_p as *const TimeSpec);
         (timespec.tv_sec * 1000000000 + timespec.tv_nsec) as isize
     };
     if wait_time == 0 {
@@ -962,7 +962,7 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
 //send file
 pub fn sys_sendfile(outfd: usize, infd: usize, offset_ptr: usize, count: usize) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
 
     if (infd as isize) < 0
@@ -1062,7 +1062,7 @@ pub fn sys_sendfile(outfd: usize, infd: usize, offset_ptr: usize, count: usize) 
 pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) -> isize {
     let process = current_process();
     let uid = process.getuid();
-    let mut inner = process.inner_exclusive_access();
+    let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
     if (path as isize) <= 0 {
         return SysErrNo::EFAULT as isize;
@@ -1247,16 +1247,18 @@ pub fn sys_getrandom(buf: *const u8, buflen: usize, flags: u32) -> isize {
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
-    if (buf as isize) < 0 || is_bad_address(buf as usize) || buf.is_null(){
+    if (buf as isize) < 0 || is_bad_address(buf as usize) || buf.is_null() {
         return SysErrNo::EFAULT as isize;
     }
     if (flags as isize) < 0 {
         return SysErrNo::EINVAL as isize;
     }
 
-    match open_device_file("/dev/random").unwrap().read(UserBuffer::new_single(unsafe {
-        core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), buflen)
-    })) {
+    match open_device_file("/dev/random")
+        .unwrap()
+        .read(UserBuffer::new_single(unsafe {
+            core::slice::from_raw_parts_mut(translated_refmut(token, buf as *mut _), buflen)
+        })) {
         Ok(size) => size as isize,
         Err(_) => SysErrNo::EIO as isize, // check TODO
     }
