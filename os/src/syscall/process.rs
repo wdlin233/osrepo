@@ -2,20 +2,21 @@ use super::sys_gettid;
 use crate::alloc::string::ToString;
 use crate::mm::MemorySet;
 use crate::task::exit_current_group_and_run_next;
-use crate::timer::get_time_ms;
+use crate::timer::{add_timer, get_time_ms, TimeSpec};
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
     mm::{
-        copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
-        translated_refmut, translated_str, MapPermission, PhysAddr, VirtAddr,
+        copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, shm_attach,
+        shm_create, shm_drop, shm_find, translated_ref, translated_refmut, translated_str,
+        MapPermission, PhysAddr, ShmFlags, VirtAddr,
     },
     signal::SignalFlags,
     syscall::{process, sys_result::SysInfo, FutexCmd, FutexOpt, MmapFlags, MmapProt},
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
-        exit_current_and_run_next, mmap, munmap, pid2process, process_num,
-        suspend_current_and_run_next, CloneFlags, TmsInner,
+        exit_current_and_run_next, futex_requeue, futex_wait, futex_wake_up, mmap, munmap,
+        pid2process, process_num, suspend_current_and_run_next, CloneFlags, FutexKey, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -28,23 +29,82 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
+pub fn sys_shmget(key: i32, size: usize, shmflag: i32) -> isize {
+    const IPC_PRIVATE: i32 = 0;
+    // 忽略权限位
+    let flags = ShmFlags::from_bits(shmflag & !0x1ff).unwrap();
+    match key {
+        IPC_PRIVATE => shm_create(size) as isize,
+        key if key > 0 => {
+            if shm_find(key as usize) {
+                if flags.contains(ShmFlags::IPC_CREAT | ShmFlags::IPC_EXCL) {
+                    SysErrNo::EEXIST as isize
+                } else {
+                    key as usize as isize
+                }
+            } else {
+                if flags.contains(ShmFlags::IPC_CREAT) {
+                    shm_create(size) as isize
+                } else {
+                    SysErrNo::ENOENT as isize
+                }
+            }
+        }
+        _ => SysErrNo::ENOENT as isize,
+    }
+}
+
+pub fn sys_shmat(shmid: i32, shmaddr: usize, shmflag: i32) -> isize {
+    let mut permission = MapPermission::U | MapPermission::R;
+    if shmflag == 0 {
+        permission |= MapPermission::W | MapPermission::X
+    } else {
+        let shmflg = ShmFlags::from_bits(shmflag).unwrap();
+        if shmflg.contains(ShmFlags::SHM_EXEC) {
+            permission |= MapPermission::X;
+        }
+        if !shmflg.contains(ShmFlags::SHM_RDONLY) {
+            permission |= MapPermission::W;
+        }
+    }
+
+    match shmid {
+        key if key < 0 => SysErrNo::EINVAL as isize,
+        _ => shm_attach(shmid as usize, shmaddr, permission),
+    }
+}
+
+pub fn sys_shmctl(shmid: i32, cmd: i32, _buf: usize) -> isize {
+    const IPC_RMID: i32 = 0;
+    match cmd {
+        IPC_RMID => {
+            shm_drop(shmid as usize);
+            0
+        }
+        _ => {
+            panic!("[sys_shmctl] unsupport cmd");
+        }
+    }
+}
+
 // sys futex
 pub fn sys_futex(
     uaddr: *mut i32,
     futex_op: u32,
     val: i32,
-    timeoutp: *const Timespec,
+    timeoutp: *const TimeSpec,
     uaddr2: *mut u32,
     _val3: i32,
 ) -> isize {
     let cmd = FutexCmd::from_bits(futex_op & 0x7f).unwrap();
     let opt = FutexOpt::from_bits_truncate(futex_op);
     if uaddr.align_offset(4) != 0 {
-        return -SysErrNo::EINVAL;
+        return SysErrNo::EINVAL as isize;
     }
 
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
     let pa = inner
         .memory_set
         .translate_va(VirtAddr::from(uaddr as usize))
@@ -53,7 +113,7 @@ pub fn sys_futex(
     let private = opt.contains(FutexOpt::FUTEX_PRIVATE_FLAG);
 
     let key = if private {
-        FutexKey::new(pa, task.pid())
+        FutexKey::new(pa, process.getpid())
     } else {
         FutexKey::new(pa, 0)
     };
@@ -69,15 +129,25 @@ pub fn sys_futex(
 
     match cmd {
         FutexCmd::FUTEX_WAIT => {
-            let futex_word = data_flow!({ *uaddr });
+            //let futex_word =  *uaddr;
+            let futex_word = *translated_ref(token, uaddr);
             //log::debug!("[sys_futex] futex_word = {}", futex_word,);
             if futex_word != val {
-                return -SysErrNo::EAGAIN;
+                return SysErrNo::EAGAIN as isize;
             }
             if !timeoutp.is_null() {
-                let timeout = data_flow!({ *timeoutp });
+                //let timeout = data_flow!({ *timeoutp });
+                let timeout = *translated_ref(token, timeoutp);
                 //log::debug!("[sys_futex] timeout={:?}", timeout);
-                add_futex_timer(get_time_spec() + timeout, current_task().unwrap());
+                let time = get_time_ms();
+                let timespec = TimeSpec {
+                    tv_sec: time / 1000,
+                    tv_nsec: (time % 1000) * 1000000,
+                };
+                add_timer(
+                    (timespec.tv_sec + timeout.tv_sec) * 1000,
+                    current_task().unwrap(),
+                );
             }
             drop(inner);
             drop(process);
@@ -89,13 +159,13 @@ pub fn sys_futex(
             futex_wake_up(key, val) as isize
         }
         FutexCmd::FUTEX_REQUEUE => {
-            let pa2 = task_inner
+            let pa2 = inner
                 .memory_set
                 .translate_va(VirtAddr::from(uaddr2 as usize))
                 .ok_or(SysErrNo::EINVAL)
                 .unwrap();
             let new_key = if private {
-                FutexKey::new(pa2, task.pid())
+                FutexKey::new(pa2, process.getpid())
             } else {
                 FutexKey::new(pa2, 0)
             };
@@ -199,14 +269,21 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         if path.contains("/glibc") {
             inner.fs_info.set_cwd(String::from("/glibc"));
         }
-        if path.ends_with(".sh") && (path.contains("/musl") || inner.fs_info.get_cwd() == "/musl") {
+        if path.ends_with(".sh")
+            && (path.contains("/musl")
+                || inner.fs_info.get_cwd() == "/musl"
+                || inner.fs_info.get_cwd().contains("/musl"))
+        {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
             argv.push(String::from("/musl/busybox"));
             argv.push(String::from("sh"));
             path = String::from("/musl/busybox");
         }
-        if path.ends_with(".sh") && (path.contains("/glibc") || inner.fs_info.get_cwd() == "/glibc")
+        if path.ends_with(".sh")
+            && (path.contains("/glibc")
+                || inner.fs_info.get_cwd() == "/glibc"
+                || inner.fs_info.get_cwd().contains("/glibc"))
         {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");

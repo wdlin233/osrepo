@@ -29,6 +29,7 @@ use crate::println;
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
+
 use lazy_static::*;
 use manager::fetch_task;
 use spin::Lazy;
@@ -37,6 +38,7 @@ use switch::__switch;
 use crate::signal::{send_signal_to_thread_group, SignalFlags};
 pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
+pub use futex::*;
 pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,

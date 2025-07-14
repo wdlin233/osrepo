@@ -2,12 +2,12 @@
 //! controls all the frames in the operating system.
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
+use crate::println;
 use crate::sync::UPSafeCell;
+use crate::virt_to_phys;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
-use crate::virt_to_phys;
-use crate::println;
 
 /// tracker for physical page frame allocation and deallocation
 #[derive(Clone)]
@@ -150,7 +150,7 @@ pub fn frame_dealloc(ppn: PhysPageNum) {
 pub fn frame_alloc_contiguous(count: usize) -> (Vec<FrameTracker>, PhysPageNum) {
     let (frames, root_ppn) = FRAME_ALLOCATOR.exclusive_access().alloc_coniguous(count);
     let frame_trackers: Vec<FrameTracker> = frames.iter().map(|&p| FrameTracker::new(p)).collect();
-    (frame_trackers, root_ppn)    
+    (frame_trackers, root_ppn)
 }
 
 #[allow(unused)]

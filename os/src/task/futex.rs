@@ -1,6 +1,5 @@
 use crate::{
     mm::PhysAddr,
-    task::current_process,
     utils::{SysErrNo, SyscallRet},
 };
 
@@ -13,7 +12,7 @@ use alloc::{
 };
 use spin::{Lazy, Mutex};
 
-type WaitQueue = VecDeque<Weak<ProcessControlBlock>>;
+type WaitQueue = VecDeque<Weak<TaskControlBlock>>;
 
 /// 如果是PRIVATE_FUTEX,pid为进程的pid,否则pid为0(用户进程pid从1开始,0未被使用)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -51,7 +50,7 @@ pub fn futex_wait(key: FutexKey) -> isize {
     let inner = process.inner_exclusive_access();
     // woke by signal
     if !inner.sig_pending.difference(inner.sig_mask).is_empty() {
-        return SysErrNo::EINTR;
+        return SysErrNo::EINTR as isize;
     }
     0
 }

@@ -56,6 +56,8 @@ pub const SYSCALL_WRITEV: usize = 66;
 pub const SYSCALL_SENDFILE: usize = 71;
 /// read link at
 pub const SYSCALL_READLINKAT: usize = 78;
+/// fstatat syscall
+pub const SYSCALL_FSTATAT: usize = 79;
 /// fstat syscall
 pub const SYSCALL_FSTAT: usize = 80;
 /// utimesat sysall
@@ -113,14 +115,20 @@ pub const SYSCALL_GETGID: usize = 176;
 pub const SYSCALL_GETTID: usize = 178;
 /// sysinfo syscall
 pub const SYSCALL_SYSINFO: usize = 179;
-/// fork syscall
-pub const SYSCALL_FORK: usize = 220;
-/// exec syscall
-pub const SYSCALL_EXEC: usize = 221;
+/// shmget syscall
+pub const SYSCALL_SHMGET: usize = 194;
+/// shmctl syscall
+pub const SYSCALL_SHMCTL: usize = 195;
+/// shmat syscall
+pub const SYSCALL_SHMAT: usize = 196;
 /// sbrk syscall
 pub const SYSCALL_BRK: usize = 214;
 /// munmap syscall
 pub const SYSCALL_MUNMAP: usize = 215;
+/// fork syscall
+pub const SYSCALL_FORK: usize = 220;
+/// exec syscall
+pub const SYSCALL_EXEC: usize = 221;
 /// mmap syscall
 pub const SYSCALL_MMAP: usize = 222;
 /// waitpid syscall
@@ -162,8 +170,7 @@ pub const SYSCALL_CONDVAR_WAIT: usize = 473;
 pub const SYSCALL_STATX: usize = 291;
 /// ppoll syscall
 pub const SYSCALL_PPOLL: usize = 73;
-/// fstatat syscall
-pub const SYSCALL_FSTATAT: usize = 79;
+
 /// SigTimedWait syscall
 pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 /// prlimit syscall
@@ -205,11 +212,14 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SHMAT => sys_shmat(args[0] as i32, args[1], args[2] as i32),
+        SYSCALL_SHMCTL => sys_shmctl(args[0] as i32, args[1] as i32, args[2]),
+        SYSCALL_SHMGET => sys_shmget(args[0] as i32, args[1], args[2] as i32),
         SYSCALL_FUTEX => sys_futex(
             args[0] as *mut i32,
             args[1] as u32,
             args[2] as i32,
-            args[3] as *const Timespec,
+            args[3] as *const TimeSpec,
             args[4] as *mut u32,
             args[5] as i32,
         ),

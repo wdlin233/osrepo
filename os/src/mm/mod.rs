@@ -12,6 +12,7 @@ mod map_area;
 mod memory_set;
 mod page_fault_handler;
 mod page_table;
+mod shm;
 
 #[cfg(target_arch = "riscv64")]
 mod heap_allocator;
@@ -35,6 +36,7 @@ pub use page_table::{
     flush_tlb, safe_translated_byte_buffer, translated_byte_buffer, translated_ref,
     translated_refmut, translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
 };
+pub use shm::*;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::config::VIRT_BIAS;

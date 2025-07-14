@@ -203,6 +203,19 @@ impl MemorySet {
             .get_unchecked_mut()
             .mprotect(start_vpn, end_vpn, map_perm);
     }
+    pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
+        self.get_mut().page_table.translate_va(va)
+    }
+    #[inline(always)]
+    pub fn shm(
+        &self,
+        addr: usize,
+        size: usize,
+        map_perm: MapPermission,
+        pages: Vec<Arc<FrameTracker>>,
+    ) -> usize {
+        self.get_mut().shm(addr, size, map_perm, pages)
+    }
 }
 
 /// address space
@@ -276,6 +289,34 @@ impl MemorySetInner {
         }
     }
 
+    fn push_with_given_frames(&mut self, mut map_area: MapArea, frames: Vec<Arc<FrameTracker>>) {
+        map_area.map_given_frames(&mut self.page_table, frames);
+        self.areas.push(map_area);
+    }
+    pub fn shm(
+        &mut self,
+        addr: usize,
+        size: usize,
+        map_perm: MapPermission,
+        pages: Vec<Arc<FrameTracker>>,
+    ) -> usize {
+        if addr == 0 {
+            let va = self.find_insert_addr(MMAP_TOP, size);
+            self.push_with_given_frames(
+                MapArea::new(
+                    va.into(),
+                    (va + size).into(),
+                    #[cfg(target_arch = "riscv64")]
+                    MapType::Framed,
+                    map_perm,
+                    MapAreaType::Shm,
+                ),
+                pages,
+            );
+            return va;
+        }
+        panic!("[shm_attach] unimplement attach addr");
+    }
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
     /// space.
@@ -691,6 +732,13 @@ impl MemorySetInner {
         // copy data sections/trap_context/user_stack
         for area in user_space.areas.iter() {
             let new_area = MapArea::from_another(area);
+            // 映射相同的Frame
+            if area.area_type == MapAreaType::Shm {
+                let frames = area.data_frames.values().cloned().collect();
+                memory_set.push_with_given_frames(new_area, frames);
+                continue;
+            }
+
             memory_set.push(new_area, None);
             // copy data from another space
             for vpn in area.vpn_range {

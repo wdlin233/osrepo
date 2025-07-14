@@ -8,16 +8,16 @@ use core::{
 };
 
 use crate::config::CLOCK_FREQ;
+use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use crate::sync::UPSafeCell;
 use crate::task::TaskControlBlock;
-use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
-#[cfg(target_arch = "riscv64")]
-use riscv::register::time;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::time::{get_timer_freq, Time};
+#[cfg(target_arch = "riscv64")]
+use riscv::register::time;
 
 /// The number of microseconds per second
 pub const NSEC_PER_SEC: usize = 1_000_000_000;
@@ -37,7 +37,7 @@ const MICRO_PER_SEC: usize = 1_000_000;
 /// SaZiKK impl TimeSpec ToT
 pub struct TimeSpec {
     /// The tv_sec member represents the elapsed time, in whole seconds.
-    pub tv_sec:  usize,
+    pub tv_sec: usize,
     /// The tv_usec member captures rest of the elapsed time, represented as the number of microseconds.
     pub tv_nsec: usize,
 }
@@ -56,7 +56,7 @@ impl Add for TimeSpec {
         sec += nsec / NSEC_PER_SEC;
         nsec %= NSEC_PER_SEC;
         Self {
-            tv_sec:  sec,
+            tv_sec: sec,
             tv_nsec: nsec,
         }
     }
@@ -101,37 +101,37 @@ impl Default for TimeSpec {
 impl TimeSpec {
     pub fn new() -> Self {
         Self {
-            tv_sec:  0,
+            tv_sec: 0,
             tv_nsec: 0,
         }
     }
     pub fn from_tick(tick: usize) -> Self {
         Self {
-            tv_sec:  tick / CLOCK_FREQ,
+            tv_sec: tick / CLOCK_FREQ,
             tv_nsec: (tick % CLOCK_FREQ) * NSEC_PER_SEC / CLOCK_FREQ,
         }
     }
     pub fn from_s(s: usize) -> Self {
         Self {
-            tv_sec:  s,
+            tv_sec: s,
             tv_nsec: 0,
         }
     }
     pub fn from_ms(ms: usize) -> Self {
         Self {
-            tv_sec:  ms / MSEC_PER_SEC,
+            tv_sec: ms / MSEC_PER_SEC,
             tv_nsec: (ms % MSEC_PER_SEC) * NSEC_PER_MSEC,
         }
     }
     pub fn from_us(us: usize) -> Self {
         Self {
-            tv_sec:  us / USEC_PER_SEC,
+            tv_sec: us / USEC_PER_SEC,
             tv_nsec: (us % USEC_PER_SEC) * NSEC_PER_USEC,
         }
     }
     pub fn from_ns(ns: usize) -> Self {
         Self {
-            tv_sec:  ns / NSEC_PER_SEC,
+            tv_sec: ns / NSEC_PER_SEC,
             tv_nsec: ns % NSEC_PER_SEC,
         }
     }
@@ -148,20 +148,26 @@ impl TimeSpec {
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-    #[cfg(target_arch = "riscv64")] return time::read();
-    #[cfg(target_arch = "loongarch64")] return Time::read();
+    #[cfg(target_arch = "riscv64")]
+    return time::read();
+    #[cfg(target_arch = "loongarch64")]
+    return Time::read();
 }
 
 /// Get the current time in milliseconds
 pub fn get_time_ms() -> usize {
-    #[cfg(target_arch = "riscv64")] return time::read() * MSEC_PER_SEC / CLOCK_FREQ;
-    #[cfg(target_arch = "loongarch64")] return Time::read() / (get_timer_freq() / MSEC_PER_SEC);
+    #[cfg(target_arch = "riscv64")]
+    return time::read() * MSEC_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")]
+    return Time::read() / (get_timer_freq() / MSEC_PER_SEC);
 }
 
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
-    #[cfg(target_arch = "riscv64")] return time::read() * MICRO_PER_SEC / CLOCK_FREQ;
-    #[cfg(target_arch = "loongarch64")] return Time::read() * MICRO_PER_SEC / get_timer_freq();
+    #[cfg(target_arch = "riscv64")]
+    return time::read() * MICRO_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")]
+    return Time::read() * MICRO_PER_SEC / get_timer_freq();
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -207,10 +213,7 @@ lazy_static! {
 
 /// Add a timer
 pub fn add_timer(expire_ms: usize, task: Arc<TaskControlBlock>) {
-    // trace!(
-    //     "kernel:pid[{}] add_timer",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
+    debug!("in add timer");
     let mut timers = TIMERS.exclusive_access();
     timers.push(TimerCondVar { expire_ms, task });
 }
@@ -238,9 +241,14 @@ pub fn check_timer() {
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
     let current_ms = get_time_ms();
-    let mut timers = TIMERS.exclusive_access();
+    let mut timers: core::cell::RefMut<'_, BinaryHeap<TimerCondVar>> = TIMERS.exclusive_access();
     while let Some(timer) = timers.peek() {
+        debug!("in check timer, peek ok");
         if timer.expire_ms <= current_ms {
+            debug!(
+                "expire is : {}, current is : {}",
+                timer.expire_ms, current_ms
+            );
             #[cfg(target_arch = "riscv64")]
             {
                 use crate::task::wakeup_task;

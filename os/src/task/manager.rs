@@ -113,6 +113,15 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.exclusive_access().remove_block(&task);
     add_task(task);
 }
+pub fn wakeup_futex_task(task: Arc<TaskControlBlock>) {
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_status = TaskStatus::Ready;
+    //debug!("[futex wakeup task] thread={}", task.tid());
+    drop(task_inner);
+    TASK_MANAGER.exclusive_access().remove_block(&task);
+    add_task(task);
+}
+
 /// wake up a task by pid
 pub fn wakeup_task_by_pid(pid: usize) {
     //debug!("block task id:{}",pid);
@@ -175,11 +184,4 @@ pub fn insert_into_thread_group(pid: usize, process: &Arc<ProcessControlBlock>) 
 /// 实际上这里和 pid2process 是有联系的，先都存放着. TODO!(wdlin)
 pub fn remove_all_from_thread_group(pid: usize) {
     THREAD_GROUP.lock().remove(&pid);
-}
-pub fn wakeup_futex_task(task: Arc<TaskControlBlock>) {
-    let mut task_inner = task.inner_exclusive_access();
-    task_inner.task_status = TaskStatus::Ready;
-    //debug!("[futex wakeup task] thread={}", task.tid());
-    drop(task_inner);
-    add_task(task);
 }

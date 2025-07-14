@@ -930,7 +930,7 @@ pub fn sys_ppoll(fds_ptr: usize, nfds: usize, tmo_p: usize, _mask: usize) -> isi
         drop(inner);
         drop(process);
         debug!("No events ready, suspending current task.");
-        block_current_and_run_next(); //or suspend()?
+        suspend_current_and_run_next(); //or suspend()?
     }
 }
 
@@ -938,9 +938,11 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
-
+    debug!("the trans str is : {}", translated_str(token, path));
     let path = trim_start_slash(translated_str(token, path));
+    debug!("in fstat, the path is : {}", path);
     let abs_path = inner.get_abs_path(dirfd, &path);
+    debug!("in fstat, abs path is : {}", abs_path);
     if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
         open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
     }
