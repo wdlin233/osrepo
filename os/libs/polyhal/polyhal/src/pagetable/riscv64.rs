@@ -88,6 +88,7 @@ bitflags! {
         const G = bit!(5);
         const A = bit!(6);
         const D = bit!(7);
+        const C = bit!(8);
 
         #[cfg(cpu_family = "c906")]
         const SO = bit!(63);
@@ -125,6 +126,9 @@ impl From<MappingFlags> for PTEFlags {
             if flags.contains(MappingFlags::U) {
                 res |= PTEFlags::U;
             }
+            if flags.contains(MappingFlags::Cow) {
+                res |= PTEFlags::C;
+            }
             res
         }
     }
@@ -153,6 +157,9 @@ impl From<PTEFlags> for MappingFlags {
         }
         if value.contains(PTEFlags::D) {
             mapping_flags |= MappingFlags::D;
+        }
+        if value.contains(PTEFlags::C) {
+            mapping_flags |= MappingFlags::Cow;
         }
 
         mapping_flags

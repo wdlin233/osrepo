@@ -70,7 +70,6 @@ pub fn frame_dealloc(paddr: PhysAddr) {
     FRAME_ALLOCATOR.exclusive_access().dealloc(paddr.raw() / PAGE_SIZE, 1);
 }
 
- use crate::mm::PhysPageNum;
 #[derive(Clone)]
 pub struct FrameTracker {
     pub paddr: PhysAddr,

@@ -263,6 +263,51 @@ impl PageTable {
         }
         pte_list.fill(PTE(0));
     }
+    /// 为了能够设置权限，新增一个寻找 PTE 的函数
+    fn find_pte_mut(&self, vaddr: VirtAddr) -> Option<&mut PTE> {
+        let mut pte_list = Self::get_pte_list(self.0);
+        if Self::PAGE_LEVEL == 4 {
+            let pte = &mut pte_list[vaddr.pn_index(3)];
+            if !pte.is_table() {
+                return None;
+            }
+            pte_list = Self::get_pte_list(pte.address());
+        }
+        // level 3
+        {
+            let pte = &mut pte_list[vaddr.pn_index(2)];
+            if !pte.is_table() {
+                return None;
+            }
+            pte_list = Self::get_pte_list(pte.address());
+        }
+        // level 2
+        {
+            let pte = &mut pte_list[vaddr.pn_index(1)];
+            if !pte.is_table() {
+                return None;
+            }
+            pte_list = Self::get_pte_list(pte.address());
+        }
+        // level 1, map page
+        Some(&mut pte_list[vaddr.pn_index(0)])
+    }
+    /// 设置其权限
+    pub fn set_flags(&self, vaddr: VirtAddr, flags: MappingFlags) -> Result<(), &'static str> {
+        // 如果 translate 后调用此方法，实则重复查找，TODO
+        if let Some(pte) = self.find_pte_mut(vaddr) {
+            if pte.is_valid() {
+                let paddr = pte.address();
+                *pte = PTE::new_page(paddr, flags.into());
+                TLB::flush_vaddr(vaddr);
+                Ok(())                
+            } else {
+                Err("PTE is not valid")
+            }
+        } else {
+            Err("PTE not found")
+        }
+    }
 }
 
 bitflags::bitflags! {
@@ -289,6 +334,8 @@ bitflags::bitflags! {
         const Device = bit!(8);
         /// Cache Flag, indicating that the page will be cached
         const Cache = bit!(9);
+        /// COW Flag
+        const Cow = bit!(10);
 
         /// Read | Write | Executeable Flags
         const RWX = Self::R.bits() | Self::W.bits() | Self::X.bits();

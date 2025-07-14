@@ -7,8 +7,8 @@ use crate::fs::{
 }; //::{link, unlink}
 
 use crate::mm::{
-    copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
-    translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
+    translated_byte_buffer,
+    translated_ref, translated_refmut, translated_str, UserBuffer,
 };
 use crate::syscall::{
     process, FaccessatFileMode, FaccessatMode, FcntlCmd, Iovec, PollEvents, PollFd, RLimit, TimeVal,
@@ -180,7 +180,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 
         // release current task TCB manually to avoid multi-borrow
         debug!("in write,to translated byte buffer");
-        let buf = UserBuffer::new(safe_translated_byte_buffer(memory_set, buf, len).unwrap());
+        let buf = UserBuffer::new(vec![translated_byte_buffer(buf, len)]);
         debug!("to write file");
         let ret = match file.write(buf) {
             Ok(n) => n as isize,
@@ -228,7 +228,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         // release current task TCB manually to avoid multi-borrow
         let ret = file
             .read(UserBuffer::new(
-                safe_translated_byte_buffer(memory_set, buf, len).unwrap(),
+                vec![translated_byte_buffer(buf, len)],
             ))
             .unwrap();
         debug!("in read ,to return, the ret is :{}", ret);
@@ -478,7 +478,7 @@ pub fn sys_getcwd(buf: *const u8, size: usize) -> isize {
         return SysErrNo::ERANGE as isize;
     }
     let mut buffer =
-        UserBuffer::new(safe_translated_byte_buffer(inner.memory_set.clone(), buf, size).unwrap());
+        UserBuffer::new(vec![translated_byte_buffer(buf, size)]);
     buffer.write(inner.fs_info.cwd_as_bytes());
     buf as isize
 }
@@ -581,7 +581,7 @@ pub fn sys_getdents64(fd: usize, buf: *const u8, len: usize) -> isize {
         return -1;
     }
     let mut buffer =
-        UserBuffer::new(safe_translated_byte_buffer(inner.memory_set.clone(), buf, len).unwrap());
+        UserBuffer::new(vec![translated_byte_buffer(buf, len)]);
     let file = inner.fd_table.get(fd).file().unwrap();
     let off;
     let check_off = file.lseek(0, SEEK_CUR);

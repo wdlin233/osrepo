@@ -2,7 +2,7 @@ use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        addr_range::VAddrRange, address::StepByOne, frame_alloc, group::GROUP_SHARE,
+        addr_range::VAddrRange, frame_alloc, group::GROUP_SHARE,
     },
     syscall::MmapFlags,
 };
@@ -176,6 +176,9 @@ impl MapArea {
             self.data_frames.insert(vpn, frame);
         }
     }
+    pub fn flags(&self) -> MapPermission {
+        self.map_perm
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -196,6 +199,10 @@ bitflags! {
         const X = 1 << 3;
         ///Accessible in U mode
         const U = 1 << 4;
+        /// Copy On Write mode
+        const C = 1 << 5;
+        /// Valid
+        const V = 1 << 6;
     }
 }
 
@@ -213,6 +220,12 @@ impl Into<MappingFlags> for MapPermission {
         }
         if self.contains(MapPermission::U) {
             flags |= MappingFlags::U;
+        }
+        if self.contains(MapPermission::C) {
+            flags |= MappingFlags::Cow;
+        }
+        if self.contains(MapPermission::V) {
+            flags |= MappingFlags::P;
         }
         flags
     }
@@ -255,5 +268,23 @@ impl MmapFile {
 
     pub fn new(file: Option<Arc<OSInode>>, offset: usize) -> Self {
         Self { file, offset }
+    }
+}
+
+pub trait CowTrait {
+    fn is_cow(&self) -> bool;
+    fn set_cow(&mut self);
+    fn reset_cow(&mut self);
+}
+
+impl CowTrait for MappingFlags {
+    fn is_cow(&self) -> bool {
+        self.contains(MappingFlags::Cow)
+    }
+    fn set_cow(&mut self) {
+        (*self) |= MappingFlags::Cow
+    }
+    fn reset_cow(&mut self) {
+        (*self) &= !MappingFlags::Cow
     }
 }

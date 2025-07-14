@@ -15,21 +15,15 @@ mod page_table;
 mod heap_allocator;
 mod addr_range;
 
-pub use address::VPNRange;
-pub use address::{
-    copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
-    StepByOne, VirtAddr, VirtPageNum,
-};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 pub use map_area::MapType;
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
 #[cfg(target_arch = "riscv64")]
 pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
 pub use memory_set::{MemorySet, MemorySetInner};
-use page_table::PTEFlags;
 pub use page_table::{
-    flush_tlb, safe_translated_byte_buffer, translated_byte_buffer, translated_ref,
-    translated_refmut, translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
+    translated_byte_buffer, translated_ref,
+    translated_refmut, translated_str, UserBuffer, UserBufferIterator,
 };
 
 use polyhal::common::PageAlloc;
