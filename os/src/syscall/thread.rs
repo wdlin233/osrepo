@@ -1,5 +1,4 @@
 use crate::{
-    hal::trap::{trap_handler},
     task::{add_task, current_task},
 };
 use alloc::sync::Arc;

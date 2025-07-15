@@ -8,7 +8,6 @@ use alloc::{
 
 use crate::{
     fs::{Kstat, StMode},
-    hal::trap,
     sync::UPSafeCell,
 };
 

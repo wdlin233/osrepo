@@ -1,4 +1,8 @@
+use hashbrown::HashSet;
+use lazy_static::lazy_static;
 use polyhal::{pagetable::PAGE_SIZE, VirtAddr};
+
+use crate::sync::UPSafeCell;
 
 #[derive(Copy, Clone, Debug)]
 pub struct VAddrRange {
@@ -49,4 +53,22 @@ impl Iterator for SimpleRangeIterator {
             Some(t)
         }
     }
+}
+
+//坏地址表，mmap映射坏地址时加入此表
+lazy_static! {
+    pub static ref BAD_ADDRESS: UPSafeCell<HashSet<usize>> = 
+        unsafe { UPSafeCell::new(HashSet::new()) };
+}
+
+pub fn insert_bad_address(va: usize) {
+    BAD_ADDRESS.exclusive_access().insert(va);
+}
+
+pub fn is_bad_address(va: usize) -> bool {
+    BAD_ADDRESS.exclusive_access().contains(&va)
+}
+
+pub fn remove_bad_address(va: usize) {
+    BAD_ADDRESS.exclusive_access().remove(&va);
 }

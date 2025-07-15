@@ -15,16 +15,14 @@ mod page_table;
 mod heap_allocator;
 mod addr_range;
 
-pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
-pub use map_area::MapType;
-pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
-#[cfg(target_arch = "riscv64")]
-pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
+pub use frame_allocator::{frame_alloc, frame_dealloc, frames_alloc, FrameTracker};
+pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile, MapType};
 pub use memory_set::{MemorySet, MemorySetInner};
 pub use page_table::{
     translated_byte_buffer, translated_ref,
     translated_refmut, translated_str, UserBuffer, UserBufferIterator,
 };
+pub use addr_range::{insert_bad_address, is_bad_address, remove_bad_address, BAD_ADDRESS, VAddrRange};
 
 use polyhal::common::PageAlloc;
 use polyhal::instruction::{ebreak, shutdown};

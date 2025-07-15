@@ -39,16 +39,11 @@ pub use manager::{
 pub use process::{
     ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
 };
-#[cfg(target_arch = "loongarch64")]
-pub use processor::current_trap_addr;
 
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
+    current_task, current_trap_cx, mmap, munmap, run_tasks,
     schedule, take_current_task,
 };
-
-//#[cfg(target_arch = "riscv64")]
-//pub use alloc::kstack_alloc;
 
 use core::arch::{asm, global_asm};
 
@@ -161,13 +156,6 @@ pub fn current_uid() -> u32 {
     //unimplemented!()
     let current = current_task().unwrap();
     current.getuid() as u32
-}
-
-pub fn current_token() -> usize {
-    // get_proc_by_hartid(hart_id()).token()
-    #[cfg(target_arch = "riscv64")]
-    return riscv::register::satp::read().bits();
-
 }
 
 pub fn exit_current_group_and_run_next(exit_code: i32) {

@@ -8,17 +8,9 @@ use crate::fs::{map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlag
 use crate::mm::addr_range::VAddrRange;
 use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
-use crate::mm::map_area::MapType;
 use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
 use crate::mm::page_fault_handler::{
     cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
-};
-//,USER_STACK_SIZE};
-#[cfg(target_arch = "loongarch64")]
-use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
-#[cfg(target_arch = "riscv64")]
-use crate::hal::{
-    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, sigreturn_trampoline,
 };
 use crate::mm::{translated_byte_buffer, translated_refmut, UserBuffer};
 use crate::println;

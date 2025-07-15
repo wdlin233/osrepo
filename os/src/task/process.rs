@@ -6,17 +6,12 @@ use super::alloc::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, Tid
 use super::manager::insert_into_tid2task;
 use super::stride::Stride;
 use super::{pid_alloc, PidHandle};
-#[cfg(target_arch = "loongarch64")]
-use crate::config::PAGE_SIZE_BITS;
 
 use crate::config::{PAGE_SIZE, PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
-use crate::hal::trap::{self, trap_handler};
-#[cfg(target_arch = "riscv64")]
-use crate::mm::KERNEL_SPACE;
 use crate::mm::{
-    flush_tlb, translated_refmut, MapAreaType, MapPermission, MapType, MemorySet, MemorySetInner, PageTable, PageTableEntry, PhysPageNum, VPNRange, VirtAddr, VirtPageNum
+    translated_refmut, MapAreaType, MapPermission, MapType, MemorySet, MemorySetInner, VAddrRange,
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::UPSafeCell;
@@ -24,16 +19,17 @@ use crate::syscall::CloneFlags;
 use crate::task::manager::insert_into_thread_group;
 use crate::task::{KernelStack};
 use crate::timer::get_time;
+use crate::trap::trap_entry;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
+use polyhal::pagetable::TLB;
+use polyhal::{MappingFlags, PhysAddr, VirtAddr};
 use core::arch::asm;
 use core::cell::RefMut;
-#[cfg(target_arch = "loongarch64")]
-use loongarch64::register::pgdl;
 
 use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
 use polyhal::kcontext::{read_current_tp, KContext, KContextArgs};
@@ -56,7 +52,7 @@ pub struct ProcessControlBlock {
 
 /// Inner of Process Control Block
 pub struct ProcessControlBlockInner {
-    pub trap_cx_ppn: PhysPageNum,
+    pub trap_cx_ppn: PhysAddr,
     pub trap_cx_base: usize,
     pub user_stack_top: usize,
     pub task_cx: KContext,
@@ -145,10 +141,13 @@ impl Tms {
 
 impl ProcessControlBlockInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapFrame {
-        self.trap_cx_ppn.as_mut()
+        let kernel_va = self.trap_cx_ppn.get_mut_ptr::<TrapFrame>();
+        unsafe {
+            kernel_va.as_mut().unwrap()
+        }
         // let paddr = &self.trap_cx as *const TrapFrame as usize as *mut TrapFrame;
-        // // let paddr: PhysAddr = self.trap_cx.into();
-        // // unsafe { paddr.get_mut_ptr::<TrapFrame>().as_mut().unwrap() }
+        // let paddr: PhysAddr = self.trap_cx.into();
+        // unsafe { paddr.get_mut_ptr::<TrapFrame>().as_mut().unwrap() }
         // unsafe { paddr.as_mut().unwrap() }
     }
     pub fn is_zombie(&self) -> bool {
@@ -170,10 +169,6 @@ impl ProcessControlBlockInner {
         self.tms.one_stime += out_kernel_time - in_kernel_time;
     }
 
-    /// get the address of app's page table
-    pub fn get_user_token(&self) -> usize {
-        self.memory_set.token()
-    }
     ///get abs path
     pub fn get_abs_path(&self, dirfd: isize, path: &str) -> String {
         if is_abs_path(path) {
@@ -199,40 +194,40 @@ impl ProcessControlBlockInner {
         let (trap_cx_base, _) = self.memory_set.get_mut().insert_framed_area_with_hint(
             USER_TRAP_CONTEXT_TOP,
             PAGE_SIZE,
-            MapPermission::rw(),
+            MapPermission::R | MapPermission::W,
             MapAreaType::Trap,
         );
         let (ustack_base, ustack_top) = self.memory_set.get_mut().lazy_insert_framed_area_with_hint(
             USER_STACK_TOP,
             USER_STACK_SIZE,
-            MapPermission::rwu(),
+            MapPermission::R | MapPermission::W | MapPermission::U,
             MapAreaType::Stack,
         );
         let trap_cx_ppn = self.memory_set
             .translate(VirtAddr::from(trap_cx_base).floor())
             .unwrap()
-            .ppn();
+            .0;
         self.user_stack_top = ustack_top;
         self.trap_cx_ppn = trap_cx_ppn;
         self.trap_cx_base = trap_cx_base;
 
-        let user_stack_range = VPNRange::new(
+        let user_stack_range = VAddrRange::new(
             VirtAddr::from(ustack_base).floor(),
             VirtAddr::from(ustack_top).floor(),
         );
         // 预分配用于环境变量
-        let page_table = PageTable::from_token(self.memory_set.token());
+        let page_table = self.memory_set.token();
         let area = self.memory_set.get_mut().areas.iter_mut().find(|area| {
-            area.vpn_range.range() == user_stack_range.range() 
+            area.vaddr_range.range() == user_stack_range.range() 
             //&& area.area_type == MapAreaType::Stack
         }).unwrap();
         for i in 1..=PRE_ALLOC_PAGES {
-            let vpn = (area.vpn_range.get_end().0 - i).into();
-            let pte: Option<PageTableEntry> = page_table.translate(vpn);
-            if pte.is_none() || !pte.unwrap().is_valid() {
+            let vaddr: VirtAddr = (area.vaddr_range.get_end().raw() - i * PAGE_SIZE).into();
+            let (_paddr, flags) = page_table.translate(vaddr).unwrap();
+            if !flags.contains(MappingFlags::P) {
                 area.map_one(
                     &mut self.memory_set.get_mut().page_table,
-                    vpn,
+                    vaddr,
                 )
             }
         }
@@ -258,10 +253,7 @@ impl ProcessControlBlockInner {
         self.memory_set.remove_area_with_start_vpn(
             VirtAddr::from(self.trap_cx_base).floor(),
         );
-        flush_tlb();
-    }
-    pub fn trap_cx(&self) -> &'static mut TrapFrame {
-        self.trap_cx_ppn.as_mut()
+        TLB::flush_all();
     }
     pub fn recycle(&mut self) {
         self.memory_set.recycle_data_pages();
@@ -306,25 +298,21 @@ impl ProcessControlBlock {
                 debug!("user heap downflow at : {}", shrink);
                 return 2;
             }
-            let shrink_vpn: VirtPageNum = (shrink / PAGE_SIZE + 1).into();
+            let shrink_vpn = VirtAddr::from(shrink + PAGE_SIZE);
             area.shrink_to(&mut inner.memory_set.get_mut().page_table, shrink_vpn);
-            #[cfg(target_arch = "loongarch64")]
-            flush_tlb();
             inner.heap_top = shrink;
         } else {
             let append = inner.heap_top + grow as usize;
             debug!("in pcb brk, append is : {}", append);
-            let append_vpn: VirtPageNum = (append / PAGE_SIZE + 1).into();
-            debug!("in pcb brk, append vpn is : {}", append_vpn.0);
-            let hp_top_vpn: VirtPageNum = ((inner.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
+            let append_vpn = VirtAddr::from(append + PAGE_SIZE);
+            debug!("in pcb brk, append vpn is : {}", append_vpn);
+            let hp_top_vpn = VirtAddr::from(inner.heap_bottom + USER_HEAP_SIZE);
             if append_vpn >= hp_top_vpn {
                 debug!("user heap overflow at : {}", append);
                 return 2;
             }
             debug!("in pcb brk, to append to");
             area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
-            #[cfg(target_arch = "loongarch64")]
-            flush_tlb();
             inner.heap_top = append;
         }
         inner.heap_top
@@ -336,14 +324,7 @@ impl ProcessControlBlock {
         debug!("in pcb new, from elf ok");
         let tid_handle = tid_alloc();
         let kernel_stack = KernelStack::new(&tid_handle);
-        let (kernel_stack_bottom, kernel_stack_top) = kernel_stack.pos();
-        memory_set.insert_framed_area(
-            kernel_stack_bottom.into(), 
-            kernel_stack_top.into(),
-            MapType::Framed, 
-            MapPermission::R | MapPermission::W, 
-            MapAreaType::Stack,
-        );
+        let (_kernel_stack_bottom, kernel_stack_top) = kernel_stack.pos();
         let user = current_user().unwrap();        
 
         let process = Arc::new(Self {
@@ -354,7 +335,7 @@ impl ProcessControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
-                    trap_cx_ppn: 0.into(),
+                    trap_cx_ppn: PhysAddr::new(0),
                     trap_cx_base: 0,
                     user_stack_top: 0,
                     task_cx: blank_kcontext(kernel_stack_top),
@@ -400,10 +381,9 @@ impl ProcessControlBlock {
             MemorySet::from_elf(elf_data);
         memory_set.activate();
 
-        let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
         if inner.clear_child_tid != 0 {
-            *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
+            *translated_refmut(inner.clear_child_tid as *mut u32) = 0;
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
 
@@ -479,10 +459,10 @@ impl ProcessControlBlock {
             let mut p = user_sp;
             //设置env字符串
             for c in env.as_bytes() {
-                *translated_refmut(new_token, p as *mut u8) = *c;
+                *translated_refmut(p as *mut u8) = *c;
                 p += 1;
             }
-            *translated_refmut(new_token, p as *mut u8) = 0;
+            *translated_refmut(p as *mut u8) = 0;
         }
         envp.push(0);
         user_sp -= user_sp % size;
@@ -495,10 +475,10 @@ impl ProcessControlBlock {
             let mut p = user_sp;
             //讲args字符串内容写到栈空间中
             for c in args[i].as_bytes() {
-                *translated_refmut(new_token, p as *mut u8) = *c;
+                *translated_refmut(p as *mut u8) = *c;
                 p += 1;
             }
-            *translated_refmut(new_token, p as *mut u8) = 0;
+            *translated_refmut(p as *mut u8) = 0;
         }
         argv.push(0);
         user_sp -= user_sp % size;
@@ -508,7 +488,7 @@ impl ProcessControlBlock {
         aux.push(Aux::new(AuxType::RANDOM, user_sp));
         for i in 0..0xf {
             let p = user_sp + i;
-            *translated_refmut(new_token, p as *mut u8) = (i * 2) as u8;
+            *translated_refmut(p as *mut u8) = (i * 2) as u8;
         }
         user_sp -= user_sp % 16;
         //aux
@@ -518,8 +498,8 @@ impl ProcessControlBlock {
             user_sp -= core::mem::size_of::<Aux>();
             let p = user_sp;
             let pp = user_sp + size;
-            *translated_refmut(new_token, p as *mut usize) = aux.aux_type as usize;
-            *translated_refmut(new_token, pp as *mut usize) = aux.value;
+            *translated_refmut(p as *mut usize) = aux.aux_type as usize;
+            *translated_refmut(pp as *mut usize) = aux.value;
         }
         let _aux_base = user_sp;
 
@@ -529,7 +509,7 @@ impl ProcessControlBlock {
         let env_base = user_sp;
         for i in 0..envp.len() {
             let p = user_sp + i * size;
-            *translated_refmut(new_token, p as *mut usize) = envp[i];
+            *translated_refmut(p as *mut usize) = envp[i];
         }
 
         //args 指针
@@ -538,14 +518,14 @@ impl ProcessControlBlock {
         let argv_base = user_sp;
         for i in 0..argv.len() {
             let p = user_sp + i * size;
-            *translated_refmut(new_token, p as *mut usize) = argv[i];
+            *translated_refmut(p as *mut usize) = argv[i];
         }
 
         //获取argc
         let args_len = args.len();
         //debug!("the args len is :{}", args_len);
         //设置argc
-        *translated_refmut(new_token, (user_sp - size) as *mut usize) = args.len().into();
+        *translated_refmut((user_sp - size) as *mut usize) = args.len().into();
         //对齐地址
         user_sp -= user_sp % size;
         inner.fd_table.close_on_exec();
@@ -661,7 +641,7 @@ impl ProcessControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
-                    trap_cx_ppn: 0.into(), 
+                    trap_cx_ppn: PhysAddr::new(0), 
                     trap_cx_base: 0,
                     user_stack_top: 0,
                     task_cx: blank_kcontext(kernel_stack_top), // maybe
@@ -754,7 +734,6 @@ pub enum TaskStatus {
 }
 
 fn blank_kcontext(ksp: usize) -> KContext {
-    use crate::hal::trap::trap_entry;
     let mut kcx = KContext::blank(); // 包括 s 寄存器
     kcx[KContextArgs::KPC] = trap_entry as usize; // ra
     kcx[KContextArgs::KSP] = ksp; // sp: kstack_ptr, 存放了trap上下文后的栈地址, 内核栈地址

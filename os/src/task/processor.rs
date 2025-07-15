@@ -120,27 +120,12 @@ pub fn current_task() -> Option<Arc<ProcessControlBlock>> {
     PROCESSOR.exclusive_access().current()
 }
 
-/// Get the current user token(addr of page table)
-pub fn current_user_token() -> usize {
-    let task = current_task().unwrap();
-    let inner = task.inner_exclusive_access();
-    inner.get_user_token()
-}
-
 /// Get the mutable reference to trap context of current task
 pub fn current_trap_cx() -> &'static mut TrapFrame {
     current_task()
         .unwrap()
         .inner_exclusive_access()
         .get_trap_cx()
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn current_trap_addr() -> usize {
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .get_trap_addr()
 }
 
 /// Return to idle control flow for new scheduling

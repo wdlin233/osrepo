@@ -1,6 +1,6 @@
 use super::process::TimeVal;
 use crate::mm::translated_ref;
-use crate::task::{block_current_and_run_next, current_task, current_user_token};
+use crate::task::{block_current_and_run_next, current_task};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
@@ -17,8 +17,7 @@ pub fn sys_sleep(req: *const TimeVal) -> isize {
     //         .tid
     // );
     let re: TimeVal;
-    let token = current_user_token();
-    re = *translated_ref(token, req);
+    re = *translated_ref(req);
     //debug!("the expected sec is:{}",re.sec);
     let expire_ms = get_time_ms() + re.sec * 1000;
     let task = current_task().unwrap();

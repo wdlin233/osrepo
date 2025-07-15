@@ -8,19 +8,20 @@ use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
     mm::{
-        copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
-        translated_refmut, translated_str, MapPermission, PhysAddr, VirtAddr,
+        insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
+        translated_refmut, translated_str, MapPermission,
     },
     signal::SignalFlags,
     syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
     task::{
-        add_task, block_current_and_run_next, current_task, current_user_token,
+        add_task, block_current_and_run_next, current_task,
         exit_current_and_run_next, mmap, munmap, tid2task, process_num,
         suspend_current_and_run_next, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
+use polyhal::VirtAddr;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -31,8 +32,7 @@ pub struct TimeVal {
 
 //sys info
 pub fn sys_sysinfo(info: *mut SysInfo) -> isize {
-    let token = current_task().unwrap().inner_exclusive_access().get_user_token();
-    *translated_refmut(token, info) = SysInfo::new(get_time_ms() / 1000, 1 << 56, process_num());
+    *translated_refmut(info) = SysInfo::new(get_time_ms() / 1000, 1 << 56, process_num());
     0
 }
 
@@ -108,12 +108,11 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let mut argv = Vec::<String>::new();
     let mut env = Vec::<String>::new();
     let mut path;
-    let token = inner.get_user_token();
     unsafe {
         //debug!("in unsafe");
         debug!("the pathp is :{:?}", pathp);
-        debug!("the path is :{}", translated_str(token, pathp));
-        path = trim_start_slash(translated_str(token, pathp));
+        debug!("the path is :{}", translated_str(pathp));
+        path = trim_start_slash(translated_str(pathp));
         debug!("trim path ok,the path is :{}", path);
         if path.contains("/musl") {
             debug!("in set cwd");
@@ -137,37 +136,37 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             path = String::from("/glibc/busybox");
         }
 
-        //处理argv参数
-        // loop {
-        //     let argv_ptr = *args;
-        //     if argv_ptr == 0 {
-        //         break;
-        //     }
-        //     argv.push(c_ptr_to_string(argv_ptr as *const u8));
-        //     args = args.add(1);
-        // }
-        // debug!("to deal the argv");
-        // if !envp.is_null() {
-        //     loop {
-        //         let envp_ptr = *envp;
-        //         if envp_ptr == 0 {
-        //             break;
-        //         }
-        //         env.push(c_ptr_to_string(envp_ptr as *const u8));
-        //         envp = envp.add(1);
-        //     }
-        // }
+        // 处理argv参数
+        loop {
+            let argv_ptr = *args;
+            if argv_ptr == 0 {
+                break;
+            }
+            argv.push(c_ptr_to_string(argv_ptr as *const u8));
+            args = args.add(1);
+        }
+        debug!("to deal the argv");
+        if !envp.is_null() {
+            loop {
+                let envp_ptr = *envp;
+                if envp_ptr == 0 {
+                    break;
+                }
+                env.push(c_ptr_to_string(envp_ptr as *const u8));
+                envp = envp.add(1);
+            }
+        }
 
         loop {
-            let arg_str_ptr = *translated_ref(token, args);
+            let arg_str_ptr = *translated_ref(args);
             if arg_str_ptr == 0 {
                 break;
             }
             debug!(
                 "the argv is : {}",
-                translated_str(token, arg_str_ptr as *const u8)
+                translated_str(arg_str_ptr as *const u8)
             );
-            argv.push(translated_str(token, arg_str_ptr as *const u8));
+            argv.push(translated_str(arg_str_ptr as *const u8));
             args = args.add(1);
         }
 
@@ -175,11 +174,11 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         if !envp.is_null() {
             debug!("envp is not null");
             loop {
-                let envp_ptr = *translated_ref(token, envp);
+                let envp_ptr = *translated_ref(envp);
                 if envp_ptr == 0 {
                     break;
                 }
-                env.push(translated_str(token, envp_ptr as *const u8));
+                env.push(translated_str(envp_ptr as *const u8));
                 envp = envp.add(1);
             }
         }
@@ -268,9 +267,9 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
             );
             if exit_code_ptr as usize != 0x0 {
                 if exit_code >= 128 && exit_code <= 255 {
-                    *translated_refmut(child_inner.memory_set.token(), exit_code_ptr) = exit_code;    
+                    *translated_refmut(exit_code_ptr) = exit_code;    
                 } else {
-                    *translated_refmut(child_inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
+                    *translated_refmut(exit_code_ptr) = exit_code << 8;
                 }
             }
             drop(child_inner);
@@ -364,7 +363,9 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
         sec: us / 1_000_000,
         usec: us % 1_000_000,
     };
-    copy_to_virt(&time_val, ts);
+    unsafe {
+        *ts = time_val;
+    }
     0
 }
 //
@@ -374,7 +375,9 @@ pub fn sys_clockgettime(_clockid: usize, tp: *mut TimeVal) -> isize {
         sec: ms / 1000,
         usec: (ms % 1000) * 1000000,
     };
-    copy_to_virt(&time, tp);
+    unsafe {
+        *tp = time
+    }
     0
 }
 
@@ -384,7 +387,9 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
     let inner = process.inner_exclusive_access();
     let process_tms = inner.tms.inner;
     drop(inner);
-    copy_to_virt(&process_tms, tms);
+    unsafe {
+        *tms = process_tms
+    }
     0
 }
 

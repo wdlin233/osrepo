@@ -164,12 +164,12 @@ pub fn get_time_us() -> usize {
     #[cfg(target_arch = "loongarch64")] return Time::read() * MICRO_PER_SEC / get_timer_freq();
 }
 
-#[cfg(target_arch = "riscv64")]
-/// Set the next timer interrupt
-pub fn set_next_trigger() {
-    use crate::hal::utils::set_timer;
-    set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
-}
+// #[cfg(target_arch = "riscv64")]
+// /// Set the next timer interrupt
+// pub fn set_next_trigger() {
+//     use crate::hal::utils::set_timer;
+//     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
+// }
 
 /// condvar for timer
 pub struct TimerCondVar {

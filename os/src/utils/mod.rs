@@ -7,9 +7,8 @@ use core::arch::asm;
 pub use error::*;
 pub use hart::hart_id;
 use log::warn;
+use polyhal::{pagetable::PAGE_SIZE, VirtAddr};
 pub use string::*;
-
-use crate::{config::PAGE_SIZE, mm::VirtAddr};
 
 /// 跟踪函数的调用栈
 pub fn backtrace() {
