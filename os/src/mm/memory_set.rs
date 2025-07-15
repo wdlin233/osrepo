@@ -580,12 +580,9 @@ impl MemorySetInner {
             })
         {
             // println!("vpn={:#X},enter lazy3", vpn.0);
-            if let TrapType::LoadPageFault(_addr) = scause {
+            if matches!(scause, TrapType::LoadPageFault(_addr)) || matches!(scause, TrapType::InstructionPageFault(_addr)) {
                 mmap_read_page_fault(vpn.into(), &mut self.page_table, area);
-            } else if let TrapType::InstructionPageFault(_addr) = scause {
-                mmap_read_page_fault(vpn.into(), &mut self.page_table, area);
-            }
-            else {
+            } else {
                 mmap_write_page_fault(vpn.into(), &mut self.page_table, area);
             }
             return true;
@@ -966,17 +963,11 @@ impl MemorySetInner {
     }
     pub fn cow_page_fault(&mut self, vpn: VirtAddr, scause: TrapType) -> bool {
         //info!("cow_page_fault: vpn = {:#x}", vpn.0);
-        {
-            if let TrapType::LoadPageFault(_addr) = scause {
-                // 只处理写时拷贝的情况
-                // 如果是读时拷贝，直接返回false
-                return false;
-            } else if let TrapType::InstructionPageFault(_addr) = scause {
-                // 只处理写时拷贝的情况
-                // 如果是读时拷贝，直接返回false
-                return false;
-            }
-        }
+        if matches!(scause, TrapType::LoadPageFault(_addr)) || matches!(scause, TrapType::InstructionPageFault(_addr)){
+            // 只处理写时拷贝的情况
+            // 如果是读时拷贝，直接返回false
+            return false;
+        } 
         //找到触发cow的段
         if let Some(area) = self
             .areas

@@ -14,6 +14,7 @@ use crate::task::ProcessControlBlock;
 use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
+use polyhal::Time;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::time;
 #[cfg(target_arch = "loongarch64")]
@@ -148,28 +149,18 @@ impl TimeSpec {
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-    #[cfg(target_arch = "riscv64")] return time::read();
-    #[cfg(target_arch = "loongarch64")] return Time::read();
+    Time::now().raw()
 }
 
 /// Get the current time in milliseconds
 pub fn get_time_ms() -> usize {
-    #[cfg(target_arch = "riscv64")] return time::read() * MSEC_PER_SEC / CLOCK_FREQ;
-    #[cfg(target_arch = "loongarch64")] return Time::read() / (get_timer_freq() / MSEC_PER_SEC);
+    Time::now().to_msec()
 }
 
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
-    #[cfg(target_arch = "riscv64")] return time::read() * MICRO_PER_SEC / CLOCK_FREQ;
-    #[cfg(target_arch = "loongarch64")] return Time::read() * MICRO_PER_SEC / get_timer_freq();
+    Time::now().to_usec()
 }
-
-// #[cfg(target_arch = "riscv64")]
-// /// Set the next timer interrupt
-// pub fn set_next_trigger() {
-//     use crate::hal::utils::set_timer;
-//     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
-// }
 
 /// condvar for timer
 pub struct TimerCondVar {

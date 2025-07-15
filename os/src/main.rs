@@ -42,7 +42,6 @@ pub mod config;
 pub mod boot; // used to set up the initial environment
 pub mod drivers;
 pub mod fs;
-pub mod hal;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
@@ -52,17 +51,12 @@ pub mod syscall;
 pub mod task;
 pub mod timer;
 pub mod utils;
+pub mod trap;
 
-#[cfg(target_arch = "loongarch64")]
-use crate::{
-    hal::arch::info::{kernel_layout, print_machine_info},
-    hal::trap::{enable_timer_interrupt, init},
-    task::add_initproc,
-};
 pub mod system;
 pub mod users;
 
-use crate::{config::KERNEL_ADDR_OFFSET, hal::{clear_bss, utils::console::CONSOLE}, signal::{send_signal_to_thread, SignalFlags}, syscall::syscall, task::{current_task, suspend_current_and_run_next}};
+use crate::{config::KERNEL_ADDR_OFFSET, syscall::syscall, task::{current_task, suspend_current_and_run_next}};
 use config::FLAG;
 
 use polyhal_trap::trap::TrapType::{self, *};
@@ -71,54 +65,6 @@ use polyhal_boot::define_entry;
 use polyhal::percpu::get_local_thread_pointer;
 use polyhal::{percpu, println};
 use core::arch::{global_asm, asm};
-
-#[polyhal::arch_interrupt]
-fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
-    trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
-    match trap_type {
-        Breakpoint => return,
-        SysCall => {
-            // jump to next instruction anyway
-            ctx.syscall_ok();
-            let args = ctx.args();
-            // get system call return value
-            // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
-
-            let result = syscall(ctx[TrapFrameArgs::SYSCALL], [args[0], args[1], args[2], args[3], args[4], args[5]]);
-            // cx is changed during sys_exec, so we have to call it again
-            ctx[TrapFrameArgs::RET] = result as usize;
-        }
-        StorePageFault(_paddr) | LoadPageFault(_paddr) | InstructionPageFault(_paddr) => {
-            /*
-            println!(
-                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
-                scause.cause(),
-                stval,
-                current_trap_cx().sepc,
-            );
-            */
-            send_signal_to_thread(current_task().unwrap().gettid(), SignalFlags::SIGSEGV);
-        }
-        IllegalInstruction(_) => {
-            send_signal_to_thread(current_task().unwrap().gettid(), SignalFlags::SIGILL);
-        }
-        Timer => {
-            suspend_current_and_run_next();
-        }
-        _ => {
-            warn!("unsuspended trap type: {:?}", trap_type);
-        }
-    }
-    // // handle signals (handle the sent signal)
-    // // println!("[K] trap_handler:: handle_signals");
-    // handle_signals();
-
-    // // check error signals (if error then exit)
-    // if let Some((errno, msg)) = check_signals_error_of_current() {
-    //     println!("[kernel] {}", msg);
-    //     exit_current_and_run_next(errno);
-    // }
-}
 
 #[no_mangle]
 pub fn main(hartid: usize) -> ! {

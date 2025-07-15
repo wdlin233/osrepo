@@ -9,19 +9,12 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-#[cfg(target_arch = "loongarch64")]
-use bit_field::BitField;
 use bitflags::*;
 use polyhal::pagetable::PAGE_SIZE;
 use polyhal::{pagetable, print, println, MappingFlags, PageTableWrapper, VirtAddr};
-use polyhal_trap::trap::TrapType;
 use core::{error, slice};
 use core::fmt::{self};
 use core::str::from_utf8_unchecked;
-#[cfg(target_arch = "loongarch64")]
-use loongarch64::register::estat::{Exception, Trap};
-#[cfg(target_arch = "riscv64")]
-use riscv::register::scause::{Exception, Trap};
 
 use core::arch::asm;
 

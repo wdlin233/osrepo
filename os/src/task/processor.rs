@@ -13,13 +13,13 @@ use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
+use lazyinit::LazyInit;
 use polyhal::kcontext::{context_switch, KContext};
+use polyhal::PageTable;
 use polyhal_trap::trapframe::TrapFrame;
 use core::arch::asm;
 //use core::str::next_code_point;
 use lazy_static::*;
-#[cfg(target_arch = "loongarch64")]
-use loongarch64::register::{asid, pgdl};
 
 /// Processor management structure
 pub struct Processor {
@@ -137,6 +137,12 @@ pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     unsafe {
         context_switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+static BOOT_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
+
+pub fn init_kernel_page() {
+    BOOT_PAGE_TABLE.init_once(PageTable::current());
 }
 
 /// Create a MapArea for the current task
