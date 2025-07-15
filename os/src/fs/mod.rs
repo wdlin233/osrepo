@@ -477,10 +477,10 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
         return Ok(FileClass::Abs(device));
     }
     // 如果是动态链接文件,转换路径
-    if is_dynamic_link_file(abs_path) {
-        abs_path = map_dynamic_link_file(abs_path);
-        debug!("dynamic path={}", abs_path);
-    }
+    // if is_dynamic_link_file(abs_path) {
+    //     abs_path = map_dynamic_link_file(abs_path);
+    //     debug!("dynamic path={}", abs_path);
+    // }
     // debug!("open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode

@@ -54,6 +54,8 @@ pub const SYSCALL_READV: usize = 65;
 pub const SYSCALL_WRITEV: usize = 66;
 /// sendfile syscall
 pub const SYSCALL_SENDFILE: usize = 71;
+/// ppoll syscall
+pub const SYSCALL_PPOLL: usize = 73;
 /// read link at
 pub const SYSCALL_READLINKAT: usize = 78;
 /// fstatat syscall
@@ -78,6 +80,8 @@ pub const SYSCALL_SLEEP: usize = 101;
 pub const SYSCALL_CLOCKGETTIME: usize = 113;
 /// log syscall
 pub const SYSCALL_LOG: usize = 116;
+/// schegetaffinity syscall
+pub const SYSCALL_SCHEDGETAFFINITY: usize = 123;
 /// yield syscall
 pub const SYSCALL_YIELD: usize = 124;
 /// kill syscall
@@ -92,6 +96,10 @@ pub const SYSCALL_SIGRETURN: usize = 139;
 pub const SYSCALL_SIGACTION: usize = 134;
 /// sigprocmask syscall
 pub const SYSCALL_SIGPROCMASK: usize = 135;
+
+/// SigTimedWait syscall
+pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
+
 /// set priority syscall
 pub const SYSCALL_SET_PRIORITY: usize = 140;
 /// times
@@ -131,8 +139,21 @@ pub const SYSCALL_FORK: usize = 220;
 pub const SYSCALL_EXEC: usize = 221;
 /// mmap syscall
 pub const SYSCALL_MMAP: usize = 222;
+/// mprotect syscall
+pub const SYSCALL_MPROTECT: usize = 226;
+/// madvise syscall
+pub const SYSCALL_MADVISE: usize = 233;
+/// get mempolicy syscall
+pub const SYSCALL_GETMEMPOLICY: usize = 236;
+
 /// waitpid syscall
 pub const SYSCALL_WAITPID: usize = 260;
+/// prlimit syscall
+pub const SYSCALL_PRLIMIT: usize = 261;
+/// getrandom syscall
+pub const SYSCALL_GETRANDOM: usize = 278;
+/// statx syscall
+pub const SYSCALL_STATX: usize = 291;
 /// spawn syscall
 pub const SYSCALL_SPAWN: usize = 400;
 /*
@@ -166,21 +187,9 @@ pub const SYSCALL_CONDVAR_CREATE: usize = 471;
 pub const SYSCALL_CONDVAR_SIGNAL: usize = 472;
 /// condvar_wait syscallca
 pub const SYSCALL_CONDVAR_WAIT: usize = 473;
-/// statx syscall
-pub const SYSCALL_STATX: usize = 291;
-/// ppoll syscall
-pub const SYSCALL_PPOLL: usize = 73;
-
-/// SigTimedWait syscall
-pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
-/// prlimit syscall
-pub const SYSCALL_PRLIMIT: usize = 261;
-/// mprotect syscall
-pub const SYSCALL_MPROTECT: usize = 226;
-/// getrandom syscall
-pub const SYSCALL_GETRANDOM: usize = 278;
 
 mod fs;
+mod mem;
 mod options;
 mod process;
 mod signal;
@@ -191,6 +200,7 @@ pub mod sys_result;
 mod uname;
 
 use fs::*;
+use mem::*;
 use process::*;
 use signal::*;
 use sync::*;
@@ -212,6 +222,15 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SCHEDGETAFFINITY => sys_sched_getaffinity(args[0], args[1], args[2]),
+        SYSCALL_GETMEMPOLICY => sys_getmempolicy(
+            args[0] as *mut i32,
+            args[1] as *mut usize,
+            args[2],
+            args[3] as *const u8,
+            args[4],
+        ),
+        SYSCALL_MADVISE => sys_madvise(args[0], args[1], args[2]),
         SYSCALL_SHMAT => sys_shmat(args[0] as i32, args[1], args[2] as i32),
         SYSCALL_SHMCTL => sys_shmctl(args[0] as i32, args[1] as i32, args[2]),
         SYSCALL_SHMGET => sys_shmget(args[0] as i32, args[1], args[2] as i32),

@@ -7,110 +7,110 @@ pub type SysResult<T> = Result<T, SysError>;
 #[repr(i32)]
 pub enum SysError {
     /// Operation not permitted
-    EPERM = 1,
+    EPERM = -1,
     /// No such file or directory
-    ENOENT = 2,
+    ENOENT = -2,
     /// No such process
-    ESRCH = 3,
+    ESRCH = -3,
     /// Interrupted system call
-    EINTR = 4,
+    EINTR = -4,
     /// I/O error
-    EIO = 5,
+    EIO = -5,
     /// No such device or address
-    ENXIO = 6,
+    ENXIO = -6,
     /// Argument list too long
-    E2BIG = 7,
+    E2BIG = -7,
     /// Exec format error
-    ENOEXEC = 8,
+    ENOEXEC = -8,
     /// Bad file number
-    EBADF = 9,
+    EBADF = -9,
     /// No child processes
-    ECHILD = 10,
+    ECHILD = -10,
     /// Resource temporarily unavailable
-    EAGAIN = 11,
+    EAGAIN = -11,
     /// Out of memory
-    ENOMEM = 12,
+    ENOMEM = -12,
     /// Permission denied
-    EACCES = 13,
+    EACCES = -13,
     /// Bad address
-    EFAULT = 14,
+    EFAULT = -14,
     /// Block device required
-    ENOTBLK = 15,
+    ENOTBLK = -15,
     /// Device or resource busy
-    EBUSY = 16,
+    EBUSY = -16,
     /// File exists
-    EEXIST = 17,
+    EEXIST = -17,
     /// Cross-device link
-    EXDEV = 18,
+    EXDEV = -18,
     /// No such device
-    ENODEV = 19,
+    ENODEV = -19,
     /// Not a directory
-    ENOTDIR = 20,
+    ENOTDIR = -20,
     /// Is a directory
-    EISDIR = 21,
+    EISDIR = -21,
     /// Invalid argument
-    EINVAL = 22,
+    EINVAL = -22,
     /// File table overflow
-    ENFILE = 23,
+    ENFILE = -23,
     /// Too many open files
-    EMFILE = 24,
+    EMFILE = -24,
     /// Not a typewriter
-    ENOTTY = 25,
+    ENOTTY = -25,
     /// Text file busy
-    ETXTBSY = 26,
+    ETXTBSY = -26,
     /// File too large
-    EFBIG = 27,
+    EFBIG = -27,
     /// No space left on device
-    ENOSPC = 28,
+    ENOSPC = -28,
     /// Illegal seek
-    ESPIPE = 29,
+    ESPIPE = -29,
     /// Read-only file system
-    EROFS = 30,
+    EROFS = -30,
     /// Too many links
-    EMLINK = 31,
+    EMLINK = -31,
     /// Broken pipe
-    EPIPE = 32,
+    EPIPE = -32,
     /// Math argument out of domain of func
-    EDOM = 33,
+    EDOM = -33,
     /// Math result not representable
-    ERANGE = 34,
+    ERANGE = -34,
     /// Resource deadlock would occur
-    EDEADLK = 35,
+    EDEADLK = -35,
     /// File name too long
-    ENAMETOOLONG = 36,
+    ENAMETOOLONG = -36,
     /// No record locks available
-    ENOLCK = 37,
+    ENOLCK = -37,
     /// Invalid system call number
-    ENOSYS = 38,
+    ENOSYS = -38,
     /// Directory not empty
-    ENOTEMPTY = 39,
+    ENOTEMPTY = -39,
     /// Too many symbolic links encountered
-    ELOOP = 40,
+    ELOOP = -40,
     /// Socket operation on non-socket
-    ENOTSOCK = 88,
+    ENOTSOCK = -88,
     /// Unsupported
-    EOPNOTSUPP = 95,
+    EOPNOTSUPP = -95,
     ///
-    EAFNOSUPPORT = 97,
+    EAFNOSUPPORT = -97,
     /// Socket address is already in use
-    EADDRINUSE = 98,
+    EADDRINUSE = -98,
     /// Address not available
-    EADDRNOTAVAIL = 99,
+    EADDRNOTAVAIL = -99,
     /// Connection reset
-    ECONNRESET = 104,
+    ECONNRESET = -104,
     /// Transport endpoint is already connected
-    EISCONN = 106,
+    EISCONN = -106,
     /// The socket is not connected
-    ENOTCONN = 107,
+    ENOTCONN = -107,
     ///connection time out
-    ETIMEDOUT = 110,
+    ETIMEDOUT = -110,
     /// Connection refused
-    ECONNREFUSED = 111,
+    ECONNREFUSED = -111,
     ///
-    EALREADY = 114,
+    EALREADY = -114,
     /// The socket is nonblocking and the connection cannot be completed
     /// immediately.(connect.2)
-    EINPROGRESS = 115,
+    EINPROGRESS = -115,
 }
 
 impl SysError {

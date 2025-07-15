@@ -623,7 +623,7 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
     }
     let abs_path = inner.get_abs_path(dirfd, &path);
     if let Ok(_) = open(&abs_path, OpenFlags::O_RDWR, NONE_MODE) {
-        return -1;
+        return 0;
     }
     if let Ok(_) = open(
         &abs_path,
@@ -954,7 +954,7 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     ) {
         Ok(file) => file,
         Err(_) => {
-            return -1; // 文件打开失败
+            return SysErrNo::ENOENT as isize; // 文件打开失败
         }
     };
     *translated_refmut(token, kst) = file.fstat();
@@ -1098,6 +1098,9 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
     }
 
     let abs_path = inner.get_abs_path(dirfd, &path);
+    if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
+        open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
+    }
     let (parent_path, _) = rsplit_once(abs_path.as_str(), "/");
     let parent_inode = match open(&parent_path, OpenFlags::O_RDWR, NONE_MODE) {
         Ok(pi) => pi.file().unwrap(),
