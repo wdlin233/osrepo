@@ -50,7 +50,6 @@ pub fn frame_alloc_persist() -> Option<PhysAddr> {
         .inspect(|x| x.clear_len(PAGE_SIZE))
 }
 
-#[allow(unused)]
 pub fn frames_alloc(count: usize) -> Option<Vec<Arc<FrameTracker>>> {
     let start = FRAME_ALLOCATOR
         .exclusive_access()

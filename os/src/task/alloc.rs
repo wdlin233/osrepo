@@ -4,10 +4,9 @@ use super::ProcessControlBlock;
 use crate::config::{
     KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
-use crate::mm::KERNEL_SPACE;
-use crate::mm::{frame_alloc, translated_ref, FrameTracker, PhysAddr};
-use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum, MapType};
+use crate::mm::{frame_alloc, translated_ref, FrameTracker, MapAreaType, MapPermission, MapType};
 use crate::sync::UPSafeCell;
+use crate::task::current_task;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
@@ -136,7 +135,10 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new(tid_handle: &TidHandle) -> Self {
         let (kstack_bottom, kstack_top) = kernel_stack_position(tid_handle.0);
-        KERNEL_SPACE.exclusive_access().insert_framed_area(
+        // map user memory set only
+        let process = current_task().unwrap();
+        let memory_set = process.inner_exclusive_access().memory_set.clone();
+        memory_set.insert_framed_area(
             kstack_bottom.into(),
             kstack_top.into(),
             MapType::Framed,
@@ -166,7 +168,9 @@ impl KernelStack {
 
 impl Drop for KernelStack {
     fn drop(&mut self) {
-        KERNEL_SPACE.exclusive_access().remove_area_with_start_vpn(
+        let process = current_task().unwrap();
+        let memory_set = process.inner_exclusive_access().memory_set.clone();
+        memory_set.remove_area_with_start_vpn(
             self.bottom().into(),
         );
     }
