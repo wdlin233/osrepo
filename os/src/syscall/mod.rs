@@ -150,6 +150,8 @@ pub const SYSCALL_GETMEMPOLICY: usize = 236;
 pub const SYSCALL_WAITPID: usize = 260;
 /// prlimit syscall
 pub const SYSCALL_PRLIMIT: usize = 261;
+/// renameat2 syscall
+pub const SYSCALL_RENAMEAT2: usize = 276;
 /// getrandom syscall
 pub const SYSCALL_GETRANDOM: usize = 278;
 /// statx syscall
@@ -222,6 +224,13 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_RENAMEAT2 => sys_renameat2(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as isize,
+            args[3] as *const u8,
+            args[4] as u32,
+        ),
         SYSCALL_SCHEDGETAFFINITY => sys_sched_getaffinity(args[0], args[1], args[2]),
         SYSCALL_GETMEMPOLICY => sys_getmempolicy(
             args[0] as *mut i32,

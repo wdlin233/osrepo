@@ -1268,3 +1268,27 @@ pub fn sys_getrandom(buf: *const u8, buflen: usize, flags: u32) -> isize {
         Err(_) => SysErrNo::EIO as isize, // check TODO
     }
 }
+
+pub fn sys_renameat2(
+    olddirfd: isize,
+    oldpath: *const u8,
+    newdirfd: isize,
+    newpath: *const u8,
+    _flags: u32,
+) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    let (oldpath, newpath) = (
+        translated_str(token, oldpath),
+        translated_str(token, newpath),
+    );
+
+    let old_abs_path = inner.get_abs_path(olddirfd, &oldpath);
+    let osfile = open(&old_abs_path, OpenFlags::O_RDWR, NONE_MODE)
+        .unwrap()
+        .file()
+        .unwrap();
+    let new_abs_path = inner.get_abs_path(newdirfd, &newpath);
+    osfile.inode.rename(&old_abs_path, &new_abs_path).unwrap() as isize
+}
