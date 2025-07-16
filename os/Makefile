@@ -63,6 +63,11 @@ endif
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
 ifeq ($(ARCH),riscv64)
 build: env config kernel $(KERNEL_BIN)
+
+$(KERNEL_BIN): kernel
+	@echo "Building kernel binary..."
+	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
+
 else ifeq ($(ARCH),loongarch64)
 build: env config kernel
 else
@@ -75,54 +80,6 @@ env:
 	cargo install cargo-binutils
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
-
-$(KERNEL_BIN): kernel
-	echo "Building kernel binary..."
-	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
-
-# -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录
-#		
-ifeq ($(ARCH),riscv64)
-fs-img:
-	@sudo mkdir -p /mnt/image_part
-	@make -C ../user build
-	@sudo mount $(FS_IMG) /mnt/image_part
-	@sudo cp ../user/build/elf/* /mnt/image_part/
-	@sudo cp -r $(TESTSUITS) /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox_testcode.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox_cmd.txt /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox /mnt/image_part/
-	-sudo mkdir -p /mnt/image_part/lib
-	-sudo cp ../testcases/musl/lib/* /mnt/image_part/lib/
-	-sudo cp ../testcases/musl/*.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/*.exe /mnt/image_part/
-	-sudo mkdir -p /mnt/image_part/basic
-	-sudo cp -r ../testcases/musl/basic/* /mnt/image_part/basic/
-	@sudo ls /mnt/image_part/
-	@sudo umount /mnt/image_part
-else ifeq ($(ARCH),loongarch64)
-fs-img:
-	@sudo mkdir -p /mnt/image_part2
-	-sudo mount $(FS_IMG) /mnt/image_part2
-	@make build -C ../user_la
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/initproc /mnt/image_part2/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part2/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part2/
-	@sudo cp -r $(TESTSUITS) /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/busybox_testcode.sh /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/busybox_cmd.txt /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/busybox /mnt/image_part2/
-	-sudo mkdir -p /mnt/image_part2/lib
-	-sudo cp ../testcases/loongarch/musl/lib/* /mnt/image_part2/lib/
-	-sudo cp ../testcases/loongarch/musl/*.sh /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/*.exe /mnt/image_part2/
-	-sudo mkdir -p /mnt/image_part2/basic
-	-sudo cp -r ../testcases/loongarch/musl/basic/* /mnt/image_part2/basic/
-	@sudo ls /mnt/image_part2/
-	@sudo umount /mnt/image_part2
-else
-	$(error "ARCH" must be one of "riscv64" or "loongarch64")
-endif
 
 # cargo build $(MODE_ARG) --target $(TARGET)
 kernel:

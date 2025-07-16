@@ -19,7 +19,7 @@ pub const MSEC_PER_SEC: usize = 1000;
 /// kernel stack size
 pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
 /// kernel stack top address
-pub const KSTACK_TOP: usize = usize::MAX - PAGE_SIZE + 1;
+pub const KSTACK_TOP: usize = 0x40_0000_0000 - PAGE_SIZE + 1;
 
 pub const THREAD_MAX_NUM: usize = 3000;
 
@@ -45,8 +45,8 @@ pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for 
 pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
 //#[cfg(target_arch = "riscv64")]
-/// physical memory end address
-pub const MEMORY_END: usize = 0x8800_0000 + KERNEL_ADDR_OFFSET;
+/// physical memory end address, -m 1G
+pub const MEMORY_END: usize = 0xC000_0000 + KERNEL_ADDR_OFFSET;
 //#[cfg(target_arch = "riscv64")]
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;

@@ -7,7 +7,7 @@ use super::manager::insert_into_tid2task;
 use super::stride::Stride;
 use super::{pid_alloc, PidHandle};
 
-use crate::config::{PAGE_SIZE, PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP};
+use crate::config::{PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::mm::{
@@ -16,6 +16,7 @@ use crate::mm::{
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::UPSafeCell;
 use crate::syscall::CloneFlags;
+use crate::task::alloc::kernel_stack_position;
 use crate::task::manager::insert_into_thread_group;
 use crate::task::{KernelStack};
 use crate::timer::get_time;
@@ -26,7 +27,7 @@ use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use polyhal::pagetable::TLB;
+use polyhal::pagetable::{PAGE_SIZE, TLB};
 use polyhal::{MappingFlags, PhysAddr, VirtAddr};
 use core::arch::asm;
 use core::cell::RefMut;
@@ -191,6 +192,7 @@ impl ProcessControlBlockInner {
     }
     /// 创建用户栈、上下文
     pub fn alloc_user_res(&mut self) {
+        info!("USER_TRAP_CONTEXT_TOP: {:#x}", USER_TRAP_CONTEXT_TOP);
         let (trap_cx_base, _) = self.memory_set.get_mut().insert_framed_area_with_hint(
             USER_TRAP_CONTEXT_TOP,
             PAGE_SIZE,
@@ -223,14 +225,15 @@ impl ProcessControlBlockInner {
         }).unwrap();
         for i in 1..=PRE_ALLOC_PAGES {
             let vaddr: VirtAddr = (area.vaddr_range.get_end().raw() - i * PAGE_SIZE).into();
-            let (_paddr, flags) = page_table.translate(vaddr).unwrap();
-            if !flags.contains(MappingFlags::P) {
+            let res = page_table.translate(vaddr);
+            if res.is_none() || !res.unwrap().1.contains(MappingFlags::P) {
                 area.map_one(
                     &mut self.memory_set.get_mut().page_table,
                     vaddr,
                 )
             }
         }
+        debug!("(ProcessControlBlockInner, alloc_user_res) user stack area: {:#x} - {:#x}", ustack_base, ustack_top);
     }
     pub fn clone_user_res(&mut self, another: &ProcessControlBlockInner) {
         self.alloc_user_res();
@@ -321,7 +324,7 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
         let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data);
-        debug!("in pcb new, from elf ok");
+        debug!("(ProcessControlBlock, new), from_elf passed");
         let tid_handle = tid_alloc();
         let kernel_stack = KernelStack::new(&tid_handle);
         let (_kernel_stack_bottom, kernel_stack_top) = kernel_stack.pos();
@@ -357,16 +360,22 @@ impl ProcessControlBlock {
                 })
             },
         });
-        info!("in pcb new, the heap bottom is : {}", heap_bottom);
+        info!("(ProcessControlBlock, new), the heap bottom is : {:#x}", heap_bottom);
         
+        // 只映射用户地址空间，由于只有在新建 initproc 时使用，写死 app_id 为 1.
+        let (kstack_bottom, kstack_top) = kernel_stack_position(1);
+        let memory_set = process.inner_exclusive_access().memory_set.clone();
+        memory_set.insert_framed_area(
+            kstack_bottom.into(),
+            kstack_top.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W,
+            MapAreaType::Stack,
+        );
+
         let mut inner = process.inner_exclusive_access();
         inner.alloc_user_res();
         let trap_cx = inner.get_trap_cx();
-        // *trap_cx = TrapContext::app_init_context(
-        //     entry_point,
-        //     inner.user_stack_top,
-        //     kernel_stack_top
-        // );
         *trap_cx = TrapFrame::new();
         trap_cx[TrapFrameArgs::SEPC] = entry_point;
         trap_cx[TrapFrameArgs::SP] = inner.user_stack_top;
