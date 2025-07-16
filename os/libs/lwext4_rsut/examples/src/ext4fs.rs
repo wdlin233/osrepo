@@ -301,6 +301,10 @@ impl VfsNodeOps for FileWrapper {
     fn rename(&self, src_path: &str, dst_path: &str) -> Result<usize, i32> {
         info!("rename from {} to {}", src_path, dst_path);
         let mut file = self.0.borrow_mut();
+        debug!(
+            "to rename, the src path is : {},the dst path is : {}",
+            src_path, dst_path
+        );
         file.file_rename(src_path, dst_path)
     }
 }

@@ -53,3 +53,6 @@ run: all
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
+
+modify:
+	@cp ${HOME}/sdcard-rv.img  ${HOME}/osrepo/sdcard-rv.img
