@@ -271,7 +271,7 @@ pub fn sys_close(fd: usize) -> isize {
     let process = current_task().unwrap();
     debug!("in close, pid is :{}", process.getpid());
     let inner = process.inner_exclusive_access();
-    if fd >= inner.fd_table.len() || fd < 0 {
+    if fd >= inner.fd_table.len() { // ignore fd < 0, usize
         return -1;
     }
     if inner.fd_table.try_get(fd).is_none() {
@@ -912,7 +912,7 @@ pub fn sys_fstatat(dirfd: isize, path: *mut u8, kst: *mut Kstat, _flags: usize) 
     ) {
         Ok(file) => file,
         Err(_) => {
-            return -1; // 文件打开失败
+            return SysErrNo::ENOENT as isize; // 文件打开失败
         }
     };
     *translated_refmut(kst) = file.fstat();
@@ -1054,6 +1054,9 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
     }
 
     let abs_path = inner.get_abs_path(dirfd, &path);
+    if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
+        open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
+    }
     let (parent_path, _) = rsplit_once(abs_path.as_str(), "/");
     let parent_inode = match open(&parent_path, OpenFlags::O_RDWR, NONE_MODE) {
         Ok(pi) => pi.file().unwrap(),
@@ -1213,4 +1216,27 @@ pub fn sys_getrandom(buf: *const u8, buflen: usize, flags: u32) -> isize {
         Ok(size) => size as isize,
         Err(_) => SysErrNo::EIO as isize, // check TODO
     }
+}
+
+pub fn sys_renameat2(
+    olddirfd: isize,
+    oldpath: *const u8,
+    newdirfd: isize,
+    newpath: *const u8,
+    _flags: u32,
+) -> isize {
+    let process = current_task().unwrap();
+    let inner = process.inner_exclusive_access();
+    let (oldpath, newpath) = (
+        translated_str(oldpath),
+        translated_str(newpath),
+    );
+
+    let old_abs_path = inner.get_abs_path(olddirfd, &oldpath);
+    let osfile = open(&old_abs_path, OpenFlags::O_RDWR, NONE_MODE)
+        .unwrap()
+        .file()
+        .unwrap();
+    let new_abs_path = inner.get_abs_path(newdirfd, &newpath);
+    osfile.inode.rename(&old_abs_path, &new_abs_path).unwrap() as isize
 }

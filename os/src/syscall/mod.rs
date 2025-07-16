@@ -45,11 +45,13 @@ pub const SYSCALL_SLEEP: usize = 101;
 pub const SYSCALL_CLOCKGETTIME: usize = 113;
 pub const SYSCALL_LOG: usize = 116;
 pub const SYSCALL_YIELD: usize = 124;
+pub const SYSCALL_SCHEDGETAFFINITY: usize = 123;
 pub const SYSCALL_KILL: usize = 129;
 //pub const SYSCALL_TGKILL: usize = 131;
 pub const SYSCALL_SIGRETURN: usize = 139;
 pub const SYSCALL_SIGACTION: usize = 134;
 pub const SYSCALL_SIGPROCMASK: usize = 135;
+pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 pub const SYSCALL_SET_PRIORITY: usize = 140;
 pub const SYSCALL_TIMES: usize = 153;
 pub const SYSCALL_UNAME: usize = 160;
@@ -72,22 +74,25 @@ pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_WAITPID: usize = 260;
 pub const SYSCALL_STATX: usize = 291;
 pub const SYSCALL_PPOLL: usize = 73;
-pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
+pub const SYSCALL_MADVISE: usize = 233;
+pub const SYSCALL_GETMEMPOLICY: usize = 236;
 pub const SYSCALL_PRLIMIT: usize = 261;
 pub const SYSCALL_MPROTECT: usize = 226;
+pub const SYSCALL_RENAMEAT2: usize = 276;
 pub const SYSCALL_GETRANDOM: usize = 278;
 
 mod fs;
+mod mem;
 mod options;
 mod process;
 mod signal;
 mod sync;
 mod thread;
-//mod tid;
 pub mod sys_result;
 mod uname;
 
 use fs::*;
+use mem::*;
 use process::*;
 use signal::*;
 use sync::*;
@@ -246,6 +251,22 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_SHMAT => sys_shmat(args[0] as i32, args[1], args[2] as i32),
         SYSCALL_SHMCTL => sys_shmctl(args[0] as i32, args[1] as i32, args[2]),
         SYSCALL_SHMGET => sys_shmget(args[0] as i32, args[1], args[2] as i32),
+        SYSCALL_SCHEDGETAFFINITY => sys_sched_getaffinity(args[0], args[1], args[2]),
+        SYSCALL_GETMEMPOLICY => sys_getmempolicy(
+            args[0] as *mut i32,
+            args[1] as *mut usize,
+            args[2],
+            args[3] as *const u8,
+            args[4],
+        ),
+        SYSCALL_MADVISE => sys_madvise(args[0], args[1], args[2]),
+        SYSCALL_RENAMEAT2 => sys_renameat2(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as isize,
+            args[3] as *const u8,
+            args[4] as u32,
+        ),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }
