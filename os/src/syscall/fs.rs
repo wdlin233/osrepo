@@ -623,7 +623,7 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
     }
     let abs_path = inner.get_abs_path(dirfd, &path);
     if let Ok(_) = open(&abs_path, OpenFlags::O_RDWR, NONE_MODE) {
-        return 0;
+        return SysErrNo::EEXIST as isize;
     }
     if let Ok(_) = open(
         &abs_path,
@@ -1290,5 +1290,8 @@ pub fn sys_renameat2(
         .file()
         .unwrap();
     let new_abs_path = inner.get_abs_path(newdirfd, &newpath);
-    osfile.inode.rename(&old_abs_path, &new_abs_path).unwrap() as isize
+    match osfile.inode.rename(&old_abs_path, &new_abs_path) {
+        Ok(n) => n as isize,
+        Err(e) => e as isize,
+    }
 }
