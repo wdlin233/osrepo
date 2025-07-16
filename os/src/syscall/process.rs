@@ -29,6 +29,10 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
+pub fn sys_setsid() -> isize {
+    0
+}
+
 //madvise
 pub fn sys_madvise(_addr: usize, _len: usize, _advice: usize) -> isize {
     0

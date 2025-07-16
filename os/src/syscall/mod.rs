@@ -104,6 +104,8 @@ pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 pub const SYSCALL_SET_PRIORITY: usize = 140;
 /// times
 pub const SYSCALL_TIMES: usize = 153;
+/// setsid syscall
+pub const SYSCALL_SETSID: usize = 157;
 /// get system name
 pub const SYSCALL_UNAME: usize = 160;
 /// gettimeofday syscall
@@ -129,6 +131,9 @@ pub const SYSCALL_SHMGET: usize = 194;
 pub const SYSCALL_SHMCTL: usize = 195;
 /// shmat syscall
 pub const SYSCALL_SHMAT: usize = 196;
+/// socket syscall
+pub const SYSCALL_SOCKET: usize = 198;
+
 /// sbrk syscall
 pub const SYSCALL_BRK: usize = 214;
 /// munmap syscall
@@ -198,11 +203,13 @@ mod signal;
 mod sync;
 mod thread;
 //mod tid;
+mod net;
 pub mod sys_result;
 mod uname;
 
 use fs::*;
 use mem::*;
+use net::*;
 use process::*;
 use signal::*;
 use sync::*;
@@ -224,6 +231,8 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SOCKET => sys_socket(args[0] as u32, args[1] as u32, args[2] as u32),
+        SYSCALL_SETSID => sys_setsid(),
         SYSCALL_RENAMEAT2 => sys_renameat2(
             args[0] as isize,
             args[1] as *const u8,
