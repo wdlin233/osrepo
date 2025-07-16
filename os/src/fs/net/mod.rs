@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 
 use super::{File, Kstat};
+use crate::syscall::PollEvents;
 
 mod simple_net;
 pub use simple_net::*;

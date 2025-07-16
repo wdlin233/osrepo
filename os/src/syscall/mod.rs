@@ -54,6 +54,8 @@ pub const SYSCALL_READV: usize = 65;
 pub const SYSCALL_WRITEV: usize = 66;
 /// sendfile syscall
 pub const SYSCALL_SENDFILE: usize = 71;
+/// pselect6 syscall
+pub const SYSCALL_PSELECT6: usize = 72;
 /// ppoll syscall
 pub const SYSCALL_PPOLL: usize = 73;
 /// read link at
@@ -133,7 +135,18 @@ pub const SYSCALL_SHMCTL: usize = 195;
 pub const SYSCALL_SHMAT: usize = 196;
 /// socket syscall
 pub const SYSCALL_SOCKET: usize = 198;
-
+/// socketpair syscall
+pub const SYSCALL_SOCKETPAIR: usize = 199;
+/// bind syscall
+pub const SYSCALL_BIND: usize = 200;
+/// listen syscall
+pub const SYSCALL_LISTEN: usize = 201;
+/// getsockname syscall
+pub const SYSCALL_GETSOCKNAME: usize = 204;
+/// send to syscall
+pub const SYSCALL_SENDTO: usize = 206;
+/// setsockopt syscall
+pub const SYSCALL_SETSOCKOPT: usize = 208;
 /// sbrk syscall
 pub const SYSCALL_BRK: usize = 214;
 /// munmap syscall
@@ -231,6 +244,31 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SOCKETPAIR => sys_socketpair(
+            args[0] as u32,
+            args[1] as u32,
+            args[2] as u32,
+            args[3] as *mut u32,
+        ),
+        SYSCALL_SENDTO => sys_sendto(
+            args[0],
+            args[1] as *const u8,
+            args[2],
+            args[3] as u32,
+            args[4] as *const u8,
+            args[5] as u32,
+        ),
+        SYSCALL_GETSOCKNAME => sys_getsockname(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_PSELECT6 => sys_pselect6(args[0], args[1], args[2], args[3], args[4], args[5]),
+        SYSCALL_LISTEN => sys_listen(args[0], args[1] as u32),
+        SYSCALL_BIND => sys_bind(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_SETSOCKOPT => sys_setsockopt(
+            args[0],
+            args[1] as u32,
+            args[2] as u32,
+            args[3] as *const u8,
+            args[4] as u32,
+        ),
         SYSCALL_SOCKET => sys_socket(args[0] as u32, args[1] as u32, args[2] as u32),
         SYSCALL_SETSID => sys_setsid(),
         SYSCALL_RENAMEAT2 => sys_renameat2(

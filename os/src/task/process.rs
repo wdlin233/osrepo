@@ -169,18 +169,14 @@ impl ProcessControlBlockInner {
     pub fn set_utime(&mut self, in_kernel_time: usize) {
         self.tms.inner.tms_utime = in_kernel_time - self.tms.begin_urun_time;
         if let Some(parent) = self.parent.as_mut() {
-            parent
-                .upgrade()
-                .unwrap()
-                .inner_exclusive_access()
-                .tms
-                .set_cutime(self.tms.inner.tms_utime);
-            parent
-                .upgrade()
-                .unwrap()
-                .inner_exclusive_access()
-                .tms
-                .set_cstime(self.tms.one_stime);
+            if let Some(p) = parent.upgrade() {
+                p.inner_exclusive_access()
+                    .tms
+                    .set_cutime(self.tms.inner.tms_utime);
+                p.inner_exclusive_access()
+                    .tms
+                    .set_cstime(self.tms.one_stime);
+            }
         }
         self.tms.one_stime = 0;
     }

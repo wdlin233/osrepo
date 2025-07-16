@@ -7,13 +7,15 @@ use crate::fs::{
     FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE,
     SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
-
 use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
     translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
 };
+use core::cmp::min;
+
 use crate::syscall::{
-    process, FaccessatFileMode, FaccessatMode, FcntlCmd, Iovec, PollEvents, PollFd, RLimit, TimeVal,
+    process, FaccessatFileMode, FaccessatMode, FcntlCmd, FdSet, Iovec, PollEvents, PollFd, RLimit,
+    SignalFlags, TimeVal,
 };
 use crate::task::{
     block_current_and_run_next, current_process, current_user_token, suspend_current_and_run_next,
@@ -27,6 +29,175 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+//pselect6
+pub fn sys_pselect6(
+    nfds: usize,
+    readfds: usize,
+    writefds: usize,
+    exceptfds: usize,
+    timeout: usize,
+    sigmask: usize,
+) -> isize {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    if (nfds as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if (readfds as isize) < 0 || is_bad_address(readfds as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (writefds as isize) < 0 || is_bad_address(writefds as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (exceptfds as isize) < 0 || is_bad_address(exceptfds as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (timeout as isize) < 0 || is_bad_address(timeout as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    // debug!("[sys_pselect6] nfds is {}, readfds is {}, writefds is {}, exceptfds is {}, timeout is {}, sigmask is {}",nfds,readfds,writefds,exceptfds,timeout,sigmask);
+
+    let old_mask = inner.sig_mask;
+    if sigmask != 0 {
+        inner.sig_mask = *translated_ref(token, sigmask as *const SignalFlags);
+    }
+
+    let nfds = min(nfds, inner.fd_table.get_soft_limit());
+
+    let mut using_readfds = if readfds != 0 {
+        // get_data(token, readfds as *mut FdSet)
+        Some(*translated_ref(token, readfds as *mut FdSet))
+    } else {
+        None
+    };
+    let mut using_writefds = if writefds != 0 {
+        Some(*translated_ref(token, writefds as *mut FdSet))
+    } else {
+        None
+    };
+    let mut using_exceptfds = if exceptfds != 0 {
+        Some(*translated_ref(token, exceptfds as *mut FdSet))
+    } else {
+        None
+    };
+
+    // pselect 不会更新 timeout 的值，而 select 会
+    let waittime = if timeout == 0 {
+        //为0则永远等待直到完成
+        -1
+    } else {
+        let timespec = *translated_ref(token, timeout as *const TimeSpec);
+
+        (timespec.tv_sec * 1_000_000_000 + timespec.tv_nsec) as isize
+    };
+
+    let begin = get_time_ms() * 1_000_000;
+
+    //由于每次循环结束需要让出cpu，因此需要在每次循环时重新获得锁
+    drop(inner);
+    drop(process);
+
+    loop {
+        let process = current_process();
+        let mut inner = process.inner_exclusive_access();
+        let mut num = 0;
+
+        // 如果设置了监视是否可读的 fd
+        if let Some(readfds) = using_readfds.as_mut() {
+            for i in 0..nfds {
+                if readfds.got_fd(i) {
+                    if let Some(file) = &inner.fd_table.try_get(i) {
+                        let file: Arc<dyn File> = file.any();
+                        let event = file.poll(PollEvents::IN);
+                        if !event.contains(PollEvents::IN) {
+                            readfds.mark_fd(i, false);
+                        }
+                        num += 1;
+                    } else {
+                        //readfds.mark_fd(i, false);
+                        return SysErrNo::EBADF as isize;
+                    }
+                }
+            }
+        }
+        // 如果设置了监视是否可写的 fd
+        if let Some(writefds) = using_writefds.as_mut() {
+            for i in 0..nfds {
+                if writefds.got_fd(i) {
+                    if let Some(file) = &inner.fd_table.try_get(i) {
+                        let file: Arc<dyn File> = file.any();
+                        let event = file.poll(PollEvents::OUT);
+                        if !event.contains(PollEvents::OUT) {
+                            writefds.mark_fd(i, false);
+                        }
+                        num += 1;
+                    } else {
+                        //writefds.mark_fd(i, false);
+                        return SysErrNo::EBADF as isize;
+                    }
+                }
+            }
+        }
+
+        // 如果设置了监视异常的 fd
+        if let Some(exceptfds) = using_exceptfds.as_mut() {
+            for i in 0..nfds {
+                if exceptfds.got_fd(i) {
+                    if let Some(file) = &inner.fd_table.try_get(i) {
+                        let file: Arc<dyn File> = file.any();
+                        let event = file.poll(PollEvents::ERR | PollEvents::HUP);
+                        if !event.contains(PollEvents::ERR) && !event.contains(PollEvents::HUP) {
+                            exceptfds.mark_fd(i, false);
+                        }
+                        num += 1;
+                    } else {
+                        //exceptfds.mark_fd(i, false);
+                        return SysErrNo::EBADF as isize;
+                    }
+                }
+            }
+        }
+
+        //如果有响应了则返回,或者如果时间是0，0（只监视一遍），也需要返回结果
+        if num > 0 || waittime == 0 {
+            // debug!("[sys_pselect6] ret for num:{},waittime:{}", num, waittime);
+            if let Some(using_readfds) = using_readfds {
+                *translated_refmut(token, readfds as *mut FdSet) = using_readfds;
+            }
+            if let Some(using_writefds) = using_writefds {
+                *translated_refmut(token, writefds as *mut FdSet) = using_writefds;
+            }
+            if let Some(using_exceptfds) = using_exceptfds {
+                *translated_refmut(token, exceptfds as *mut FdSet) = using_exceptfds;
+            }
+            if sigmask != 0 {
+                inner.sig_mask = old_mask;
+            }
+            return num as isize;
+        }
+
+        //或者时间到了也可以返回
+        if waittime > 0 && get_time_ms() * 1000000 - begin >= waittime as usize {
+            // debug!("[sys_pselect6] ret for timeout");
+            if sigmask != 0 {
+                inner.sig_mask = old_mask;
+            }
+            return 0;
+        }
+
+        drop(inner);
+        drop(process);
+        suspend_current_and_run_next();
+    }
+}
+
+// read link at
 pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: usize) -> isize {
     let process = current_process();
     let inner = process.inner_exclusive_access();
