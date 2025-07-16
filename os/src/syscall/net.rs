@@ -8,7 +8,6 @@ use crate::{
 };
 use log::debug;
 
-/// 参考 https://man7.org/linux/man-pages/man2/socket.2.html
 pub fn sys_socket(_domain: u32, _type: u32, _protocol: u32) -> isize {
     let process = current_task().unwrap();
     let inner = process.inner_exclusive_access();
@@ -32,22 +31,18 @@ pub fn sys_socket(_domain: u32, _type: u32, _protocol: u32) -> isize {
     new_fd as isize
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/bind.2.html
 pub fn sys_bind(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
     0
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/getsockname.2.html
 pub fn sys_getsockname(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
     0
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/getpeername.2.html
 pub fn sys_getpeername(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
     SysErrNo::Default as isize
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/setsockopt.2.html
 pub fn sys_setsockopt(
     _sockfd: usize,
     _level: u32,
@@ -58,7 +53,6 @@ pub fn sys_setsockopt(
     0
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/sendto.2.html
 pub fn sys_sendto(
     _sockfd: usize,
     _buf: *const u8,
@@ -70,7 +64,6 @@ pub fn sys_sendto(
     1
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/recvfrom.2.html
 pub fn sys_recvfrom(
     _sockfd: usize,
     buf: *mut u8,
@@ -84,17 +77,14 @@ pub fn sys_recvfrom(
     1
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/listen.2.html
 pub fn sys_listen(_sockfd: usize, _backlog: u32) -> isize {
     0
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/connect.2.html
 pub fn sys_connect(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
     0
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/accept.2.html
 pub fn sys_accept(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
     0
 }
@@ -103,7 +93,6 @@ pub fn sys_accept4(_sockfd: usize, _addr: *const u8, _addrlen: u32, _flags: u32)
     0
 }
 
-/// 参考 https://man7.org/linux/man-pages/man2/sendmsg.2.html
 pub fn sys_sendmsg(_sockfd: usize, _addr: *const u8, _flags: u32) -> isize {
     0
 }

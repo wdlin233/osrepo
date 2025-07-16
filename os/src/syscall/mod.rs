@@ -32,6 +32,8 @@ pub const SYSCALL_WRITE: usize = 64;
 pub const SYSCALL_READV: usize = 65;
 pub const SYSCALL_WRITEV: usize = 66;
 pub const SYSCALL_SENDFILE: usize = 71;
+pub const SYSCALL_PSELECT6: usize = 72;
+pub const SYSCALL_PPOLL: usize = 73;
 pub const SYSCALL_READLINKAT: usize = 78;
 pub const SYSCALL_FSTATAT: usize = 79;
 pub const SYSCALL_FSTAT: usize = 80;
@@ -68,14 +70,19 @@ pub const SYSCALL_SHMGET: usize = 194;
 pub const SYSCALL_SHMCTL: usize = 195;
 pub const SYSCALL_SHMAT: usize = 196;
 pub const SYSCALL_SOCKET: usize = 198;
-pub const SYSCALL_CLONE: usize = 220;
-pub const SYSCALL_EXECVE: usize = 221;
+pub const SYSCALL_SOCKETPAIR: usize = 199;
+pub const SYSCALL_BIND: usize = 200;
+pub const SYSCALL_LISTEN: usize = 201;
+pub const SYSCALL_GETSOCKNAME: usize = 204;
+pub const SYSCALL_SENDTO: usize = 206;
+pub const SYSCALL_SETSOCKOPT: usize = 208;
 pub const SYSCALL_BRK: usize = 214;
 pub const SYSCALL_MUNMAP: usize = 215;
+pub const SYSCALL_CLONE: usize = 220;
+pub const SYSCALL_EXECVE: usize = 221;
 pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_WAITPID: usize = 260;
 pub const SYSCALL_STATX: usize = 291;
-pub const SYSCALL_PPOLL: usize = 73;
 pub const SYSCALL_MADVISE: usize = 233;
 pub const SYSCALL_GETMEMPOLICY: usize = 236;
 pub const SYSCALL_PRLIMIT: usize = 261;
@@ -119,6 +126,31 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SOCKETPAIR => sys_socketpair(
+            args[0] as u32,
+            args[1] as u32,
+            args[2] as u32,
+            args[3] as *mut u32,
+        ),
+        SYSCALL_SENDTO => sys_sendto(
+            args[0],
+            args[1] as *const u8,
+            args[2],
+            args[3] as u32,
+            args[4] as *const u8,
+            args[5] as u32,
+        ),
+        SYSCALL_GETSOCKNAME => sys_getsockname(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_PSELECT6 => sys_pselect6(args[0], args[1], args[2], args[3], args[4], args[5]),
+        SYSCALL_LISTEN => sys_listen(args[0], args[1] as u32),
+        SYSCALL_BIND => sys_bind(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_SETSOCKOPT => sys_setsockopt(
+            args[0],
+            args[1] as u32,
+            args[2] as u32,
+            args[3] as *const u8,
+            args[4] as u32,
+        ),
         SYSCALL_SOCKET => sys_socket(args[0] as u32, args[1] as u32, args[2] as u32),
         SYSCALL_SETSID => sys_setsid(),
         SYSCALL_FUTEX => sys_futex(
