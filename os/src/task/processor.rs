@@ -14,8 +14,8 @@ use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
 use lazyinit::LazyInit;
-use polyhal::kcontext::{context_switch, context_switch_pt, KContext};
-use polyhal::PageTable;
+use polyhal::kcontext::{context_switch_pt, KContext};
+use polyhal::{PageTable, PageTableWrapper};
 use polyhal_trap::trapframe::TrapFrame;
 use core::arch::asm;
 //use core::str::next_code_point;
@@ -70,30 +70,13 @@ pub fn run_tasks() {
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
-            task.inner_exclusive_access()
+            let mut task_inner = task.inner_exclusive_access();
+            task_inner
                 .tms
                 .set_begin();
-            #[cfg(target_arch = "loongarch64")]
-            let pid = task.process.upgrade().unwrap().getpid();
-            #[cfg(target_arch = "loongarch64")]
-            {
-                //应用进程号
-                let pgd = task.get_user_token() << PAGE_SIZE_BITS;
-                pgdl::set_base(pgd); //设置根页表基地址
-                asid::set_asid(pid); //设置ASID
-            }
-            let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
             task_inner.task_status = TaskStatus::Running;
-            #[cfg(target_arch = "loongarch64")]
-            // 在进行线程切换的时候
-            // 地址空间是相同的，并且pgd也是相同的
-            // 每个线程都有自己的内核栈和用户栈，用户栈互相隔离
-            // 在进入用户态后应该每个线程的地址转换是相同的
-            unsafe {
-                asm!("invtlb 0x4,{},$r0",in(reg) pid);
-            }
-
+            let token = task_inner.memory_set.token_pt();
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -101,7 +84,7 @@ pub fn run_tasks() {
             // release processor manually
             drop(processor);
             unsafe {
-                context_switch(idle_task_cx_ptr, next_task_cx_ptr);
+                context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, token);
             }
         } else {
             //warn!("no tasks available in run_tasks");
@@ -128,6 +111,8 @@ pub fn current_trap_cx() -> &'static mut TrapFrame {
         .get_trap_cx()
 }
 
+static BOOT_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
+
 /// Return to idle control flow for new scheduling
 pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     let mut processor = PROCESSOR.exclusive_access();
@@ -138,8 +123,6 @@ pub fn schedule(switched_task_cx_ptr: *mut KContext) {
         context_switch_pt(switched_task_cx_ptr, idle_task_cx_ptr, *BOOT_PAGE_TABLE);
     }
 }
-
-static BOOT_PAGE_TABLE: LazyInit<PageTable> = LazyInit::new();
 
 pub fn init_kernel_page() {
     BOOT_PAGE_TABLE.init_once(PageTable::current());

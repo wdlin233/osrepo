@@ -61,6 +61,10 @@ impl MemorySet {
         self.inner.get_unchecked_mut().token()
     }
     #[inline(always)]
+    pub fn token_pt(&self) -> PageTable {
+        self.inner.get_unchecked_mut().page_table.0
+    }
+    #[inline(always)]
     pub fn insert_framed_area(
         &self,
         start_va: VirtAddr,

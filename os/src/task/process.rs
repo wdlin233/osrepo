@@ -146,10 +146,6 @@ impl ProcessControlBlockInner {
         unsafe {
             kernel_va.as_mut().unwrap()
         }
-        // let paddr = &self.trap_cx as *const TrapFrame as usize as *mut TrapFrame;
-        // let paddr: PhysAddr = self.trap_cx.into();
-        // unsafe { paddr.get_mut_ptr::<TrapFrame>().as_mut().unwrap() }
-        // unsafe { paddr.as_mut().unwrap() }
     }
     pub fn is_zombie(&self) -> bool {
         self.task_status == TaskStatus::Zombie

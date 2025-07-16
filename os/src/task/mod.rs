@@ -19,7 +19,7 @@ mod futex;
 
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
-use crate::task::manager::{add_stopping_task, wakeup_parent};
+use crate::task::manager::{add_stopping_task, insert_into_tid2task, wakeup_parent};
 use crate::task::process::TaskStatus;
 use crate::timer::remove_timer;
 use crate::alloc::{sync::Arc, vec::Vec};
@@ -42,7 +42,7 @@ pub use process::{
 };
 pub use processor::{
     current_task, current_trap_cx, mmap, munmap, run_tasks,
-    schedule, take_current_task,
+    schedule, take_current_task, init_kernel_page
 };
 pub use futex::{FutexKey, futex_wait, futex_wake_up, futex_requeue};
 
@@ -140,7 +140,10 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
 
 ///Add init process to the manager
 pub fn add_initproc() {
-    let _initproc = INITPROC.clone();
+    add_task(INITPROC.clone());
+    insert_into_tid2task(0, &INITPROC);
+    insert_into_thread_group(0, &INITPROC);
+    info!("kernel: INITPROC is added to the task manager");
 }
 
 /// the inactive(blocked) tasks are removed when the PCB is deallocated.(called by exit_current_and_run_next)

@@ -76,6 +76,7 @@ pub fn main(hartid: usize) -> ! {
     mm::init();
 
     fs::list_apps();
+    task::init_kernel_page();
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable section for kernel!");
