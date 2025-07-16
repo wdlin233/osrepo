@@ -1,9 +1,3 @@
-[target.riscv64gc-unknown-none-elf]
-rustflags = [
-    "-Cforce-frame-pointers=yes",
-    '--cfg=board="qemu"',
-]
-
 [source]
 crates-io = { replace-with = "vendored-sources" }
 

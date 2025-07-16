@@ -48,11 +48,12 @@ pub fn init() {
     heap_allocator::init_heap();
     info!("Heap allocator initialized");
     polyhal::common::init(&PageAllocImpl);
+    // polyhal::init_interrupt(); done in polyhal::CPU::rust_main()
     get_mem_areas().for_each(|(start, size)| {
         println!("init memory region {:#x} - {:#x}", start, start + size);
         frame_allocator::add_frame_range(*start, start + size);
     });
-
+    debug!("Memory regions initialized");
     if let Ok(fdt) = get_fdt() {
         fdt.all_nodes().for_each(|x| {
             if let Some(mut compatibles) = x.compatible() {
@@ -62,6 +63,6 @@ pub fn init() {
     }
 
     // test
-    ebreak();
+    //ebreak();
     //shutdown();
 }

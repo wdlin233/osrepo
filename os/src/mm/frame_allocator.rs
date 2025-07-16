@@ -16,7 +16,7 @@ use buddy_system_allocator::FrameAllocator;
 
 lazy_static! {
     /// frame allocator instance through lazy_static!
-    pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocator<32>> =
+    pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocator> =
         unsafe { UPSafeCell::new(FrameAllocator::new()) };
 }
 
@@ -51,10 +51,12 @@ pub fn frame_alloc_persist() -> Option<PhysAddr> {
 }
 
 pub fn frames_alloc(count: usize) -> Option<Vec<Arc<FrameTracker>>> {
+    info!("(frames_alloc) Allocating {} frames", count);
     let start = FRAME_ALLOCATOR
         .exclusive_access()
         .alloc(count)
         .map(|x| pa!(x * PAGE_SIZE))?;
+    info!("(frames_alloc) Allocating {} frames starting at {}", count, start);
     let ret = (0..count)
         .into_iter()
         .map(|idx| (start + idx * PAGE_SIZE))

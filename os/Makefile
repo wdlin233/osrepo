@@ -62,7 +62,7 @@ endif
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
 ifeq ($(ARCH),riscv64)
-build: env config kernel
+build: env config kernel $(KERNEL_BIN)
 else ifeq ($(ARCH),loongarch64)
 build: env config kernel
 else
@@ -76,7 +76,8 @@ env:
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
 
-$(KERNEL_BIN):
+$(KERNEL_BIN): kernel
+	echo "Building kernel binary..."
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 # -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录

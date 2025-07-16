@@ -39,7 +39,6 @@ mod board;
 
 #[macro_use]
 pub mod config;
-pub mod boot; // used to set up the initial environment
 pub mod drivers;
 pub mod fs;
 pub mod lang_items;
@@ -52,7 +51,6 @@ pub mod task;
 pub mod timer;
 pub mod utils;
 pub mod trap;
-
 pub mod system;
 pub mod users;
 
@@ -64,7 +62,7 @@ use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
 use polyhal_boot::define_entry;
 use polyhal::percpu::get_local_thread_pointer;
 use polyhal::{percpu, println};
-use core::arch::{global_asm, asm};
+use core::arch::{asm, global_asm, naked_asm};
 
 #[no_mangle]
 pub fn main(hartid: usize) -> ! {

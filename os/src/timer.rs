@@ -15,10 +15,6 @@ use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
 use polyhal::Time;
-#[cfg(target_arch = "riscv64")]
-use riscv::register::time;
-#[cfg(target_arch = "loongarch64")]
-use loongarch64::time::{get_timer_freq, Time};
 
 /// The number of microseconds per second
 pub const NSEC_PER_SEC: usize = 1_000_000_000;

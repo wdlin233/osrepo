@@ -14,7 +14,7 @@ use crate::syscall::MmapFlags;
 use crate::timer::check_timer;
 use alloc::sync::Arc;
 use lazyinit::LazyInit;
-use polyhal::kcontext::{context_switch, KContext};
+use polyhal::kcontext::{context_switch, context_switch_pt, KContext};
 use polyhal::PageTable;
 use polyhal_trap::trapframe::TrapFrame;
 use core::arch::asm;
@@ -135,7 +135,7 @@ pub fn schedule(switched_task_cx_ptr: *mut KContext) {
     drop(processor);
     //debug!("in schedule, to switch, currrent ra is : {},current sp is :{}, next ra is :{}, next sp is : {}",unsafe{(*switched_task_cx_ptr).get_ra()},unsafe{(*switched_task_cx_ptr).get_sp()},unsafe{(*idle_task_cx_ptr).get_ra()},unsafe{(*idle_task_cx_ptr).get_sp()});
     unsafe {
-        context_switch(switched_task_cx_ptr, idle_task_cx_ptr);
+        context_switch_pt(switched_task_cx_ptr, idle_task_cx_ptr, *BOOT_PAGE_TABLE);
     }
 }
 

@@ -7,8 +7,6 @@ use crate::utils::{SysErrNo, SyscallRet};
 use alloc::vec::Vec;
 use polyhal::debug_console::DebugConsole;
 use polyhal::print;
-#[cfg(target_arch = "riscv64")]
-use riscv::register::sstatus;
 
 /// stdin file for getting chars from console
 pub struct Stdin;
