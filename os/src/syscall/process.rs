@@ -34,6 +34,10 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
+pub fn sys_setsid() -> isize {
+    0
+}
+
 // sys futex
 pub fn sys_futex(
     uaddr: *mut i32,

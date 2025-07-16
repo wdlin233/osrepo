@@ -54,6 +54,7 @@ pub const SYSCALL_SIGPROCMASK: usize = 135;
 pub const SYSCALL_SIGTIMEDWAIT: usize = 137;
 pub const SYSCALL_SET_PRIORITY: usize = 140;
 pub const SYSCALL_TIMES: usize = 153;
+pub const SYSCALL_SETSID: usize = 157;
 pub const SYSCALL_UNAME: usize = 160;
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
 pub const SYSCALL_GETPID: usize = 172;
@@ -66,8 +67,9 @@ pub const SYSCALL_SYSINFO: usize = 179;
 pub const SYSCALL_SHMGET: usize = 194;
 pub const SYSCALL_SHMCTL: usize = 195;
 pub const SYSCALL_SHMAT: usize = 196;
-pub const SYSCALL_FORK: usize = 220;
-pub const SYSCALL_EXEC: usize = 221;
+pub const SYSCALL_SOCKET: usize = 198;
+pub const SYSCALL_CLONE: usize = 220;
+pub const SYSCALL_EXECVE: usize = 221;
 pub const SYSCALL_BRK: usize = 214;
 pub const SYSCALL_MUNMAP: usize = 215;
 pub const SYSCALL_MMAP: usize = 222;
@@ -88,11 +90,14 @@ mod process;
 mod signal;
 mod sync;
 mod thread;
+//mod tid;
+mod net;
 pub mod sys_result;
 mod uname;
 
 use fs::*;
 use mem::*;
+use net::*;
 use process::*;
 use signal::*;
 use sync::*;
@@ -114,6 +119,8 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SOCKET => sys_socket(args[0] as u32, args[1] as u32, args[2] as u32),
+        SYSCALL_SETSID => sys_setsid(),
         SYSCALL_FUTEX => sys_futex(
             args[0] as *mut i32,
             args[1] as u32,
@@ -181,7 +188,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
         SYSCALL_GETPPID => sys_getppid(),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32, args[2] as i32),
-        SYSCALL_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
+        SYSCALL_CLONE => sys_fork(args[0], args[1], args[2], args[3], args[4]),
         SYSCALL_YIELD => sys_yield(),
 
         SYSCALL_LINKAT => sys_linkat(args[1] as *const u8, args[3] as *const u8),
@@ -200,7 +207,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_EXIT => sys_exit(args[0] as i32),
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_GETTID => sys_gettid(),
-        SYSCALL_EXEC => sys_exec(
+        SYSCALL_EXECVE => sys_exec(
             args[0] as *const u8,
             args[1] as *const usize,
             args[2] as *const usize,
