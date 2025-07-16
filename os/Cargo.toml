@@ -30,6 +30,10 @@ riscv = { version = "0.10.1"}
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongarch64 = { version = "*", package = "loongArch64" }
 
+[patch.crates-io]
+polyhal = { path = "./libs/polyhal/polyhal" }
+polyhal-boot = { path = "./libs/polyhal/polyhal-boot" }
+polyhal-trap = { path = "./libs/polyhal/polyhal-trap" }
 
 [profile.dev]
 debug = true
