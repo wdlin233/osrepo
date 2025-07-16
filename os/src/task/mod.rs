@@ -53,7 +53,7 @@ pub use processor::current_trap_addr;
 pub use processor::{current_kstack_top, current_trap_cx_user_va};
 pub use processor::{
     current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
-    schedule, take_current_task,
+    schedule, take_current_task, PROCESSOR,
 };
 pub use task::{TaskControlBlock, TaskStatus};
 
@@ -233,7 +233,7 @@ global_asm!(include_str!("initproc_rv.S"));
 #[cfg(target_arch = "loongarch64")]
 global_asm!(include_str!("initproc_la.S"));
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
-    // debug!("kernel: INITPROC is being initialized");
+    debug!("kernel: INITPROC is being initialized");
     unsafe {
         extern "C" {
             fn initproc_rv_start();
@@ -244,13 +244,23 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
         let data = core::slice::from_raw_parts(start, len);
         ProcessControlBlock::new(data)
     }
+
+    // let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+    //     .expect("open initproc error!")
+    //     .file()
+    //     .expect("initproc can not be abs file!");
+    // let elf_data = initproc.inode.read_all().unwrap();
+    // let res = ProcessControlBlock::new(&elf_data);
+    // res
 });
 
 ///Add init process to the manager
 pub fn add_initproc() {
-    let _initproc = INITPROC.clone();
+    let initproc = INITPROC.clone();
+    let inner = initproc.inner_exclusive_access();
+    let mut p = PROCESSOR.exclusive_access();
+    p.current = Some(inner.tasks[0].clone().unwrap());
 }
-
 /// Check if the current task has any signal to handle
 pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
     let process = current_process();

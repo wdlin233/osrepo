@@ -74,19 +74,21 @@ pub fn main(cpu: usize) -> ! {
     println!("cpu: {}", cpu);
     logging::init();
     log::error!("Logging init success");
-    
+
     mm::init();
-    #[cfg(target_arch = "riscv64")] 
+    #[cfg(target_arch = "riscv64")]
     mm::remap_test();
     hal::trap::init();
-    #[cfg(target_arch = "loongarch64")] 
+    #[cfg(target_arch = "loongarch64")]
     print_machine_info();
     hal::trap::enable_timer_interrupt();
-    #[cfg(target_arch = "riscv64")] 
+    #[cfg(target_arch = "riscv64")]
     timer::set_next_trigger();
 
     fs::list_apps();
     task::add_initproc();
+    fs::init();
+
     task::run_tasks();
     panic!("Unreachable section for kernel!");
 }
