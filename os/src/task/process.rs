@@ -233,14 +233,16 @@ impl ProcessControlBlockInner {
     }
     pub fn clone_user_res(&mut self, another: &ProcessControlBlockInner) {
         self.alloc_user_res();
-        let memory_set = self.memory_set.get_mut();
-        memory_set.lazy_clone_area(
+        // info!("(ProcessControlBlockInner, clone_user_res) user stack area: {:#x} - {:#x}", 
+        //     self.user_stack_top - USER_STACK_SIZE, self.user_stack_top);
+        let another_memory_set = another.memory_set.get_ref();
+        self.memory_set.lazy_clone_area(
             VirtAddr::from(self.user_stack_top - USER_HEAP_SIZE).floor(),
-            another.memory_set.get_ref(),
+            another_memory_set,
         );
-        memory_set.lazy_clone_area(
+        self.memory_set.lazy_clone_area(
             VirtAddr::from(self.trap_cx_base).floor(),
-            another.memory_set.get_ref(),
+            another_memory_set,
         );
     }
     pub fn dealloc_user_res(&mut self) {
@@ -674,8 +676,10 @@ impl ProcessControlBlock {
             *inner.get_trap_cx() = parent.get_trap_cx().clone();
         } else {
             inner.clone_user_res(&parent);
+            info!("(ProcessControlBlock, fork) clone user res ok");
             inner.get_trap_cx()[TrapFrameArgs::ARG0] = 0; // 应该是这么写吧
         }
+        debug!("(ProcessControlBlock, fork) child trap_cx: {:#?}", inner.get_trap_cx());
         // let trap_cx = inner.get_trap_cx();
         // trap_cx.kernel_sp = kernel_stack_top;
         // 实际上就是 trap_cx.kernel_sp = task.kstack.get_top();

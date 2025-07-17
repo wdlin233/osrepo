@@ -172,12 +172,11 @@ impl MemorySet {
     }
     #[inline(always)]
     pub fn lazy_clone_area(
-        &mut self,
+        &self,
         start_vpn: VirtAddr,
         another: &MemorySetInner,
     ) {
-        self.inner
-            .get_unchecked_mut()
+        self.get_mut()
             .lazy_clone_area(start_vpn, another)
     }
     #[inline(always)]
@@ -1053,23 +1052,31 @@ impl MemorySetInner {
         };
         
         for vpn in another_area.vaddr_range {
-            let (src_paddr, src_flags) = another_page_table.translate(vpn).unwrap();
-            if !src_flags.contains(MappingFlags::P) {
+            let (src_paddr, _src_flags, dst_paddr, _dst_flags);
+            let another_res = another_page_table.translate(vpn);
+            if another_res.is_none() || !another_res.unwrap().1.contains(MappingFlags::P) {
                 continue;
-            }
-            let (dst_paddr, dst_flags) = origin_page_table.translate(vpn).unwrap();
-            if !dst_flags.contains(MappingFlags::P) {
+            } 
+            (src_paddr, _src_flags) = another_res.unwrap();
+
+            let origin_res = origin_page_table.translate(vpn);
+            if origin_res.is_none() || !origin_res.unwrap().1.contains(MappingFlags::P) {
                 this_area.map_one(&origin_page_table, vpn);
-            }
-            // bytes_array_mut, bytes_array
-            let src_paddr = src_paddr.raw();
-            let dst_paddr = dst_paddr.raw();
+            } 
+            (dst_paddr, _dst_flags) = origin_res.unwrap();
+            
+            debug!("copying page: {}, src_paddr: {}, dst_paddr: {}", vpn, src_paddr, dst_paddr);
+            // dst_ppn
+            //   .bytes_array_mut()
+            //   .copy_from_slice(src_ppn.bytes_array());
+            let src_paddr: *const u8 = src_paddr.get_ptr::<u8>();
+            let dst_paddr: *mut u8 = dst_paddr.get_mut_ptr::<u8>();
             let dst_array = unsafe {
-                core::slice::from_raw_parts_mut(dst_paddr as *mut u8, PAGE_SIZE)
+                core::slice::from_raw_parts_mut(dst_paddr, PAGE_SIZE)
             };
             dst_array.copy_from_slice(
                 unsafe {
-                    core::slice::from_raw_parts(src_paddr as *const u8, PAGE_SIZE)
+                    core::slice::from_raw_parts(src_paddr, PAGE_SIZE)
                 }
             );
         }
