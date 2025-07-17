@@ -9,6 +9,7 @@ use crate::task::INITPROC;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use hashbrown::HashSet;
 use lazy_static::*;
 use spin::{Lazy, Mutex};
 ///A array of `ProcessControlBlock` that is thread-safe
@@ -118,7 +119,24 @@ lazy_static! {
 /// Add a task to ready queue
 pub fn add_task(task: Arc<ProcessControlBlock>) {
     //debug!("kernel: TaskManager::add_task");
+    let tid = task.gettid();
+    if if_in_manager(tid) {
+        warn!("(add_task) tid: {} already in task manager", tid);
+        return;
+    }
+
     TASK_MANAGER.exclusive_access().add(task);
+    insert_in_manager(tid);
+}
+/// Take a process out of the ready queue
+pub fn fetch_task() -> Option<Arc<ProcessControlBlock>> {
+    //debug!("kernel: TaskManager::fetch_task");
+    if let Some(task) = TASK_MANAGER.exclusive_access().fetch() {
+        remove_from_manager(task.gettid());
+        return Some(task);
+    } else {
+        None
+    }
 }
 /// Add a task to block queue
 pub fn add_block_task(task: Arc<ProcessControlBlock>) {
@@ -191,11 +209,6 @@ pub fn remove_from_tid2task(tid: usize) {
     info!("(remove_from_tid2task) tid: {}", tid);
     TID_TO_TASK.exclusive_access().remove(&tid);
 }
-/// Take a process out of the ready queue
-pub fn fetch_task() -> Option<Arc<ProcessControlBlock>> {
-    //debug!("kernel: TaskManager::fetch_task");
-    TASK_MANAGER.exclusive_access().fetch()
-}
 
 // process num
 pub fn process_num() -> usize {
@@ -211,7 +224,9 @@ lazy_static! {
     /// 进程组实现
     pub static ref PROCESS_GROUP: UPSafeCell<BTreeMap<usize, Vec<Arc<ProcessControlBlock>>>> =
         unsafe { UPSafeCell::new(BTreeMap::new()) };
-
+    /// TID_IN is a set of thread ids that are currently in the system
+    pub static ref TID_IN: UPSafeCell<HashSet<usize>> = 
+        unsafe { UPSafeCell::new(HashSet::new()) };
 }
 
 pub fn insert_into_thread_group(pid: usize, process: &Arc<ProcessControlBlock>) {
@@ -252,4 +267,16 @@ pub fn move_child_process_to_init(ppid: usize) {
             init_childer.push(child);
         }
     }
+}
+
+pub fn if_in_manager(tid: usize) -> bool {
+    TID_IN.exclusive_access().contains(&tid)
+}
+
+pub fn insert_in_manager(tid: usize) {
+    TID_IN.exclusive_access().insert(tid);
+}
+
+pub fn remove_from_manager(tid: usize) {
+    TID_IN.exclusive_access().remove(&tid);
 }

@@ -4,8 +4,7 @@ use crate::mm::{shm_attach, shm_create, shm_drop, shm_find, MemorySet, ShmFlags}
 use crate::signal::{send_access_signal, send_signal_to_thread_group};
 use crate::syscall::{FutexCmd, FutexOpt};
 use crate::task::{
-    exit_current_group_and_run_next, futex_wait, futex_wake_up, move_child_process_to_init,
-    remove_all_from_thread_group, FutexKey, PROCESS_GROUP, futex_requeue};
+    exit_current_group_and_run_next, futex_requeue, futex_wait, futex_wake_up, move_child_process_to_init, remove_all_from_thread_group, FutexKey, ProcessControlBlock, PROCESS_GROUP};
 use crate::timer::{add_timer, get_time_ms, TimeSpec};
 use crate::{
     config::PAGE_SIZE,
@@ -178,12 +177,10 @@ pub fn sys_fork(
         tls_ptr,
         child_tid_ptr as *mut u32,
     );
-    //debug!("sys_fork: current process pid is : {}",current_task.getpid());
-    let new_pid = new_process.getpid();
-    debug!("(sys_fork) the new pid is :{}", new_pid);
-
-    //debug!("sys_fork: the new pid is : {}",new_pid);
-    new_pid as isize
+    let new_tid = new_process.gettid();
+    debug!("(sys_fork) the new tid is :{}", new_tid);
+    add_task(new_process);
+    new_tid as isize
 }
 /// exec syscall
 pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize) -> isize {
@@ -320,12 +317,12 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 /// block to wait
-pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize {
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: i32) -> isize {
     //debug!("kernel: sys_waitpid");
     if (pid as i32) == i32::MIN {
         return SysErrNo::ESRCH as isize;
     }
-    if options > 100 { // ignore options < 0, usize
+    if options < 0 || options > 100 {
         return SysErrNo::EINVAL as isize;
     }
     loop {
@@ -336,10 +333,11 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
             return SysErrNo::ECHILD as isize;
         }
         // 放入 Fork 出来的子进程
-        let children = process_group.get_mut(&process.getpid()).unwrap();
+        let children: &mut Vec<Arc<ProcessControlBlock>> = process_group.get_mut(&process.getpid()).unwrap();
         if !children.iter().any(|p| pid == -1 || pid as usize == p.getpid()) {
             return SysErrNo::ECHILD as isize;
         }
+        info!("sys_waitpid: process {} is waiting for child pid {}", process.getpid(), pid);
         // 寻找符合条件的进程组
         let pair = children
             .iter()

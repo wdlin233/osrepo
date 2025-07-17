@@ -47,6 +47,7 @@ pub use processor::{
 pub use futex::{FutexKey, futex_wait, futex_wake_up, futex_requeue};
 
 use core::arch::{asm, global_asm};
+use core::sync::atomic::AtomicU32;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -155,13 +156,6 @@ pub fn remove_inactive_task(task: Arc<ProcessControlBlock>) {
     //将主线程退出的那些处于等待的子线程也删除掉
 }
 
-pub fn current_uid() -> u32 {
-    //CUR_UID.load(core::sync::atomic::Ordering::SeqCst)
-    //unimplemented!()
-    let current = current_task().unwrap();
-    current.getuid() as u32
-}
-
 pub fn exit_current_group_and_run_next(exit_code: i32) {
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
@@ -180,4 +174,14 @@ pub fn exit_current_group_and_run_next(exit_code: i32) {
     }
 
     exit_current_and_run_next(exit_code);
+}
+
+pub static CURRENT_UID: Lazy<AtomicU32> = Lazy::new(|| AtomicU32::new(0));
+
+pub fn current_uid() -> u32 {
+    CURRENT_UID.load(core::sync::atomic::Ordering::SeqCst)
+}
+
+pub fn change_current_uid(uid: u32) {
+    CURRENT_UID.store(uid, core::sync::atomic::Ordering::SeqCst);
 }

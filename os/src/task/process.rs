@@ -18,7 +18,7 @@ use crate::sync::UPSafeCell;
 use crate::syscall::CloneFlags;
 use crate::task::alloc::kernel_stack_position;
 use crate::task::manager::insert_into_thread_group;
-use crate::task::{KernelStack};
+use crate::task::{insert_into_process_group, KernelStack};
 use crate::timer::get_time;
 use crate::trap::trap_entry;
 use crate::users::{current_user, User};
@@ -29,6 +29,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use polyhal::pagetable::{PAGE_SIZE, TLB};
 use polyhal::{MappingFlags, PhysAddr, VirtAddr};
+use polyhal_trap::trap;
 use core::arch::asm;
 use core::cell::RefMut;
 
@@ -570,7 +571,7 @@ impl ProcessControlBlock {
         flags: CloneFlags,
         stack: usize,
         _parent_tid: *mut u32,
-        _tls: usize,
+        tls: usize,
         child_tid: *mut u32,
     ) -> Arc<Self> {
         let user = self.user.clone();
@@ -677,10 +678,11 @@ impl ProcessControlBlock {
         } else {
             inner.clone_user_res(&parent);
             info!("(ProcessControlBlock, fork) clone user res ok");
-            inner.get_trap_cx()[TrapFrameArgs::ARG0] = 0; // 应该是这么写吧
+            inner.get_trap_cx()[TrapFrameArgs::RET] = 0; // 应该是这么写吧
         }
         debug!("(ProcessControlBlock, fork) child trap_cx: {:#?}", inner.get_trap_cx());
-        // let trap_cx = inner.get_trap_cx();
+        
+        let trap_cx = inner.get_trap_cx();
         // trap_cx.kernel_sp = kernel_stack_top;
         // 实际上就是 trap_cx.kernel_sp = task.kstack.get_top();
         if stack != 0 {
@@ -688,7 +690,7 @@ impl ProcessControlBlock {
         }
         if flags.contains(CloneFlags::CLONE_SETTLS) {
             // 这里的 tls 是指线程局部存储
-            unimplemented!("[ProcessControlBlock, fork] CLONE_SETTLS not implemented yet");
+            trap_cx[TrapFrameArgs::TLS] = tls;  
         }
         if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
             unimplemented!("[ProcessControlBlock, fork] CLONE_CHILD_SETTID not implemented yet");
@@ -698,7 +700,7 @@ impl ProcessControlBlock {
         insert_into_tid2task(child.gettid(), &child);
         insert_into_thread_group(child.pid, &child);
         if !flags.contains(CloneFlags::CLONE_THREAD) {
-            unimplemented!("[ProcessControlBlock, fork] CLONE_THREAD not implemented yet");
+            insert_into_process_group(child.getppid(), &child);
         }
         child
     }
