@@ -10,9 +10,9 @@ use core::{
 use crate::config::CLOCK_FREQ;
 use crate::sync::UPSafeCell;
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
-use crate::task::ProcessControlBlock;
+use crate::task::{wakeup_futex_task, ProcessControlBlock};
 use alloc::collections::BinaryHeap;
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use lazy_static::*;
 use polyhal::Time;
 
@@ -158,12 +158,20 @@ pub fn get_time_us() -> usize {
     Time::now().to_usec()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum TimerType {
+    Futex,
+    Stopped,
+}
+
 /// condvar for timer
 pub struct TimerCondVar {
     /// The time when the timer expires, in milliseconds
     pub expire_ms: usize,
     /// The task to be woken up when the timer expires
-    pub task: Arc<ProcessControlBlock>,
+    pub task: Weak<ProcessControlBlock>,
+    /// The type of the timer
+    pub timer_type: TimerType,
 }
 
 impl PartialEq for TimerCondVar {
@@ -193,28 +201,34 @@ lazy_static! {
 }
 
 /// Add a timer
-pub fn add_timer(expire_ms: usize, task: Arc<ProcessControlBlock>) {
+pub fn add_futex_timer(expire_ms: usize, task: Arc<ProcessControlBlock>) {
     // trace!(
     //     "kernel:pid[{}] add_timer",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
     let mut timers = TIMERS.exclusive_access();
-    timers.push(TimerCondVar { expire_ms, task });
+    timers.push(TimerCondVar { expire_ms, task: Arc::downgrade(&task), timer_type: TimerType::Futex });
+}
+
+pub fn add_stopped_timer(expire_ms: usize, task: Arc<ProcessControlBlock>) {
+    let mut timers = TIMERS.exclusive_access();
+    timers.push(TimerCondVar { expire_ms, task: Arc::downgrade(&task), timer_type: TimerType::Stopped });
 }
 
 /// Remove a timer
-pub fn remove_timer(task: Arc<ProcessControlBlock>) {
+pub fn remove_timer(_task: Arc<ProcessControlBlock>) {
     //trace!("kernel:pid[{}] remove_timer", current_task().unwrap().process.upgrade().unwrap().getpid());
     //trace!("kernel: remove_timer");
-    let mut timers = TIMERS.exclusive_access();
-    let mut temp = BinaryHeap::<TimerCondVar>::new();
-    for condvar in timers.drain() {
-        if Arc::as_ptr(&task) != Arc::as_ptr(&condvar.task) {
-            temp.push(condvar);
-        }
-    }
-    timers.clear();
-    timers.append(&mut temp);
+    unimplemented!("remove_timer is not implemented yet");
+    // let mut timers = TIMERS.exclusive_access();
+    // let mut temp = BinaryHeap::<TimerCondVar>::new();
+    // for condvar in timers.drain() {
+    //     if Arc::as_ptr(&task) != Arc::as_ptr(&condvar.task) {
+    //         temp.push(condvar);
+    //     }
+    // }
+    // timers.clear();
+    // timers.append(&mut temp);
     //trace!("kernel: remove_timer END");
 }
 
@@ -228,15 +242,15 @@ pub fn check_timer() {
     let mut timers = TIMERS.exclusive_access();
     while let Some(timer) = timers.peek() {
         if timer.expire_ms <= current_ms {
-            #[cfg(target_arch = "riscv64")]
-            {
-                use crate::task::wakeup_task;
-                wakeup_task(Arc::clone(&timer.task));
-            }
-            #[cfg(target_arch = "loongarch64")]
-            {
-                use crate::task::add_task;
-                add_task(Arc::clone(&timer.task));
+            if let Some(task) = timer.task.upgrade() {
+                debug!("kernel: check_timer: wake up task pid {} tid {}", task.getpid(), task.gettid());
+                if timer.timer_type == TimerType::Futex {
+                    // Wake up futex waiters
+                    wakeup_futex_task(Arc::clone(&task));
+                } else if timer.timer_type == TimerType::Stopped {
+                    // Wake up stopped task
+                    unimplemented!("Stopped timer is not implemented yet");
+                }
             }
             timers.pop();
         } else {

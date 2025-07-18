@@ -70,14 +70,12 @@ pub fn run_tasks() {
         //let mut processor = PROCESSOR.exclusive_access();
         //let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
         //info!("(run_tasks) idle task cx ptr: {:p}", idle_task_cx_ptr);
+        info!("(run_tasks) in run_tasks loop beginning.");
         if let Some(current_task) = take_current_task() {
             let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
         
-            debug!(
-                "(run_tasks) current task"
-            );
             let mut current_inner = current_task.inner_exclusive_access();
-            // TODO: check if the task is still running
+            check_timer();
             if let Some(next_task) = fetch_task() {
                 debug!(
                     "(run_tasks) next task tid: {}, pid: {}",

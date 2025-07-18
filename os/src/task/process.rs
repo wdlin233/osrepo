@@ -641,6 +641,10 @@ impl ProcessControlBlock {
         if flags.contains(CloneFlags::CLONE_PARENT) {
             ppid = self.ppid;
         }
+        debug!(
+            "(ProcessControlBlock, fork) create child, pid: {}, ppid: {}, tid: {}",
+            pid, ppid, tid_handle.0
+        );
         let child = Arc::new(Self {
             tid: tid_handle,
             ppid,
@@ -680,7 +684,7 @@ impl ProcessControlBlock {
             info!("(ProcessControlBlock, fork) clone user res ok");
             inner.get_trap_cx()[TrapFrameArgs::RET] = 0; // 应该是这么写吧
         }
-        debug!("(ProcessControlBlock, fork) child trap_cx: {:#?}", inner.get_trap_cx());
+        //debug!("(ProcessControlBlock, fork) child trap_cx: {:#?}", inner.get_trap_cx());
         
         let trap_cx = inner.get_trap_cx();
         // trap_cx.kernel_sp = kernel_stack_top;

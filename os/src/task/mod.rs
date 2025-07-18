@@ -51,6 +51,7 @@ use core::sync::atomic::AtomicU32;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
+    info!("(suspend_current_and_run_next) suspending current task and running next task");
     // There must be an application running.
     let task = take_current_task().unwrap();
 
@@ -70,6 +71,7 @@ pub fn suspend_current_and_run_next() {
 
 /// Make current task blocked and switch to the next task.
 pub fn block_current_and_run_next() {
+    info!("(block_current_and_run_next) blocking current task and running next task");
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let task_cx_ptr = &mut task_inner.task_cx as *mut KContext;
@@ -84,6 +86,7 @@ use crate::board::QEMUExit;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
+    info!("(exit_current_and_run_next) exit code: {}", exit_code);
     let task = take_current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
 

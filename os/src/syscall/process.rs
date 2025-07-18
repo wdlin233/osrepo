@@ -5,7 +5,7 @@ use crate::signal::{send_access_signal, send_signal_to_thread_group};
 use crate::syscall::{FutexCmd, FutexOpt};
 use crate::task::{
     exit_current_group_and_run_next, futex_requeue, futex_wait, futex_wake_up, move_child_process_to_init, remove_all_from_thread_group, FutexKey, ProcessControlBlock, PROCESS_GROUP};
-use crate::timer::{add_timer, get_time_ms, TimeSpec};
+use crate::timer::{add_futex_timer, get_time_ms, TimeSpec};
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
@@ -89,9 +89,9 @@ pub fn sys_futex(
                     tv_sec: time / 1000,
                     tv_nsec: (time % 1000) * 1000000,
                 };
-                add_timer(
+                add_futex_timer(
                     (timespec.tv_sec + timeout.tv_sec) * 1000,
-                    current_task().unwrap(),
+                    current_task().unwrap(),    
                 );
             }
             drop(inner);
