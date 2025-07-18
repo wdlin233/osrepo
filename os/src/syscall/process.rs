@@ -233,27 +233,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             path = String::from("/glibc/busybox");
         }
 
-        // 处理argv参数
-        loop {
-            let argv_ptr = *args;
-            if argv_ptr == 0 {
-                break;
-            }
-            argv.push(c_ptr_to_string(argv_ptr as *const u8));
-            args = args.add(1);
-        }
         debug!("to deal the argv");
-        if !envp.is_null() {
-            loop {
-                let envp_ptr = *envp;
-                if envp_ptr == 0 {
-                    break;
-                }
-                env.push(c_ptr_to_string(envp_ptr as *const u8));
-                envp = envp.add(1);
-            }
-        }
-
         loop {
             let arg_str_ptr = *translated_ref(args);
             if arg_str_ptr == 0 {

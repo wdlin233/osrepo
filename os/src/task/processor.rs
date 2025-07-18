@@ -120,15 +120,15 @@ pub fn run_tasks() {
                 let token = task_inner.memory_set.token_pt(); // activate memoryset
                 drop(task_inner);
                 PROCESSOR.exclusive_access().current = Some(task);
-                info!(
-                    "(run_tasks) switching from idle task cx ptr: {:p} to next task cx ptr: {:p}",
-                    idle_task_cx_ptr, next_task_cx_ptr
-                );
+                // info!(
+                //     "(run_tasks) switching from idle task cx ptr: {:p} to next task cx ptr: {:p}",
+                //     idle_task_cx_ptr, next_task_cx_ptr
+                // );
                 unsafe {
                     context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, token);
                 }
                 check_timer();
-                debug!("switch ok");
+                //debug!("switch ok");
             }
         }
     }

@@ -224,8 +224,8 @@ pub fn flush_preload() {
 }
 
 pub fn init() {
-    flush_preload();
-    //create_init_files();
+    //flush_preload();
+    create_init_files();
     // TODO(ZMY):为了过libc-test utime的权宜之计,读取RTC太麻烦了
     //root_inode().set_timestamps(Some(0), Some(0), Some(0));
 }
@@ -481,7 +481,7 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
         abs_path = map_dynamic_link_file(abs_path);
         // log::info!("dynamic path={}", abs_path);
     }
-    // debug!("open file: {}, flags: {:?}", abs_path, flags);
+    debug!("open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {

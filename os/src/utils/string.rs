@@ -64,16 +64,16 @@ pub fn get_abs_path(base_path: &str, path: &str) -> String {
 pub fn c_ptr_to_string(c_ptr: *const u8) -> String {
     let mut res = String::new();
     let mut i = 0;
-    debug!("in ptr to string");
+    //debug!("in ptr to string");
     loop {
         let c = unsafe { *c_ptr.add(i) };
-        debug!("add ok");
+        //debug!("add ok");
         if c == 0 {
             break;
         }
         res.push(c as char);
         i += 1;
     }
-    debug!("ptr to string ok");
+    //debug!("ptr to string ok");
     res
 }

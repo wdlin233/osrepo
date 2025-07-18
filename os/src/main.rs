@@ -47,22 +47,26 @@ pub mod mm;
 pub mod signal;
 pub mod sync;
 pub mod syscall;
+pub mod system;
 pub mod task;
 pub mod timer;
-pub mod utils;
 pub mod trap;
-pub mod system;
 pub mod users;
+pub mod utils;
 
-use crate::{config::KERNEL_ADDR_OFFSET, syscall::syscall, task::{current_task, suspend_current_and_run_next}};
+use crate::{
+    config::KERNEL_ADDR_OFFSET,
+    syscall::syscall,
+    task::{current_task, suspend_current_and_run_next},
+};
 use config::FLAG;
 
-use polyhal_trap::trap::TrapType::{self, *};
-use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
-use polyhal_boot::define_entry;
+use core::arch::{asm, global_asm, naked_asm};
 use polyhal::percpu::get_local_thread_pointer;
 use polyhal::{percpu, println};
-use core::arch::{asm, global_asm, naked_asm};
+use polyhal_boot::define_entry;
+use polyhal_trap::trap::TrapType::{self, *};
+use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
 
 #[no_mangle]
 pub fn main(hartid: usize) -> ! {
@@ -78,6 +82,7 @@ pub fn main(hartid: usize) -> ! {
     fs::list_apps();
     task::init_kernel_page();
     task::add_initproc();
+    fs::init();
     task::run_tasks();
     panic!("Unreachable section for kernel!");
 }
@@ -101,6 +106,5 @@ fn secondary(hartid: usize) {
     println!("Secondary Hart ID: {}", hartid);
     loop {}
 }
-
 
 define_entry!(main, secondary);
