@@ -205,6 +205,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         //debug!("in unsafe");
         drop(inner);
         debug!("the pathp is :{:?}", pathp);
+        //debug!("the path is :{}", c_ptr_to_string(pathp));
         debug!("the path is :{}", translated_str(pathp));
         path = trim_start_slash(translated_str(pathp));
         debug!("trim path ok,the path is :{}", path);
@@ -275,8 +276,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
                 envp = envp.add(1);
             }
         }
+        drop(inner);
     }
-    let inner = current_task.inner_exclusive_access();
+
     let env_path = "PATH=/:/bin:".to_string();
     if !env.contains(&env_path) {
         env.push(env_path);
@@ -292,6 +294,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         //设置系统最大负载
         env.push(env_enough);
     }
+    let inner = current_task.inner_exclusive_access();
     let cwd = if !path.starts_with('/') {
         debug!("the path is not start with / ");
         inner.fs_info.cwd()

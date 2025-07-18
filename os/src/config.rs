@@ -55,7 +55,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 //#[cfg(target_arch = "riscv64")]
 /// user app's stack size
-pub const USER_STACK_SIZE: usize = 1024 * 1024 * 8;
+pub const USER_STACK_SIZE: usize = 4 * 1024 * 8;
 //#[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;

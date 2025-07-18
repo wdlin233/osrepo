@@ -1,0 +1,9 @@
+make[1]: Entering directory '/home/molinwu/osrepo/user'
+rustup target add riscv64gc-unknown-none-elf
+target/riscv64gc-unknown-none-elf/release/initproc target/riscv64gc-unknown-none-elf/release/test_waitpid target/riscv64gc-unknown-none-elf/release/user_shell target/riscv64gc-unknown-none-elf/release/usertest
+cargo build --release
+make[1]: Leaving directory '/home/molinwu/osrepo/user'
+make[1]: Entering directory '/home/molinwu/osrepo/os'
+(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add riscv64gc-unknown-none-elf
+riscv64gc-unknown-none-elf (installed)
+cargo install cargo-binutils

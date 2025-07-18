@@ -953,7 +953,7 @@ impl MemorySetInner {
         VirtAddr::from(start_vpn).raw()
     }
     pub fn cow_page_fault(&mut self, vpn: VirtAddr, scause: TrapType) -> bool {
-        //info!("cow_page_fault: vpn = {:#x}", vpn.0);
+        debug!("in cow page fault");
         if matches!(scause, TrapType::LoadPageFault(_addr))
             || matches!(scause, TrapType::InstructionPageFault(_addr))
         {
@@ -975,8 +975,19 @@ impl MemorySetInner {
                 start <= vpn && vpn < end
             })
         {
+            debug!("find cow");
+            if area.area_type == MapAreaType::Elf {
+                debug!("elf");
+            }
+            if area.area_type == MapAreaType::Brk {
+                debug!("brk");
+            }
+            if area.area_type == MapAreaType::Mmap {
+                debug!("mmap");
+            }
             if let Some((_paddr, flags)) = self.page_table.translate(vpn) {
                 if flags.contains(MappingFlags::Cow) {
+                    debug!("is cow,to deal");
                     cow_page_fault(vpn.into(), &mut self.page_table, area);
                 }
                 return true;

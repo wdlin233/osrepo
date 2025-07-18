@@ -46,6 +46,7 @@ use sbi_spec::hsm::{EID_HSM, HART_GET_STATUS, HART_START, HART_STOP, HART_SUSPEN
 /// This function is defined in RISC-V SBI Specification chapter 9.1.
 #[inline]
 pub fn hart_start(hartid: usize, start_addr: usize, opaque: usize) -> SbiRet {
+    //let start_addr = 0x80200000;
     sbi_call_3(EID_HSM, HART_START, hartid, start_addr, opaque)
 }
 

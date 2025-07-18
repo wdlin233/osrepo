@@ -37,12 +37,6 @@ pub fn trap_entry() {
 #[polyhal::arch_interrupt]
 fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
     trace!("trap_type @ {:x?} {:#x?}", trap_type, ctx);
-    // let in_kernel_time = get_time();
-    // current_task()
-    //     .unwrap()
-    //     .inner_exclusive_access()
-    //     .set_utime(in_kernel_time);
-
     match trap_type {
         Breakpoint => return,
         SysCall => {
@@ -52,7 +46,10 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
             let args = ctx.args();
             // get system call return value
             // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
-
+            debug!(
+                "in syscall, the args is : {}, {}, {}, {}, {}, {}",
+                args[0], args[1], args[2], args[3], args[4], args[5]
+            );
             let result = syscall(
                 ctx[TrapFrameArgs::SYSCALL],
                 [args[0], args[1], args[2], args[3], args[4], args[5]],
@@ -65,8 +62,9 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
             {
                 debug!("in page fault trap");
                 let process = current_task().unwrap();
+                debug!("get process ok");
                 let inner = process.inner_exclusive_access();
-                debug!("233");
+                debug!("get inner ok");
                 res = inner
                     .memory_set
                     .lazy_page_fault(VirtAddr::from(paddr).floor(), trap_type);

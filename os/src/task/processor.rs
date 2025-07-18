@@ -142,7 +142,7 @@ pub fn take_current_task() -> Option<Arc<ProcessControlBlock>> {
 
 /// Get a copy of the current task
 pub fn current_task() -> Option<Arc<ProcessControlBlock>> {
-    debug!("to get processor");
+    //debug!("to get processor");
     PROCESSOR.exclusive_access().current()
 }
 

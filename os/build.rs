@@ -17,7 +17,7 @@ fn gen_linker_script() -> Result<()> {
     let ld_content = std::fs::read_to_string("linker.lds")?;
     let ld_content = ld_content.replace("%ARCH%", output_arch);
     let ld_content = ld_content.replace("%KERNEL_BASE%", kernel_base);
-    
+
     std::fs::write(&fname, ld_content)?;
     println!("cargo:rustc-link-arg=-T{}", fname);
     println!("cargo:rerun-if-env-changed=CARGO_CFG_KERNEL_BASE");
