@@ -2,10 +2,15 @@
 use super::frame_alloc;
 use super::MapType;
 use crate::config::{
-    DL_INTERP_OFFSET, KERNEL_ADDR_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE
+    DL_INTERP_OFFSET, KERNEL_ADDR_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, USER_HEAP_BOTTOM,
+    USER_HEAP_SIZE,
 };
-use crate::fs::{map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlags, NONE_MODE, SEEK_CUR, SEEK_SET};
+use crate::fs::{
+    map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlags, NONE_MODE, SEEK_CUR,
+    SEEK_SET,
+};
 use crate::mm::addr_range::VAddrRange;
+use crate::mm::frame_allocator::FrameTracker;
 use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
@@ -23,6 +28,9 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::arch::asm;
+use core::error;
+use lazy_static::*;
 use polyhal::pagetable::PTEFlags;
 use polyhal::pagetable::TLB;
 use polyhal::MappingFlags;
@@ -31,11 +39,7 @@ use polyhal::PhysAddr;
 use polyhal::VirtAddr;
 use polyhal::{PageTable, PageTableWrapper};
 use polyhal_trap::trap::TrapType;
-use core::arch::asm;
-use core::error;
-use lazy_static::*;
 use xmas_elf::ElfFile;
- use crate::mm::frame_allocator::FrameTracker;
 
 pub struct MemorySet {
     /// inner data
@@ -57,7 +61,7 @@ impl MemorySet {
         self.inner.get_unchecked_ref()
     }
     #[inline(always)]
-    pub fn token(&self) ->  Arc<PageTableWrapper> {
+    pub fn token(&self) -> Arc<PageTableWrapper> {
         self.inner.get_unchecked_mut().token()
     }
     #[inline(always)]
@@ -89,8 +93,7 @@ impl MemorySet {
     }
     #[inline(always)]
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
-        let (memory_set, user_heap_bottom, entry_point, auxv) =
-            MemorySetInner::from_elf(elf_data);
+        let (memory_set, user_heap_bottom, entry_point, auxv) = MemorySetInner::from_elf(elf_data);
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
@@ -136,12 +139,7 @@ impl MemorySet {
         self.inner.get_unchecked_mut().cow_page_fault(vpn, scause)
     }
     #[inline(always)]
-    pub fn mprotect(
-        &mut self,
-        start_vpn: VirtAddr,
-        end_vpn: VirtAddr,
-        map_perm: MapPermission,
-    ) {
+    pub fn mprotect(&mut self, start_vpn: VirtAddr, end_vpn: VirtAddr, map_perm: MapPermission) {
         self.inner
             .get_unchecked_mut()
             .mprotect(start_vpn, end_vpn, map_perm);
@@ -171,28 +169,23 @@ impl MemorySet {
             .lazy_insert_framed_area_with_hint(hint, size, map_perm, area_type)
     }
     #[inline(always)]
-    pub fn lazy_clone_area(
-        &self,
-        start_vpn: VirtAddr,
-        another: &MemorySetInner,
-    ) {
-        self.get_mut()
-            .lazy_clone_area(start_vpn, another)
+    pub fn lazy_clone_area(&self, start_vpn: VirtAddr, another: &MemorySetInner) {
+        self.get_mut().lazy_clone_area(start_vpn, another)
     }
     #[inline(always)]
     pub fn recycle(&mut self) -> SyscallRet {
         self.inner.get_unchecked_mut().recycle_data_pages()
     }
     #[inline(always)]
-    pub fn translate(
-        &self,
-        vpn: VirtAddr,
-    ) -> Option<(PhysAddr, MappingFlags)> {
+    pub fn translate(&self, vpn: VirtAddr) -> Option<(PhysAddr, MappingFlags)> {
         self.inner.get_unchecked_ref().translate(vpn)
     }
     #[inline(always)]
     pub fn shm(
-        &self, addr: usize, size: usize, map_perm: MapPermission,
+        &self,
+        addr: usize,
+        size: usize,
+        map_perm: MapPermission,
         pages: Vec<Arc<FrameTracker>>,
     ) -> usize {
         self.get_mut().shm(addr, size, map_perm, pages)
@@ -348,12 +341,7 @@ impl MemorySetInner {
             MapAreaType::Brk,
         );
         // 返回 address空间,用户栈顶,入口地址
-        (
-            memory_set,
-            user_heap_bottom,
-            entry_point,
-            auxv,
-        )
+        (memory_set, user_heap_bottom, entry_point, auxv)
     }
     fn map_elf(&mut self, elf: &ElfFile, offset: VirtAddr) -> (VirtAddr, VirtAddr) {
         let elf_header = elf.header;
@@ -368,7 +356,8 @@ impl MemorySetInner {
             let ph = elf.program_header(i).unwrap();
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize + offset.raw()).into();
-                let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize + offset.raw()).into();
+                let end_va: VirtAddr =
+                    ((ph.virtual_addr() + ph.mem_size()) as usize + offset.raw()).into();
                 debug!("start_va {} end_va {}", start_va, end_va);
                 if !has_found_header_va {
                     head_va = start_va.raw();
@@ -386,11 +375,11 @@ impl MemorySetInner {
                     map_perm |= MapPermission::X;
                 }
                 let map_area = MapArea::new(
-                    start_va, 
-                    end_va, 
+                    start_va,
+                    end_va,
                     MapType::Framed,
-                    map_perm, 
-                    MapAreaType::Elf
+                    map_perm,
+                    MapAreaType::Elf,
                 );
                 let data_offset = start_va.raw() - start_va.floor().raw();
                 max_end_vpn = map_area.vaddr_range.get_end();
@@ -410,12 +399,11 @@ impl MemorySetInner {
         let mut memory_set = Self::new_bare();
         // copy data sections/trap_context/user_stack
         for area in user_space.get_mut().areas.iter_mut() {
-            
             if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
                 continue;
             }
             let mut new_area = MapArea::from_another(area);
-            if area.area_type == MapAreaType::Mmap 
+            if area.area_type == MapAreaType::Mmap
                 && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
             {
                 GROUP_SHARE.lock().add_area(new_area.groupid);
@@ -431,7 +419,8 @@ impl MemorySetInner {
                 new_area.data_frames = area.data_frames.clone();
                 for (vpn, _) in area.data_frames.iter() {
                     let vpn = *vpn;
-                    let (src_ppn, mut pte_flags) = user_space.get_mut().page_table.translate(vpn).unwrap();
+                    let (src_ppn, mut pte_flags) =
+                        user_space.get_mut().page_table.translate(vpn).unwrap();
                     //清空可写位，设置COW位
                     //下面两步不合起来是因为flags只有8位，全都用掉了
                     //所以Cow位没有放到flags里面
@@ -443,7 +432,9 @@ impl MemorySetInner {
                     }
                     user_space.get_mut().page_table.set_flags(vpn, pte_flags);
                     // 设置新的pagetable
-                    memory_set.page_table.map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
+                    memory_set
+                        .page_table
+                        .map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
                 }
                 memory_set.push_lazily(new_area);
                 continue;
@@ -458,12 +449,11 @@ impl MemorySetInner {
                     //下面两步不合起来是因为flags只有8位，全都用掉了
                     //所以Cow位没有放到flags里面
                     pte_flags |= MappingFlags::Cow;
-                    user_space
-                        .get_mut()
-                        .page_table
-                        .set_flags(vpn, pte_flags);
+                    user_space.get_mut().page_table.set_flags(vpn, pte_flags);
                     // 设置新的pagetable
-                    memory_set.page_table.map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
+                    memory_set
+                        .page_table
+                        .map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
                 }
                 new_area.data_frames = area.data_frames.clone();
                 memory_set.push_lazily(new_area);
@@ -483,17 +473,11 @@ impl MemorySetInner {
             for vpn in area.vaddr_range {
                 let src_ppn = user_space.translate(vpn).unwrap().0;
                 let dst_ppn = memory_set.translate(vpn).unwrap().0;
-                let dst = unsafe {
-                    core::slice::from_raw_parts_mut(dst_ppn.raw() as *mut u8, PAGE_SIZE)
-                };
-                dst.copy_from_slice(
-                    unsafe {
-                        core::slice::from_raw_parts(
-                            src_ppn.raw() as *const u8,
-                            PAGE_SIZE,
-                        )
-                    }
-                );
+                let dst =
+                    unsafe { core::slice::from_raw_parts_mut(dst_ppn.raw() as *mut u8, PAGE_SIZE) };
+                dst.copy_from_slice(unsafe {
+                    core::slice::from_raw_parts(src_ppn.raw() as *const u8, PAGE_SIZE)
+                });
             }
         }
         TLB::flush_all();
@@ -526,8 +510,7 @@ impl MemorySetInner {
                         .filter(|vpn| area.data_frames.contains_key(&vpn))
                         .count();
                     let file = area.mmap_file.file.clone().unwrap();
-                    let buffers =
-                            translated_byte_buffer(addr.raw() as *mut u8, mapped_len);
+                    let buffers = translated_byte_buffer(addr.raw() as *mut u8, mapped_len);
                     file.write(UserBuffer::new(vec![buffers]))?;
                 }
             }
@@ -577,6 +560,7 @@ impl MemorySetInner {
         //debug!("vpn={:#X},enter lazy", vpn.0);
         if flags.contains(MappingFlags::P) {
             // pte.is_some() && pte.unwrap().is_valid()
+            debug!("valid, to return");
             return false;
         }
         //println!("vpn={:#X},enter lazy2", vpn.0);
@@ -591,7 +575,10 @@ impl MemorySetInner {
             })
         {
             // println!("vpn={:#X},enter lazy3", vpn.0);
-            if matches!(scause, TrapType::LoadPageFault(_addr)) || matches!(scause, TrapType::InstructionPageFault(_addr)) {
+            debug!("to handle mmap");
+            if matches!(scause, TrapType::LoadPageFault(_addr))
+                || matches!(scause, TrapType::InstructionPageFault(_addr))
+            {
                 mmap_read_page_fault(vpn.into(), &mut self.page_table, area);
             } else {
                 mmap_write_page_fault(vpn.into(), &mut self.page_table, area);
@@ -611,6 +598,7 @@ impl MemorySetInner {
             })
         {
             //println!("vpn={:#X},enter lazy4", vpn.0);
+            debug!("to handler stack or brk");
             lazy_page_fault(vpn.into(), &mut self.page_table, area);
             return true;
         }
@@ -745,10 +733,7 @@ impl MemorySetInner {
         debug!("in memory set, munmap");
         let start_vpn = VirtAddr::from(addr).floor();
         let end_vpn = VirtAddr::from(addr + len).floor();
-        debug!(
-            "[MemorySet] start_vpn:{},end_vpn:{}",
-            start_vpn, end_vpn
-        );
+        debug!("[MemorySet] start_vpn:{},end_vpn:{}", start_vpn, end_vpn);
         while let Some((idx, area)) = self
             .areas
             .iter_mut()
@@ -807,8 +792,7 @@ impl MemorySetInner {
                         // let buf = UserBuffer::new_single(data_flow!({
                         //     core::slice::from_raw_parts_mut(start_addr as *mut u8, mapped_len)
                         // }));
-                        let buffers =
-                            translated_byte_buffer(start_addr as *mut u8, mapped_len);
+                        let buffers = translated_byte_buffer(start_addr as *mut u8, mapped_len);
                         let buf = UserBuffer::new(vec![buffers]);
 
                         file.lseek((start_addr - addr) as isize, SEEK_SET);
@@ -852,12 +836,7 @@ impl MemorySetInner {
         }
         0
     }
-    pub fn mprotect(
-        &mut self,
-        start_vpn: VirtAddr,
-        end_vpn: VirtAddr,
-        map_perm: MapPermission,
-    ) {
+    pub fn mprotect(&mut self, start_vpn: VirtAddr, end_vpn: VirtAddr, map_perm: MapPermission) {
         //因修改而新增的Area
         debug!(
             "(MemorySetInner, mprotect) start_vpn:{}, end_vpn:{}, map_perm:{:?}",
@@ -961,12 +940,13 @@ impl MemorySetInner {
         // );
         for area in self.areas.iter() {
             let (start, end) = area.vaddr_range.range();
-            if end_vpn > start && start_vpn < end { // 重叠部分的处理，至少一个共用页
+            if end_vpn > start && start_vpn < end {
+                // 重叠部分的处理，至少一个共用页
                 let new_hint = VirtAddr::from(start_vpn).raw() - PAGE_SIZE; // 页下移，再查找
-                // info!(
-                //     "find_insert_addr: hint = {:#x}, size = {}, new_hint = {:#x}",
-                //     hint, size, new_hint
-                // );
+                                                                            // info!(
+                                                                            //     "find_insert_addr: hint = {:#x}, size = {}, new_hint = {:#x}",
+                                                                            //     hint, size, new_hint
+                                                                            // );
                 return self.find_insert_addr(new_hint, size); // 递归查找
             }
         }
@@ -974,11 +954,13 @@ impl MemorySetInner {
     }
     pub fn cow_page_fault(&mut self, vpn: VirtAddr, scause: TrapType) -> bool {
         //info!("cow_page_fault: vpn = {:#x}", vpn.0);
-        if matches!(scause, TrapType::LoadPageFault(_addr)) || matches!(scause, TrapType::InstructionPageFault(_addr)){
+        if matches!(scause, TrapType::LoadPageFault(_addr))
+            || matches!(scause, TrapType::InstructionPageFault(_addr))
+        {
             // 只处理写时拷贝的情况
             // 如果是读时拷贝，直接返回false
             return false;
-        } 
+        }
         //找到触发cow的段
         if let Some(area) = self
             .areas
@@ -1004,9 +986,12 @@ impl MemorySetInner {
     }
     /// 惰性插入一段映射段
     pub fn lazy_insert_framed_area(
-        &mut self, start_va: VirtAddr, end_va: VirtAddr, 
-        map_perm: MapPermission, area_type: MapAreaType) 
-    {
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        map_perm: MapPermission,
+        area_type: MapAreaType,
+    ) {
         self.push_lazily(MapArea::new(
             start_va,
             end_va,
@@ -1017,21 +1002,26 @@ impl MemorySetInner {
     }
     /// 找到一段可以插入的地址，惰性插入映射，返回虚拟起始和结束地址
     pub fn lazy_insert_framed_area_with_hint(
-        &mut self, hint: usize, size: usize, 
-        map_perm: MapPermission, area_type: MapAreaType) -> (usize, usize) 
-    {
+        &mut self,
+        hint: usize,
+        size: usize,
+        map_perm: MapPermission,
+        area_type: MapAreaType,
+    ) -> (usize, usize) {
         let start_va = self.find_insert_addr(hint, size);
         let end_va = start_va + size;
         self.lazy_insert_framed_area(
-            VirtAddr::from(start_va), VirtAddr::from(end_va),
-            map_perm, area_type
+            VirtAddr::from(start_va),
+            VirtAddr::from(end_va),
+            map_perm,
+            area_type,
         );
         (start_va, end_va)
     }
     pub fn lazy_clone_area(&mut self, start_vpn: VirtAddr, another: &MemorySetInner) {
         let origin_page_table = self.token();
         let another_page_table = another.token();
-        
+
         let another_area = if let Some(area) = another
             .areas
             .iter()
@@ -1050,38 +1040,41 @@ impl MemorySetInner {
         } else {
             return;
         };
-        
+
         for vpn in another_area.vaddr_range {
             let (src_paddr, _src_flags, dst_paddr, _dst_flags);
             let another_res = another_page_table.translate(vpn);
             if another_res.is_none() || !another_res.unwrap().1.contains(MappingFlags::P) {
                 continue;
-            } 
+            }
             (src_paddr, _src_flags) = another_res.unwrap();
 
             let origin_res = origin_page_table.translate(vpn);
             if origin_res.is_none() || !origin_res.unwrap().1.contains(MappingFlags::P) {
                 this_area.map_one(&origin_page_table, vpn);
-            } 
+            }
             (dst_paddr, _dst_flags) = origin_res.unwrap();
-            
-            debug!("copying page: {}, src_paddr: {}, dst_paddr: {}", vpn, src_paddr, dst_paddr);
+
+            debug!(
+                "copying page: {}, src_paddr: {}, dst_paddr: {}",
+                vpn, src_paddr, dst_paddr
+            );
             // dst_ppn
             //   .bytes_array_mut()
             //   .copy_from_slice(src_ppn.bytes_array());
             let src_paddr: *const u8 = src_paddr.get_ptr::<u8>();
             let dst_paddr: *mut u8 = dst_paddr.get_mut_ptr::<u8>();
-            let dst_array = unsafe {
-                core::slice::from_raw_parts_mut(dst_paddr, PAGE_SIZE)
-            };
-            dst_array.copy_from_slice(
-                unsafe {
-                    core::slice::from_raw_parts(src_paddr, PAGE_SIZE)
-                }
-            );
+            let dst_array = unsafe { core::slice::from_raw_parts_mut(dst_paddr, PAGE_SIZE) };
+            dst_array.copy_from_slice(unsafe { core::slice::from_raw_parts(src_paddr, PAGE_SIZE) });
         }
     }
-    pub fn shm(&mut self, addr: usize, size: usize, map_perm: MapPermission, pages: Vec<Arc<FrameTracker>>) -> usize {
+    pub fn shm(
+        &mut self,
+        addr: usize,
+        size: usize,
+        map_perm: MapPermission,
+        pages: Vec<Arc<FrameTracker>>,
+    ) -> usize {
         if addr == 0 {
             let vaddr = self.find_insert_addr(MMAP_TOP, size);
             self.push_with_given_frames(

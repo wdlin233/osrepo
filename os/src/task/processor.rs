@@ -4,8 +4,8 @@
 //! the current running state of CPU is recorded,
 //! and the replacement and transfer of control flow of different applications are executed.
 
+use super::ProcessControlBlock;
 use super::{fetch_task, TaskStatus};
-use super::{ProcessControlBlock};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 use crate::mm::MapPermission;
@@ -14,11 +14,11 @@ use crate::syscall::MmapFlags;
 use crate::task::{add_task, change_current_uid, process};
 use crate::timer::check_timer;
 use alloc::sync::Arc;
+use core::arch::asm;
 use lazyinit::LazyInit;
 use polyhal::kcontext::{context_switch, context_switch_pt, KContext};
 use polyhal::{PageTable, PageTableWrapper};
 use polyhal_trap::trapframe::TrapFrame;
-use core::arch::asm;
 //use core::str::next_code_point;
 use lazy_static::*;
 
@@ -70,10 +70,10 @@ pub fn run_tasks() {
         //let mut processor = PROCESSOR.exclusive_access();
         //let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
         //info!("(run_tasks) idle task cx ptr: {:p}", idle_task_cx_ptr);
-        info!("(run_tasks) in run_tasks loop beginning.");
+        //info!("(run_tasks) in run_tasks loop beginning.");
         if let Some(current_task) = take_current_task() {
             let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
-        
+
             let mut current_inner = current_task.inner_exclusive_access();
             check_timer();
             if let Some(next_task) = fetch_task() {
@@ -92,7 +92,7 @@ pub fn run_tasks() {
                 PROCESSOR.exclusive_access().current = Some(next_task);
                 add_task(current_task);
                 unsafe {
-                    context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, next_token);    
+                    context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, next_token);
                 }
             } else {
                 debug!("(run_tasks) no next task, continue with current task");
@@ -106,14 +106,15 @@ pub fn run_tasks() {
             }
         } else {
             let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
-            info!("(run_tasks) it is first schedule, idle task cx ptr: {:p}", idle_task_cx_ptr);
+            // info!(
+            //     "(run_tasks) it is first schedule, idle task cx ptr: {:p}",
+            //     idle_task_cx_ptr
+            // );
             if let Some(task) = fetch_task() {
                 // access coming task TCB exclusively
                 let mut task_inner = task.inner_exclusive_access();
                 // TODO timer
-                task_inner
-                    .tms
-                    .set_begin();
+                task_inner.tms.set_begin();
                 let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
                 task_inner.task_status = TaskStatus::Running;
                 let token = task_inner.memory_set.token_pt(); // activate memoryset
@@ -121,13 +122,13 @@ pub fn run_tasks() {
                 PROCESSOR.exclusive_access().current = Some(task);
                 info!(
                     "(run_tasks) switching from idle task cx ptr: {:p} to next task cx ptr: {:p}",
-                    idle_task_cx_ptr,
-                    next_task_cx_ptr
+                    idle_task_cx_ptr, next_task_cx_ptr
                 );
                 unsafe {
                     context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, token);
                 }
                 check_timer();
+                debug!("switch ok");
             }
         }
     }
@@ -135,12 +136,13 @@ pub fn run_tasks() {
 
 /// Get current task through take, leaving a None in its place
 pub fn take_current_task() -> Option<Arc<ProcessControlBlock>> {
-    debug!("(take_current_task) taking current task");
+    //debug!("(take_current_task) taking current task");
     PROCESSOR.exclusive_access().take_current()
 }
 
 /// Get a copy of the current task
 pub fn current_task() -> Option<Arc<ProcessControlBlock>> {
+    debug!("to get processor");
     PROCESSOR.exclusive_access().current()
 }
 

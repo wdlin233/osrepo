@@ -2,7 +2,8 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
+    KERNEL_STACK_SIZE, KSTACK_TOP, PAGE_SIZE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
+    USER_TRAP_CONTEXT_TOP,
 };
 use crate::mm::{frame_alloc, translated_ref, FrameTracker, MapAreaType, MapPermission, MapType};
 use crate::sync::UPSafeCell;
@@ -85,8 +86,6 @@ impl Drop for HeapidHandle {
     }
 }
 
-
-
 /// pid wrapper
 pub struct PidHandle(pub usize);
 
@@ -102,8 +101,6 @@ impl Drop for PidHandle {
     }
 }
 
-
-
 /// tid wrapper
 pub struct TidHandle(pub usize);
 
@@ -117,8 +114,6 @@ impl Drop for TidHandle {
         TID_ALLOCATOR.exclusive_access().dealloc(self.0);
     }
 }
-
-
 
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
@@ -134,16 +129,14 @@ pub struct KernelStack {
 
 impl KernelStack {
     pub fn new(tid_handle: &TidHandle) -> Self {
-        KernelStack{
-            tid: tid_handle.0,
-        }
+        KernelStack { tid: tid_handle.0 }
     }
 
     /// return the top of the kernel stack
-    pub fn get_top(&self) -> usize {
+    pub fn get_top(&self) -> (usize, usize) {
         debug!("(KernelStack), get_top");
-        let (_, kernel_stack_top) = kernel_stack_position(self.tid);
-        kernel_stack_top
+        let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(self.tid);
+        (kernel_stack_bottom, kernel_stack_top)
     }
     ///
     pub fn pos(&self) -> (usize, usize) {
@@ -159,8 +152,6 @@ impl Drop for KernelStack {
     fn drop(&mut self) {
         let process = current_task().unwrap();
         let memory_set = process.inner_exclusive_access().memory_set.clone();
-        memory_set.remove_area_with_start_vpn(
-            self.bottom().into(),
-        );
+        memory_set.remove_area_with_start_vpn(self.bottom().into());
     }
 }

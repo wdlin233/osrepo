@@ -4,21 +4,23 @@ use crate::mm::{shm_attach, shm_create, shm_drop, shm_find, MemorySet, ShmFlags}
 use crate::signal::{send_access_signal, send_signal_to_thread_group};
 use crate::syscall::{FutexCmd, FutexOpt};
 use crate::task::{
-    exit_current_group_and_run_next, futex_requeue, futex_wait, futex_wake_up, move_child_process_to_init, remove_all_from_thread_group, FutexKey, ProcessControlBlock, PROCESS_GROUP};
+    exit_current_group_and_run_next, futex_requeue, futex_wait, futex_wake_up,
+    move_child_process_to_init, remove_all_from_thread_group, FutexKey, ProcessControlBlock,
+    PROCESS_GROUP,
+};
 use crate::timer::{add_futex_timer, get_time_ms, TimeSpec};
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
     mm::{
-        insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
-        translated_refmut, translated_str, MapPermission,
+        insert_bad_address, is_bad_address, remove_bad_address, translated_ref, translated_refmut,
+        translated_str, MapPermission,
     },
     signal::SignalFlags,
     syscall::{process, sys_result::SysInfo, MmapFlags, MmapProt},
     task::{
-        add_task, block_current_and_run_next, current_task,
-        exit_current_and_run_next, mmap, munmap, tid2task, process_num,
-        suspend_current_and_run_next, TmsInner,
+        add_task, block_current_and_run_next, current_task, exit_current_and_run_next, mmap,
+        munmap, process_num, suspend_current_and_run_next, tid2task, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -91,7 +93,7 @@ pub fn sys_futex(
                 };
                 add_futex_timer(
                     (timespec.tv_sec + timeout.tv_sec) * 1000,
-                    current_task().unwrap(),    
+                    current_task().unwrap(),
                 );
             }
             drop(inner);
@@ -201,10 +203,12 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let mut path;
     unsafe {
         //debug!("in unsafe");
+        drop(inner);
         debug!("the pathp is :{:?}", pathp);
         debug!("the path is :{}", translated_str(pathp));
         path = trim_start_slash(translated_str(pathp));
         debug!("trim path ok,the path is :{}", path);
+        let inner = current_task.inner_exclusive_access();
         if path.contains("/musl") {
             debug!("in set cwd");
             inner.fs_info.set_cwd(String::from("/musl"));
@@ -254,10 +258,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             if arg_str_ptr == 0 {
                 break;
             }
-            debug!(
-                "the argv is : {}",
-                translated_str(arg_str_ptr as *const u8)
-            );
+            debug!("the argv is : {}", translated_str(arg_str_ptr as *const u8));
             argv.push(translated_str(arg_str_ptr as *const u8));
             args = args.add(1);
         }
@@ -275,6 +276,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
             }
         }
     }
+    let inner = current_task.inner_exclusive_access();
     let env_path = "PATH=/:/bin:".to_string();
     if !env.contains(&env_path) {
         env.push(env_path);
@@ -333,22 +335,31 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: i32) -> isize {
             return SysErrNo::ECHILD as isize;
         }
         // 放入 Fork 出来的子进程
-        let children: &mut Vec<Arc<ProcessControlBlock>> = process_group.get_mut(&process.getpid()).unwrap();
-        if !children.iter().any(|p| pid == -1 || pid as usize == p.getpid()) {
+        let children: &mut Vec<Arc<ProcessControlBlock>> =
+            process_group.get_mut(&process.getpid()).unwrap();
+        if !children
+            .iter()
+            .any(|p| pid == -1 || pid as usize == p.getpid())
+        {
             return SysErrNo::ECHILD as isize;
         }
-        info!("sys_waitpid: process {} is waiting for child pid {}", process.getpid(), pid);
+        info!(
+            "sys_waitpid: process {} is waiting for child pid {}",
+            process.getpid(),
+            pid
+        );
         // 寻找符合条件的进程组
         let pair = children
             .iter()
             .enumerate()
             .find(|(_, p)| {
                 // ++++ temporarily access child PCB exclusively
-                p.inner_exclusive_access().is_group_exit() && (pid == -1 || pid as usize == p.getpid())
+                p.inner_exclusive_access().is_group_exit()
+                    && (pid == -1 || pid as usize == p.getpid())
                 // ++++ release child PCB
             })
             .map(|(idx, t)| (idx, Arc::clone(t)));
-        
+
         if let Some((idx, child)) = pair {
             let found_pid = child.getpid();
             let child_inner = child.inner_exclusive_access();
@@ -360,7 +371,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: i32) -> isize {
             );
             if exit_code_ptr as usize != 0x0 {
                 if exit_code >= 128 && exit_code <= 255 {
-                    *translated_refmut(exit_code_ptr) = exit_code;    
+                    *translated_refmut(exit_code_ptr) = exit_code;
                 } else {
                     *translated_refmut(exit_code_ptr) = exit_code << 8;
                 }
@@ -375,8 +386,11 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: i32) -> isize {
             remove_all_from_thread_group(found_pid);
             // 转移子进程
             move_child_process_to_init(found_pid);
-            assert_eq!(Arc::strong_count(&child), 1,
-                "process{} can't recycled", child.getpid()
+            assert_eq!(
+                Arc::strong_count(&child),
+                1,
+                "process{} can't recycled",
+                child.getpid()
             );
             return found_pid as isize;
         } else {
@@ -387,7 +401,6 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: i32) -> isize {
             block_current_and_run_next();
         }
     }
-      
 }
 
 /// getpid syscall
@@ -418,9 +431,7 @@ pub fn sys_getgid() -> isize {
 
 /// set tid addr
 pub fn sys_set_tid_addr(tidptr: usize) -> isize {
-    current_task()
-        .unwrap()
-        .set_clear_child_tid(tidptr);
+    current_task().unwrap().set_clear_child_tid(tidptr);
     sys_gettid()
 }
 
@@ -435,7 +446,7 @@ pub fn sys_kill(pid: isize, signal: usize) -> isize {
     }
     let sig = SignalFlags::from_sig(signal);
     match pid {
-        _ if pid > 0 => send_signal_to_thread_group(pid as usize , sig),
+        _ if pid > 0 => send_signal_to_thread_group(pid as usize, sig),
         0 => send_signal_to_thread_group(current_task().unwrap().getpid(), sig),
         -1 => send_access_signal(current_task().unwrap().gettid(), sig),
         _ => send_signal_to_thread_group(-pid as usize, sig),
@@ -468,9 +479,7 @@ pub fn sys_clockgettime(_clockid: usize, tp: *mut TimeVal) -> isize {
         sec: ms / 1000,
         usec: (ms % 1000) * 1000000,
     };
-    unsafe {
-        *tp = time
-    }
+    unsafe { *tp = time }
     0
 }
 
@@ -480,9 +489,7 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
     let inner = process.inner_exclusive_access();
     let process_tms = inner.tms.inner;
     drop(inner);
-    unsafe {
-        *tms = process_tms
-    }
+    unsafe { *tms = process_tms }
     0
 }
 

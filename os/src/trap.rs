@@ -1,7 +1,23 @@
 use polyhal::{println, VirtAddr};
-use polyhal_trap::{trap::{run_user_task, TrapType::{*, self}}, trapframe::{TrapFrame, TrapFrameArgs}};
+use polyhal_trap::{
+    trap::{
+        run_user_task,
+        TrapType::{self, *},
+    },
+    trapframe::{TrapFrame, TrapFrameArgs},
+};
 
-use crate::{signal::{check_if_any_sig_for_current_task, handle_signal, send_signal_to_thread, SignalFlags, SignalStack}, syscall::syscall, task::{current_task, current_trap_cx, exit_current_and_run_next, suspend_current_and_run_next}, timer::get_time};
+use crate::{
+    signal::{
+        check_if_any_sig_for_current_task, handle_signal, send_signal_to_thread, SignalFlags,
+        SignalStack,
+    },
+    syscall::syscall,
+    task::{
+        current_task, current_trap_cx, exit_current_and_run_next, suspend_current_and_run_next,
+    },
+    timer::get_time,
+};
 
 /// trap entry for TaskContext
 #[no_mangle]
@@ -31,37 +47,45 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
         Breakpoint => return,
         SysCall => {
             // jump to next instruction anyway
+            debug!("in  trap, to syscall");
             ctx.syscall_ok();
             let args = ctx.args();
             // get system call return value
             // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
 
-            let result = syscall(ctx[TrapFrameArgs::SYSCALL], [args[0], args[1], args[2], args[3], args[4], args[5]]);
+            let result = syscall(
+                ctx[TrapFrameArgs::SYSCALL],
+                [args[0], args[1], args[2], args[3], args[4], args[5]],
+            );
             // cx is changed during sys_exec, so we have to call it again
             ctx[TrapFrameArgs::RET] = result as usize;
         }
         StorePageFault(paddr) | LoadPageFault(paddr) | InstructionPageFault(paddr) => {
             let mut res: bool;
             {
+                debug!("in page fault trap");
                 let process = current_task().unwrap();
                 let inner = process.inner_exclusive_access();
-                res = inner.memory_set
+                debug!("233");
+                res = inner
+                    .memory_set
                     .lazy_page_fault(VirtAddr::from(paddr).floor(), trap_type);
                 if !res {
-                    res = inner.memory_set
-                        .lazy_page_fault(VirtAddr::from(paddr).floor(), trap_type);
+                    res = inner
+                        .memory_set
+                        .cow_page_fault(VirtAddr::from(paddr).floor(), trap_type);
                 }
             }
             if !res {
                 error!(
                     "[kernel] trap_handler: bad paddr = {:#x}, kernel killed it.",
-                        paddr,
+                    paddr,
                 );
                 send_signal_to_thread(current_task().unwrap().gettid(), SignalFlags::SIGSEGV);
             }
-            
         }
         IllegalInstruction(_) => {
+            debug!("in trap, illegal instruction");
             send_signal_to_thread(current_task().unwrap().gettid(), SignalFlags::SIGILL);
             exit_current_and_run_next(-3);
         }
@@ -112,11 +136,9 @@ impl MachineContextConversion for TrapFrame {
         let mut x = [0; 32];
         x.copy_from_slice(&self.x);
         x[0] = self.sepc; // x0 寄存器永远为0,暂时借用一下,用于保存sepc
-        MachineContext {
-            gp: self.x,
-        }
+        MachineContext { gp: self.x }
     }
-    
+
     #[inline]
     fn copy_from_mctx(&mut self, mctx: MachineContext) {
         self.x.copy_from_slice(&mctx.gp);
