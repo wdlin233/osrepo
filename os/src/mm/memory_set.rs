@@ -173,6 +173,10 @@ impl MemorySet {
         self.get_mut().lazy_clone_area(start_vpn, another)
     }
     #[inline(always)]
+    pub fn clone_area(&self, start_vpn: VirtAddr, another: &MemorySetInner) {
+        self.get_mut().clone_area(start_vpn, another)
+    }
+    #[inline(always)]
     pub fn recycle(&mut self) -> SyscallRet {
         self.inner.get_unchecked_mut().recycle_data_pages()
     }
@@ -1028,6 +1032,33 @@ impl MemorySetInner {
             area_type,
         );
         (start_va, end_va)
+    }
+    pub fn clone_area(&mut self, start_vpn: VirtAddr, another: &MemorySetInner) {
+        let origin_page_table = self.token();
+        let another_page_table = another.token();
+        if let Some(area) = another
+            .areas
+            .iter()
+            .find(|area| area.vaddr_range.get_start() == start_vpn)
+        {
+            for vpn in area.vaddr_range {
+                let (src_paddr, _src_flags, dst_paddr, _dst_flags);
+                let another_res = another_page_table.translate(vpn);
+                (src_paddr, _src_flags) = another_res.unwrap();
+                let origin_res = origin_page_table.translate(vpn);
+                (dst_paddr, _dst_flags) = origin_res.unwrap();
+                let src_paddr: *const u8 = src_paddr.get_ptr::<u8>();
+                let dst_paddr: *mut u8 = dst_paddr.get_mut_ptr::<u8>();
+                let dst_array = unsafe { core::slice::from_raw_parts_mut(dst_paddr, PAGE_SIZE) };
+                dst_array
+                    .copy_from_slice(unsafe { core::slice::from_raw_parts(src_paddr, PAGE_SIZE) });
+                // let src_ppn = another.translate(vpn).unwrap().ppn();
+                // let dst_ppn = self.translate(vpn).unwrap().ppn();
+                // dst_ppn
+                //     .bytes_array_mut()
+                //     .copy_from_slice(src_ppn.bytes_array());
+            }
+        }
     }
     pub fn lazy_clone_area(&mut self, start_vpn: VirtAddr, another: &MemorySetInner) {
         let origin_page_table = self.token();
