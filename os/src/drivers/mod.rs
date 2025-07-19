@@ -49,9 +49,10 @@ pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, PciTransport>;
 impl BlockDeviceImpl {
     pub fn new_device() -> Self {
         #[cfg(target_arch = "riscv64")]
-        unsafe { 
+        unsafe {
+            info!("(BlockDeviceImpl) new_device: VIRTIO0 = {:#x}", VIRTIO0.raw()); 
             VirtIoBlkDev::<VirtIoHalImpl, MmioTransport>::new(
-                &mut *(VIRTIO0.get_mut_ptr() as *mut VirtIOHeader)
+                &mut *((VIRTIO0.raw() | VIRT_ADDR_START) as *mut VirtIOHeader)
             ) 
         }
         #[cfg(target_arch = "loongarch64")]

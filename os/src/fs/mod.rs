@@ -481,15 +481,16 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
         abs_path = map_dynamic_link_file(abs_path);
         // log::info!("dynamic path={}", abs_path);
     }
-    debug!("open file: {}, flags: {:?}", abs_path, flags);
+    debug!("(fs::open) open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {
         debug!("the abs_path already has inode");
         inode = find_inode_idx(abs_path);
     } else {
+        info!("(fs::open) open file: {}, but not found in idx", abs_path);
         let found_res = root_inode().find(abs_path, flags, 0);
-        debug!("find file successfully: {},", abs_path);
+        info!("(fs::open) find file successfully: {},", abs_path);
         if found_res.clone().err() == Some(SysErrNo::ENOTDIR) {
             info!("open file: {}, but not a directory", abs_path);
             return Err(SysErrNo::ENOTDIR);

@@ -560,11 +560,11 @@ impl MemorySetInner {
         }
     }
     pub fn lazy_page_fault(&mut self, vpn: VirtAddr, scause: TrapType) -> bool {
-        let (_paddr, flags) = self.page_table.translate(vpn).unwrap();
+        let res = self.page_table.translate(vpn);
         //debug!("vpn={:#X},enter lazy", vpn.0);
-        if flags.contains(MappingFlags::P) {
+        if res.is_some() && res.unwrap().1.contains(MappingFlags::P) {
             // pte.is_some() && pte.unwrap().is_valid()
-            debug!("valid, to return");
+            debug!("(lazy_page_fault) valid, to return");
             return false;
         }
         //println!("vpn={:#X},enter lazy2", vpn.0);

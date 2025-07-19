@@ -189,19 +189,20 @@ impl Inode for Ext4Inode {
         flags: OpenFlags,
         loop_times: usize,
     ) -> Result<Arc<dyn Inode>, SysErrNo> {
-        debug!("[Inode.find] origin path={}", path);
+        debug!("(ext4_lw, Inode::find) origin path={}", path);
         let file = &mut self.inner.get_unchecked_mut().f;
-        debug!("get file ok");
+        debug!("(exr4_lw, Inode::find) get file successfully");
         if file.check_inode_exist(path, InodeTypes::EXT4_DE_DIR) {
-            debug!("check dir ok");
+            debug!("(exr4_lw, Inode::find) check dir ok");
             Ok(Arc::new(Ext4Inode::new(path, InodeTypes::EXT4_DE_DIR)))
         } else if file.check_inode_exist(path, InodeTypes::EXT4_DE_REG_FILE) {
-            debug!("check reg file ok");
+            debug!("(exr4_lw, Inode::find) check reg file ok");
             if flags.contains(OpenFlags::O_DIRECTORY) {
                 return Err(SysErrNo::ENOTDIR);
             }
             Ok(Arc::new(Ext4Inode::new(path, InodeTypes::EXT4_DE_REG_FILE)))
         } else if file.check_inode_exist(path, InodeTypes::EXT4_DE_SYMLINK) {
+            debug!("(exr4_lw, Inode::find) check symlink ok");
             if flags.contains(OpenFlags::O_ASK_SYMLINK) {
                 return Ok(Arc::new(Ext4Inode::new(path, InodeTypes::EXT4_DE_SYMLINK)));
             }
@@ -224,7 +225,7 @@ impl Inode for Ext4Inode {
 
             // Ok(Arc::new(Ext4Inode::new(path, InodeTypes::EXT4_DE_SYMLINK)))
         } else {
-            debug!("check err");
+            debug!("(exr4_lw, Inode::find) check err");
             Err(SysErrNo::ENOENT)
         }
     }

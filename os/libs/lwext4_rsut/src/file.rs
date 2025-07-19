@@ -153,9 +153,9 @@ impl Ext4File {
         let c_path = CString::new(path).expect("CString::new failed");
         let c_path = c_path.into_raw();
         let mtype = types.clone();
-        debug!("in check inode exist");
+        debug!("(ext4_lw, check_inode_exist) check path: {}, types: {:?}", path, mtype);
         let r = unsafe { ext4_inode_exist(c_path, types as i32) }; //eg: types: EXT4_DE_REG_FILE
-        debug!("get r ok");
+        debug!("(ext4_lw, check_inode_exist) get r ok");
         unsafe {
             drop(CString::from_raw(c_path));
         }

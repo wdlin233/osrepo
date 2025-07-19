@@ -41,15 +41,11 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
         Breakpoint => return,
         SysCall => {
             // jump to next instruction anyway
-            debug!("in  trap, to syscall");
+            // debug!("(kernel_interrupt) to syscall");
             ctx.syscall_ok();
             let args = ctx.args();
             // get system call return value
             // info!("syscall: {}", ctx[TrapFrameArgs::SYSCALL]);
-            debug!(
-                "in syscall, the args is : {}, {}, {}, {}, {}, {}",
-                args[0], args[1], args[2], args[3], args[4], args[5]
-            );
             let result = syscall(
                 ctx[TrapFrameArgs::SYSCALL],
                 [args[0], args[1], args[2], args[3], args[4], args[5]],
@@ -60,11 +56,13 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
         StorePageFault(paddr) | LoadPageFault(paddr) | InstructionPageFault(paddr) => {
             let mut res: bool;
             {
-                debug!("in page fault trap");
+                debug!("(kernel_intrrupt) page fault handling");
                 let process = current_task().unwrap();
-                debug!("get process ok");
                 let inner = process.inner_exclusive_access();
-                debug!("get inner ok");
+                info!(
+                    "(kernel_intrrupt) now handling page fault, paddr = {:#x}, trap_type = {:?}",
+                    paddr, trap_type
+                );
                 res = inner
                     .memory_set
                     .lazy_page_fault(VirtAddr::from(paddr).floor(), trap_type);

@@ -78,9 +78,9 @@ pub fn main(hartid: usize) -> ! {
     check_percpu(hartid);
 
     mm::init();
-    fs::list_apps();
     fs::init();
-    //fs::list_apps();
+    fs::list_apps();
+
     task::init_kernel_page();
     task::add_initproc();
     task::run_tasks();

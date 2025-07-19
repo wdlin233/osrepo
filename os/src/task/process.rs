@@ -189,37 +189,19 @@ impl ProcessControlBlockInner {
         }
     }
     /// 创建用户栈、上下文
-    pub fn alloc_user_res(&mut self, tid: usize) {
-        let (trap_cx_base, trap_top) = 
-        //trap_cx_space(tid);
-        self.memory_set.get_mut().insert_framed_area_with_hint(
+    pub fn alloc_user_res(&mut self) {
+        let (trap_cx_base, _trap_top) = self.memory_set.get_mut().insert_framed_area_with_hint(
             USER_TRAP_CONTEXT_TOP,
             PAGE_SIZE,
             MapPermission::R | MapPermission::W,
             MapAreaType::Trap,
         );
-        // self.memory_set.get_mut().insert_framed_area(
-        //     VirtAddr::from(trap_cx_base),
-        //     VirtAddr::from(trap_top),
-        //     MapType::Framed,
-        //     MapPermission::R | MapPermission::W,
-        //     MapAreaType::Trap,
-        // );
-        let (ustack_base, ustack_top) = 
-        //ustack_space(tid);
-        self.memory_set.get_mut().lazy_insert_framed_area_with_hint(
+        let (ustack_base, ustack_top) = self.memory_set.get_mut().lazy_insert_framed_area_with_hint(
             USER_STACK_TOP,
             USER_STACK_SIZE,
             MapPermission::R | MapPermission::W | MapPermission::U,
             MapAreaType::Stack,
         );
-        // self.memory_set.get_mut().insert_framed_area(
-        //     VirtAddr::from(ustack_base),
-        //     VirtAddr::from(ustack_top),
-        //     MapType::Framed,
-        //     MapPermission::R | MapPermission::W | MapPermission::U,
-        //     MapAreaType::Stack,
-        // );
         let trap_cx_ppn = self
             .memory_set
             .translate(VirtAddr::from(trap_cx_base).floor())
@@ -229,36 +211,36 @@ impl ProcessControlBlockInner {
         self.trap_cx_ppn = trap_cx_ppn;
         self.trap_cx_base = trap_cx_base;
 
-        // let user_stack_range = VAddrRange::new(
-        //     VirtAddr::from(ustack_base).floor(),
-        //     VirtAddr::from(ustack_top).floor(),
-        // );
-        // // 预分配用于环境变量
-        // let page_table = self.memory_set.token();
-        // let area = self
-        //     .memory_set
-        //     .get_mut()
-        //     .areas
-        //     .iter_mut()
-        //     .find(|area| {
-        //         area.vaddr_range.range() == user_stack_range.range()
-        //         //&& area.area_type == MapAreaType::Stack
-        //     })
-        //     .unwrap();
-        // for i in 1..=PRE_ALLOC_PAGES {
-        //     let vaddr: VirtAddr = (area.vaddr_range.get_end().raw() - i * PAGE_SIZE).into();
-        //     let res = page_table.translate(vaddr);
-        //     if res.is_none() || !res.unwrap().1.contains(MappingFlags::P) {
-        //         area.map_one(&mut self.memory_set.get_mut().page_table, vaddr)
-        //     }
-        // }
-        // debug!(
-        //     "(ProcessControlBlockInner, alloc_user_res) user stack area: {:#x} - {:#x}",
-        //     ustack_base, ustack_top
-        // );
+        let user_stack_range = VAddrRange::new(
+            VirtAddr::from(ustack_base).floor(),
+            VirtAddr::from(ustack_top).floor(),
+        );
+        // 预分配用于环境变量
+        let page_table = self.memory_set.token();
+        let area = self
+            .memory_set
+            .get_mut()
+            .areas
+            .iter_mut()
+            .find(|area| {
+                area.vaddr_range.range() == user_stack_range.range()
+                //&& area.area_type == MapAreaType::Stack
+            })
+            .unwrap();
+        for i in 1..=PRE_ALLOC_PAGES {
+            let vaddr: VirtAddr = (area.vaddr_range.get_end().raw() - i * PAGE_SIZE).into();
+            let res = page_table.translate(vaddr);
+            if res.is_none() || !res.unwrap().1.contains(MappingFlags::P) {
+                area.map_one(&mut self.memory_set.get_mut().page_table, vaddr)
+            }
+        }
+        debug!(
+            "(ProcessControlBlockInner, alloc_user_res) user stack area: {:#x} - {:#x}",
+            ustack_base, ustack_top
+        );
     }
-    pub fn clone_user_res(&mut self, another: &ProcessControlBlockInner, tid: usize) {
-        self.alloc_user_res(tid);
+    pub fn clone_user_res(&mut self, another: &ProcessControlBlockInner) {
+        self.alloc_user_res();
 
         let another_memory_set = another.memory_set.get_ref();
         self.memory_set.lazy_clone_area(
@@ -399,7 +381,7 @@ impl ProcessControlBlock {
         );
 
         let mut inner = process.inner_exclusive_access();
-        inner.alloc_user_res(process.tid.0);
+        inner.alloc_user_res();
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapFrame::new();
         trap_cx[TrapFrameArgs::SEPC] = entry_point;
@@ -420,7 +402,7 @@ impl ProcessControlBlock {
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
 
-        inner.alloc_user_res(self.tid.0);
+        inner.alloc_user_res();
         inner.sig_table = Arc::new(SigTable::new());
         let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));
         inner.fd_table = fd_table;
@@ -430,56 +412,6 @@ impl ProcessControlBlock {
 
         let mut user_sp = inner.user_stack_top;
         info!("(ProcessControlBlock, exec), initial user_sp = {}", user_sp);
-
-        /*
-        -----------------------ustack top == sp(init)
-                .
-                .
-                .
-            ------------
-            env string 2
-            ------------
-            env string 1
-        ------------------------env_st
-            地址对齐
-        --------------------------
-
-                .
-                .
-                .
-            -------------
-            args string 2
-            -------------
-            args string 1
-        ---------------------------args_st
-            地址对齐
-        ----------------------------
-            aux空间
-            以两个0为结束标志
-        ----------------------------
-                0(envp 结束)
-            ---------------------
-                .
-                .
-                .
-            ---------------------
-            envp2 -> env string 2
-            ---------------------
-            envp1 -> env string 1
-        -----------------------------env_base
-                0(argv 结束)
-            --------------------------
-                .
-                .
-                .
-            --------------------------
-                argv2 -> args string 2
-            --------------------------
-                argv1 -> args string 1
-        --------------------------------argv_base
-            argc
-        ---------------------------------sp(final)
-        */
 
         //usize大小
         let size = core::mem::size_of::<usize>();
@@ -670,7 +602,6 @@ impl ProcessControlBlock {
             "(ProcessControlBlock, fork) create child, pid: {}, ppid: {}, tid: {}",
             pid, ppid, tid_handle.0
         );
-        let tid = tid_handle.0;
         let child = Arc::new(Self {
             tid: tid_handle,
             ppid,
@@ -711,10 +642,10 @@ impl ProcessControlBlock {
             MapAreaType::Stack,
         );
         if flags.contains(CloneFlags::CLONE_THREAD) {
-            inner.alloc_user_res(tid);
+            inner.alloc_user_res();
             *inner.get_trap_cx() = parent.get_trap_cx().clone();
         } else {
-            inner.clone_user_res(&parent, tid);
+            inner.clone_user_res(&parent);
             info!("(ProcessControlBlock, fork) clone user res ok");
             inner.get_trap_cx()[TrapFrameArgs::RET] = 0; // 应该是这么写吧
         }

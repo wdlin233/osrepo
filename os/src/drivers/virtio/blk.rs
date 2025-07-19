@@ -28,7 +28,6 @@ impl<H: Hal> VirtIoBlkDev<H, MmioTransport> {
         let transport = unsafe { 
             MmioTransport::new(ptr).expect("failed to create MmioTransport") 
         };
-        
         Self {
             inner: Mutex::new(
                 VirtIOBlk::<H, MmioTransport>::new(transport)
@@ -38,6 +37,7 @@ impl<H: Hal> VirtIoBlkDev<H, MmioTransport> {
     }
 }
 
+#[cfg(target_arch = "loongarch64")]
 impl<H: Hal> VirtIoBlkDev<H, PciTransport> {
     pub fn new(header: *mut u8) -> Self {
         let transport = enumerate_pci::<H>(header)
@@ -74,11 +74,17 @@ impl<H: Hal, T: Transport> BlockDriver for VirtIoBlkDev<H, T> {
     }
 
     fn read_block(&mut self, block_id: usize, buf: &mut [u8]) {
-        self.inner.lock().read_blocks(block_id, buf).unwrap();
+        info!(
+            "(VirtIoBlkDev, read_block) block_id: {}, buf len: {}",
+            block_id, buf.len()
+        );
+        self.inner.lock()
+            .read_blocks(block_id, buf)
+            .expect("Error when reading VirtIOBlk");
     }
 
     fn write_block(&mut self, block_id: usize, buf: &[u8]) {
-        self.inner.lock().write_blocks(block_id, buf).unwrap()
+        self.inner.lock().write_blocks(block_id, buf).expect("Error when writing VirtIOBlk")
     }
 
     fn flush(&mut self) {

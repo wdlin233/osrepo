@@ -26,6 +26,7 @@ pub struct VirtIoHalImpl;
 
 unsafe impl Hal for VirtIoHalImpl {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (usize, NonNull<u8>) {
+        info!("(VirtIoHalImpl) dma_alloc: pages = {}", pages);
         let frames = frames_alloc(pages).unwrap();
         let paddr = frames[0].paddr;
         QUEUE_FRAMES.exclusive_access().extend(frames);
@@ -35,6 +36,7 @@ unsafe impl Hal for VirtIoHalImpl {
     }
 
     unsafe fn dma_dealloc(pa: usize, _vaddr: NonNull<u8>, pages: usize) -> i32 {
+        info!("(VirtIoHalImpl) dma_dealloc: pa = {:#x}, pages = {}", pa, pages);
         let mut pa = PhysAddr::new(pa);
         for _ in 0..pages {
             frame_dealloc(pa);
@@ -44,12 +46,12 @@ unsafe impl Hal for VirtIoHalImpl {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
-        //info!("translating paddr {:#x} to virt", paddr);
-        return NonNull::new_unchecked((usize::from(paddr) | VIRT_ADDR_START) as *mut u8);
+        info!("(VirtIoHalImpl) translating paddr {:#x} to virt", paddr);
+        return NonNull::new_unchecked((paddr | VIRT_ADDR_START) as *mut u8);
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> usize {
-        //info!("Executing share for virtio_blk");
+        // info!("(VirtIoHalImpl) Executing share for virtio_blk, buffer size: {:?}", buffer.as_ref());
         return buffer.as_ptr() as *mut u8 as usize - VIRT_ADDR_START;
     }
 

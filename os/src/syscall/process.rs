@@ -184,34 +184,23 @@ pub fn sys_fork(
     add_task(new_process);
     new_tid as isize
 }
+
 /// exec syscall
 pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize) -> isize {
-    // trace!(
-    //     "kernel:pid[{}] sys_exec(path: 0x{:x?}, args: 0x{:x?})",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid(),
-    //     path,
-    //     args
-    // );
-    //unimplemented!()
-    debug!("in sys exec");
     let current_task = current_task().unwrap();
-    debug!("current process id is :{}", current_task.getpid());
+    debug!("(sys_exec) current process id is :{}", current_task.getpid());
     let inner = current_task.inner_exclusive_access();
-    //debug!("get inner ok");
     let mut argv = Vec::<String>::new();
     let mut env = Vec::<String>::new();
     let mut path;
+    
     unsafe {
         //debug!("in unsafe");
         drop(inner);
-        debug!("the pathp is :{:?}", pathp);
-        //debug!("the path is :{}", c_ptr_to_string(pathp));
-        debug!("the path is :{}", translated_str(pathp));
         path = trim_start_slash(translated_str(pathp));
-        debug!("trim path ok,the path is :{}", path);
+        info!("(sys_exec) trim path ok,the path is :{}", path);
         let inner = current_task.inner_exclusive_access();
         if path.contains("/musl") {
-            debug!("in set cwd");
             inner.fs_info.set_cwd(String::from("/musl"));
         }
         if path.contains("/glibc") {
@@ -219,34 +208,29 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         }
         if path.ends_with(".sh") && (path.contains("/musl") || inner.fs_info.get_cwd() == "/musl") {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
-            debug!("push busybox");
-            argv.push(String::from("/musl/busybox"));
+            argv.push(String::from("busybox"));
             argv.push(String::from("sh"));
             path = String::from("/musl/busybox");
         }
         if path.ends_with(".sh") && (path.contains("/glibc") || inner.fs_info.get_cwd() == "/glibc")
         {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
-            debug!("push busybox");
             argv.push(String::from("/glibc/busybox"));
             argv.push(String::from("sh"));
             path = String::from("/glibc/busybox");
         }
 
-        debug!("to deal the argv");
         loop {
             let arg_str_ptr = *translated_ref(args);
             if arg_str_ptr == 0 {
                 break;
             }
-            debug!("the argv is : {}", translated_str(arg_str_ptr as *const u8));
             argv.push(translated_str(arg_str_ptr as *const u8));
             args = args.add(1);
         }
 
         //处理envp参数
         if !envp.is_null() {
-            debug!("envp is not null");
             loop {
                 let envp_ptr = *translated_ref(envp);
                 if envp_ptr == 0 {
@@ -256,9 +240,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
                 envp = envp.add(1);
             }
         }
-        drop(inner);
     }
 
+    let inner = current_task.inner_exclusive_access();
     let env_path = "PATH=/:/bin:".to_string();
     if !env.contains(&env_path) {
         env.push(env_path);
@@ -274,20 +258,24 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         //设置系统最大负载
         env.push(env_enough);
     }
-    let inner = current_task.inner_exclusive_access();
-    let cwd = if !path.starts_with('/') {
-        debug!("the path is not start with / ");
-        inner.fs_info.cwd()
-    } else {
-        "/"
-    };
-    debug!("get cwd ok, the cwd is :{}, the path is :{}", cwd, path);
-    let abs_path = get_abs_path(&cwd, &path);
-    debug!("to open,the path is: {}", abs_path);
+    debug!("(sys_exec) the argv is :{:?}, the env is :{:?}", argv, env);
+
+    // let cwd = if !path.starts_with('/') {
+    //     debug!("(sys_exec) the path is not start with / ");
+    //     inner.fs_info.cwd()
+    // } else {
+    //     "/"
+    // };
+    debug!("(sys_exec) the cwd is :{}, the path is :{}", inner.fs_info.cwd(), path);
+    let abs_path = get_abs_path(&inner.fs_info.cwd(), &path);
+    debug!("(sys_exec) to open file, the abs_path is: {}", abs_path);
+    drop(inner);
     let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
         .unwrap()
         .file()
         .unwrap();
+    info!("(sys_exec) open file successfully: {}", abs_path);
+    let inner = current_task.inner_exclusive_access();
     inner.fs_info.set_exe(abs_path);
     let elf_data = app_inode.inode.read_all().unwrap();
     drop(inner);
