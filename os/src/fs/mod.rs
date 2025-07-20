@@ -185,11 +185,15 @@ impl InodeType {
 // os\src\fs\mod.rs
 //将预加载到内存中的程序写入文件根目录
 pub fn flush_preload() {
+    // extern "C" {
+    //     fn initproc_start();
+    //     fn initproc_end();
+    //     // fn test_start();
+    //     // fn test_end();
+    // }
     extern "C" {
-        fn initproc_start();
-        fn initproc_end();
-        // fn test_start();
-        // fn test_end();
+        fn initproc_rv_start();
+        fn initproc_rv_end();
     }
 
     let initproc = open("/initproc", OpenFlags::O_CREATE, DEFAULT_FILE_MODE)
@@ -199,8 +203,8 @@ pub fn flush_preload() {
     let mut v = Vec::new();
     v.push(unsafe {
         core::slice::from_raw_parts_mut(
-            initproc_start as *mut u8,
-            initproc_end as usize - initproc_start as usize,
+            initproc_rv_start as *mut u8,
+            initproc_rv_end as usize - initproc_rv_start as usize,
         ) as &'static mut [u8]
     });
     initproc.write(UserBuffer::new(v));
@@ -224,7 +228,7 @@ pub fn flush_preload() {
 }
 
 pub fn init() {
-    //flush_preload();
+    flush_preload();
     create_init_files();
     // TODO(ZMY):为了过libc-test utime的权宜之计,读取RTC太麻烦了
     //root_inode().set_timestamps(Some(0), Some(0), Some(0));

@@ -9,45 +9,43 @@
 //! Be careful when you see [`__switch`]. Control flow around this function
 //! might not be what you expect.
 
-mod aux;
 mod alloc;
+mod aux;
+mod futex;
 mod manager;
 mod process;
 mod processor;
 mod stride;
-mod futex;
 
+use crate::alloc::{sync::Arc, vec::Vec};
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
 use crate::task::manager::{add_stopping_task, insert_into_tid2task, wakeup_parent};
 use crate::task::process::TaskStatus;
 use crate::timer::remove_timer;
-use crate::alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
 use polyhal::kcontext::KContext;
 use spin::Lazy;
 
 use crate::signal::{send_signal_to_thread_group, SignalFlags};
-pub use aux::{Aux, AuxType};
 pub use alloc::{pid_alloc, KernelStack, PidHandle};
-pub use manager::{
-    add_block_task, add_task, tid2task, process_num, remove_from_tid2task, remove_task,
-    wakeup_task, wakeup_task_by_pid, THREAD_GROUP, PROCESS_GROUP, insert_into_process_group,
-    insert_into_thread_group, move_child_process_to_init, remove_all_from_thread_group,
-    TID_TO_TASK, wakeup_futex_task,
-};
-pub use process::{
-    ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
-};
-pub use processor::{
-    current_task, current_trap_cx, mmap, munmap, run_tasks,
-    schedule, take_current_task, init_kernel_page
-};
-pub use futex::{FutexKey, futex_wait, futex_wake_up, futex_requeue};
-
+pub use aux::{Aux, AuxType};
 use core::arch::{asm, global_asm};
 use core::sync::atomic::AtomicU32;
+pub use futex::{futex_requeue, futex_wait, futex_wake_up, FutexKey};
+pub use manager::{
+    add_block_task, add_task, insert_into_process_group, insert_into_thread_group,
+    move_child_process_to_init, process_num, remove_all_from_thread_group, remove_from_tid2task,
+    remove_task, tid2task, wakeup_futex_task, wakeup_task, wakeup_task_by_pid, PROCESS_GROUP,
+    THREAD_GROUP, TID_TO_TASK,
+};
+
+pub use process::{ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner};
+pub use processor::{
+    current_task, current_trap_cx, init_kernel_page, mmap, munmap, run_tasks, schedule,
+    take_current_task, PROCESSOR,
+};
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -93,7 +91,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     if inner.clear_child_tid != 0 {
         unimplemented!("clear child tid is not implemented yet");
     }
-    
+
     remove_from_tid2task(task.gettid());
     inner.dealloc_user_res();
     inner.task_status = TaskStatus::Zombie;
@@ -105,10 +103,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         if let Some(tasks) = thread_group.get(&task.getpid()) {
             if tasks.iter().all(|t| t.inner_exclusive_access().is_zombie()) {
                 drop(thread_group);
-                send_signal_to_thread_group(
-                    task.getppid(),
-                    SignalFlags::SIGCHLD
-                );
+                send_signal_to_thread_group(task.getppid(), SignalFlags::SIGCHLD);
                 let mut task_inner = task.inner_exclusive_access();
                 task_inner.recycle();
                 if task_inner.sig_table.not_exited() {
@@ -130,16 +125,24 @@ global_asm!(include_str!("initproc_rv.S"));
 global_asm!(include_str!("initproc_la.S"));
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     // debug!("kernel: INITPROC is being initialized");
-    unsafe {
-        extern "C" {
-            fn initproc_rv_start();
-            fn initproc_rv_end();
-        }
-        let start = initproc_rv_start as usize as *const usize as *const u8;
-        let len = initproc_rv_end as usize - initproc_rv_start as usize;
-        let data = core::slice::from_raw_parts(start, len);
-        ProcessControlBlock::new(data)
-    }
+    // unsafe {
+    //     extern "C" {
+    //         fn initproc_rv_start();
+    //         fn initproc_rv_end();
+    //     }
+    //     let start = initproc_rv_start as usize as *const usize as *const u8;
+    //     let len = initproc_rv_end as usize - initproc_rv_start as usize;
+    //     let data = core::slice::from_raw_parts(start, len);
+    //     ProcessControlBlock::new(data)
+    // }
+
+    let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+        .expect("open initproc error!")
+        .file()
+        .expect("initproc can not be abs file!");
+    let elf_data = initproc.inode.read_all().unwrap();
+    let res = ProcessControlBlock::new(&elf_data);
+    res
 });
 
 ///Add init process to the manager
@@ -149,6 +152,11 @@ pub fn add_initproc() {
     insert_into_thread_group(0, &INITPROC);
     info!("kernel: INITPROC is added to the task manager");
 }
+
+// pub fn init() {
+//     let mut p = PROCESSOR.exclusive_access();
+//     p.idle_task_cx = KContext::blank();
+// }
 
 /// the inactive(blocked) tasks are removed when the PCB is deallocated.(called by exit_current_and_run_next)
 pub fn remove_inactive_task(task: Arc<ProcessControlBlock>) {

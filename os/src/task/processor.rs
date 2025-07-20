@@ -25,10 +25,10 @@ use lazy_static::*;
 /// Processor management structure
 pub struct Processor {
     /// The task currently executing on the current processor
-    current: Option<Arc<ProcessControlBlock>>,
+    pub current: Option<Arc<ProcessControlBlock>>,
 
     ///The basic control flow of each core, helping to select and switch process
-    idle_task_cx: KContext,
+    pub idle_task_cx: KContext,
 }
 
 impl Processor {
