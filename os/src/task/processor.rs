@@ -6,8 +6,6 @@
 
 use super::ProcessControlBlock;
 use super::{fetch_task, TaskStatus};
-#[cfg(target_arch = "loongarch64")]
-use crate::config::PAGE_SIZE_BITS;
 use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;

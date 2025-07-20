@@ -2,7 +2,7 @@
 use super::frame_alloc;
 use super::MapType;
 use crate::config::{
-    DL_INTERP_OFFSET, KERNEL_ADDR_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, USER_HEAP_BOTTOM,
+    DL_INTERP_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, USER_HEAP_BOTTOM,
     USER_HEAP_SIZE,
 };
 use crate::fs::{
@@ -12,7 +12,6 @@ use crate::fs::{
 use crate::mm::addr_range::VAddrRange;
 use crate::mm::frame_allocator::FrameTracker;
 use crate::mm::group::GROUP_SHARE;
-#[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
 use crate::mm::page_fault_handler::{
     cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
@@ -249,8 +248,6 @@ impl MemorySetInner {
             MapArea::new(start_va, end_va, map_type, permission, area_type),
             None,
         );
-        //#[cfg(target_arch = "loongarch64")]
-        //self.push(MapArea::new(start_va, end_va, permission, area_type), None);
     }
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtAddr) {
         if let Some((idx, area)) = self
@@ -333,7 +330,7 @@ impl MemorySetInner {
         // guard page
         user_heap_bottom += PAGE_SIZE;
         info!(
-            "user heap bottom: {:#x}, {}",
+            "(MemorySetInner, from_elf) user heap bottom: {:#x}, {:#x}",
             user_heap_bottom, user_heap_bottom
         );
         let user_heap_top: usize = user_heap_bottom;
@@ -378,6 +375,10 @@ impl MemorySetInner {
                 if ph_flags.is_execute() {
                     map_perm |= MapPermission::X;
                 }
+                info!(
+                    "(MemorySetInner, map_elf) ph_flags: {:?}, map_perm: {:?}",
+                    ph_flags, map_perm
+                );
                 let map_area = MapArea::new(
                     start_va,
                     end_va,

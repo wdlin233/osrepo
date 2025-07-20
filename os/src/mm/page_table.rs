@@ -1,8 +1,5 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 use super::frame_alloc;
-use crate::config::KERNEL_PGNUM_OFFSET;
-#[cfg(target_arch = "loongarch64")]
-use crate::config::{PAGE_SIZE_BITS, PALEN};
 use crate::mm::{memory_set, MemorySet};
 use crate::timer::get_time;
 use alloc::string::{String, ToString};

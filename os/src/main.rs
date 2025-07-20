@@ -55,7 +55,6 @@ pub mod users;
 pub mod utils;
 
 use crate::{
-    config::KERNEL_ADDR_OFFSET,
     syscall::syscall,
     task::{current_task, suspend_current_and_run_next},
 };

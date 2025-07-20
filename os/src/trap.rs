@@ -129,16 +129,18 @@ pub trait MachineContextConversion {
 impl MachineContextConversion for TrapFrame {
     #[inline]
     fn as_mctx(&self) -> MachineContext {
-        let mut x = [0; 32];
-        x.copy_from_slice(&self.x);
-        x[0] = self.sepc; // x0 寄存器永远为0,暂时借用一下,用于保存sepc
-        MachineContext { gp: self.x }
+        unimplemented!()
+        // let mut x = [0; 32];
+        // x.copy_from_slice(&self.x);
+        // x[0] = self.sepc; // x0 寄存器永远为0,暂时借用一下,用于保存sepc
+        // MachineContext { gp: self.x }
     }
 
     #[inline]
-    fn copy_from_mctx(&mut self, mctx: MachineContext) {
-        self.x.copy_from_slice(&mctx.gp);
-        self.sepc = self.x[0];
-        self.x[0] = 0; // x0 寄存器永远为0,清除 sepc
+    fn copy_from_mctx(&mut self, _mctx: MachineContext) {
+        unimplemented!()
+        // self.x.copy_from_slice(&mctx.gp);
+        // self.sepc = self.x[0];
+        // self.x[0] = 0; // x0 寄存器永远为0,清除 sepc
     }
 }
