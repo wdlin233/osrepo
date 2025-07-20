@@ -1,0 +1,595 @@
+make[1]: Entering directory '/home/molinwu/osrepo/user'
+rustup target add riscv64gc-unknown-none-elf
+target/riscv64gc-unknown-none-elf/release/initproc target/riscv64gc-unknown-none-elf/release/test_waitpid target/riscv64gc-unknown-none-elf/release/user_shell target/riscv64gc-unknown-none-elf/release/usertest
+cargo build --release
+make[1]: Leaving directory '/home/molinwu/osrepo/user'
+make[1]: Entering directory '/home/molinwu/osrepo/os'
+(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add riscv64gc-unknown-none-elf
+riscv64gc-unknown-none-elf (installed)
+cargo install cargo-binutils
+rustup component add rust-src
+rustup component add llvm-tools-preview
+cargo build --release -p os --target riscv64gc-unknown-none-elf --offline
+Building kernel binary...
+make[1]: Leaving directory '/home/molinwu/osrepo/os'
+qemu-system-riscv64 -machine virt -kernel kernel-rv -m 1G -nographic -smp 1 -bios default -drive file=sdcard-rv.img,if=none,format=raw,id=x0 \
+                   -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -no-reboot
+
+OpenSBI v1.5.1
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name             : riscv-virtio,qemu
+Platform Features         : medeleg
+Platform HART Count       : 1
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 10000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform PMU Device       : ---
+Platform Reboot Device    : syscon-reboot
+Platform Shutdown Device  : syscon-poweroff
+Platform Suspend Device   : ---
+Platform CPPC Device      : ---
+Firmware Base             : 0x80000000
+Firmware Size             : 327 KB
+Firmware RW Offset        : 0x40000
+Firmware RW Size          : 71 KB
+Firmware Heap Offset      : 0x49000
+Firmware Heap Size        : 35 KB (total), 2 KB (reserved), 11 KB (used), 21 KB (free)
+Firmware Scratch Size     : 4096 B (total), 416 B (used), 3680 B (free)
+Runtime SBI Version       : 2.0
+
+Domain0 Name              : root
+Domain0 Boot HART         : 0
+Domain0 HARTs             : 0*
+Domain0 Region00          : 0x0000000000100000-0x0000000000100fff M: (I,R,W) S/U: (R,W)
+Domain0 Region01          : 0x0000000010000000-0x0000000010000fff M: (I,R,W) S/U: (R,W)
+Domain0 Region02          : 0x0000000002000000-0x000000000200ffff M: (I,R,W) S/U: ()
+Domain0 Region03          : 0x0000000080040000-0x000000008005ffff M: (R,W) S/U: ()
+Domain0 Region04          : 0x0000000080000000-0x000000008003ffff M: (R,X) S/U: ()
+Domain0 Region05          : 0x000000000c400000-0x000000000c5fffff M: (I,R,W) S/U: (R,W)
+Domain0 Region06          : 0x000000000c000000-0x000000000c3fffff M: (I,R,W) S/U: (R,W)
+Domain0 Region07          : 0x0000000000000000-0xffffffffffffffff M: () S/U: (R,W,X)
+Domain0 Next Address      : 0x0000000080200000
+Domain0 Next Arg1         : 0x00000000bfe00000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+Domain0 SysSuspend        : yes
+
+Boot HART ID              : 0
+Boot HART Domain          : root
+Boot HART Priv Version    : v1.12
+Boot HART Base ISA        : rv64imafdch
+Boot HART ISA Extensions  : sstc,zicntr,zihpm,zicboz,zicbom,sdtrig,svadu
+Boot HART PMP Count       : 16
+Boot HART PMP Granularity : 2 bits
+Boot HART PMP Address Bits: 54
+Boot HART MHPM Info       : 16 (0x0007fff8)
+Boot HART Debug Triggers  : 2 triggers
+Boot HART MIDELEG         : 0x0000000000001666
+Boot HART MEDELEG         : 0x0000000000f0b509
+
+  _____      _       _    _          _      
+ |  __ \    | |     | |  | |   /\   | |     
+ | |__) |__ | |_   _| |__| |  /  \  | |     
+ |  ___/ _ \| | | | |  __  | / /\ \ | |     
+ | |  | (_) | | |_| | |  | |/ ____ \| |____ 
+ |_|   \___/|_|\__, |_|  |_/_/    \_\______|
+                __/ |                       
+               |___/                        
+
+Platform Arch             : riscv64
+Boot HART ID              : 0
+Boot HART Count           : 1
+Boot Args                 : 
+Platform Memory Region    : 0x0000000080000000 - 0x00000000c0000000
+Platform Memory Available : 0x000000008230bd00 - 0x00000000bfe00000
+Platform Memory Available : 0x00000000bfe016e4 - 0x00000000c0000000
+
+
+
+   _____       __         __  _               
+  / ___/__  __/ /_  _____/ /_(_)_  ______ ___ 
+  \__ \/ / / / __ \/ ___/ __/ / / / / __ `__ \
+ ___/ / /_/ / /_/ (__  ) /_/ / /_/ / / / / / /
+/____/\__,_/_.___/____/\__/_/\__,_/_/ /_/ /_/                     
+
+
+[kernel] Hello, world!
+cpu: 0
+[31m[ERROR] Logging init success[0m
+[32m[DEBUG] hart 0 percpu base: 0xffffffc08230bcf0[0m
+[34m[ INFO] Heap allocator initialized[0m
+init memory region 0x8230bd00 - 0xbfe00000
+init memory region 0xbfe016e4 - 0xc0000000
+[32m[DEBUG] Memory regions initialized[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("riscv-virtio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("syscon-poweroff"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("syscon-reboot"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("qemu,platform"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("riscv"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("riscv,cpu-intc"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("riscv,pmu"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("qemu,fw-cfg-mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("cfi-flash"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("simple-bus"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("google,goldfish-rtc"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("ns16550a"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("sifive,test1"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("virtio,mmio"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("sifive,plic-1.0.0"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("sifive,clint0"))[0m
+[32m[DEBUG] Node Compatiable: Some(Ok("pci-host-ecam-generic"))[0m
+/**** APPS ****
+[32m[DEBUG] Device features: BlkFeature(SEG_MAX | GEOMETRY | BLK_SIZE | SCSI | FLUSH | TOPOLOGY | CONFIG_WCE | DISCARD | WRITE_ZEROES | NOTIFY_ON_EMPTY | RING_INDIRECT_DESC | RING_EVENT_IDX)[0m
+[34m[ INFO] config: 0xffffffc010001100[0m
+[34m[ INFO] found a block device of size 4194304KB[0m
+[34m[ INFO] (frames_alloc) Allocating 2 frames[0m
+[34m[ INFO] (frames_alloc) Allocating 2 frames starting at 0xbfe02000[0m
+[34m[ INFO] New an Ext4 Block Device[0m
+[32m[DEBUG] OPEN Ext4 block device p_user=0xffffffc08030ac00[0m
+[32m[DEBUG] READ block device buf=1024[0m
+[32m[DEBUG] block id: 2[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 8[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 9[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 10[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 11[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 12[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 13[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 14[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 15[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 4360[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4361[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4362[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4363[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4364[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4365[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4366[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4367[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=1024[0m
+[32m[DEBUG] block id: 3932160[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932161[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 3932168[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932169[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932170[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932171[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932172[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932173[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932174[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932175[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 3932240[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932241[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932242[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932243[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932244[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932245[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932246[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932247[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=1024[0m
+[32m[DEBUG] block id: 3932160[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 3932161[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] lwext4 mount Okay[0m
+[32m[DEBUG] ********************[0m
+[32m[DEBUG] ext4_mount_point_stats[0m
+[32m[DEBUG] inodes_count = 40000[0m
+[32m[DEBUG] free_inodes_count = 3e6dd[0m
+[32m[DEBUG] blocks_count = 100000[0m
+[32m[DEBUG] free_blocks_count = 39aa1[0m
+[32m[DEBUG] block_size = 1000[0m
+[32m[DEBUG] block_group_count = 20[0m
+[32m[DEBUG] blocks_per_group= 8000[0m
+[32m[DEBUG] inodes_per_group = 2000[0m
+[32m[DEBUG] volume_name = ""[0m
+[32m[DEBUG] ********************
+[0m
+[32m[DEBUG] ********************[0m
+[32m[DEBUG] ext4 blockdev stats[0m
+[32m[DEBUG] bdev->bread_ctr = 7[0m
+[32m[DEBUG] bdev->bwrite_ctr = 5[0m
+[32m[DEBUG] bcache->ref_blocks = 2[0m
+[32m[DEBUG] bcache->max_ref_blocks = 3[0m
+[32m[DEBUG] bcache->lru_ctr = 38[0m
+[32m[DEBUG] ********************
+[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 69896[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69897[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69898[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69899[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69900[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69901[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69902[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 69903[0m
+[32m[DEBUG] read size = block size : 512[0m
+[dir]  .                                                                                                                                                                                                                                                              
+[dir]  ..                                                                                                                                                                                                                                                             
+[dir]  lost+found                                                                                                                                                                                                                                                     
+[dir]  glibc                                                                                                                                                                                                                                                          
+[dir]  musl                                                                                                                                                                                                                                                           
+**************/
+[32m[DEBUG] open file: /proc, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] [Inode.find] origin path=/proc[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /proc,[0m
+[32m[DEBUG] open file: /proc, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 4232[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4233[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4234[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4235[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4236[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4237[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4238[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4239[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 5960[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5961[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5962[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5963[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5964[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5965[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5966[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5967[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 4104[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4105[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4106[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4107[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4108[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4109[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4110[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 4111[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] open file: /proc/mounts, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] [Inode.find] origin path=/proc/mounts[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /proc/mounts,[0m
+[32m[DEBUG] open file: /proc/mounts, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in inode write ok[0m
+[32m[DEBUG] buf: 1[0m
+[32m[DEBUG] initialize cache! /proc/mounts[0m
+[32m[DEBUG] create /proc/mounts with 19 sizes[0m
+[32m[DEBUG] open file: /proc/meminfo, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] [Inode.find] origin path=/proc/meminfo[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /proc/meminfo,[0m
+[32m[DEBUG] open file: /proc/meminfo, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in inode write ok[0m
+[32m[DEBUG] buf: 1[0m
+[32m[DEBUG] initialize cache! /proc/meminfo[0m
+[32m[DEBUG] create /proc/meminfo with 1165 sizes[0m
+[32m[DEBUG] open file: /dev, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] [Inode.find] origin path=/dev[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /dev,[0m
+[32m[DEBUG] open file: /dev, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] open file: /dev/misc, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] [Inode.find] origin path=/dev/misc[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /dev/misc,[0m
+[32m[DEBUG] open file: /dev/misc, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 5968[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5969[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5970[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5971[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5972[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5973[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5974[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] block id: 5975[0m
+[32m[DEBUG] read size = block size : 512[0m
+[32m[DEBUG] open file: /etc, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] [Inode.find] origin path=/etc[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /etc,[0m
+[32m[DEBUG] open file: /etc, flags: O_RDWR | O_CREATE | O_DIRECTORY[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] open file: /etc/adjtime, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] [Inode.find] origin path=/etc/adjtime[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /etc/adjtime,[0m
+[32m[DEBUG] open file: /etc/adjtime, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in inode write ok[0m
+[32m[DEBUG] buf: 1[0m
+[32m[DEBUG] initialize cache! /etc/adjtime[0m
+[32m[DEBUG] create /etc/adjtime with 22 sizes[0m
+[32m[DEBUG] open file: /etc/localtime, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] [Inode.find] origin path=/etc/localtime[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /etc/localtime,[0m
+[32m[DEBUG] open file: /etc/localtime, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in inode write ok[0m
+[32m[DEBUG] buf: 1[0m
+[32m[DEBUG] initialize cache! /etc/localtime[0m
+[32m[DEBUG] create /etc/localtime with 93 sizes[0m
+[32m[DEBUG] open file: /etc/passwd, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] [Inode.find] origin path=/etc/passwd[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /etc/passwd,[0m
+[32m[DEBUG] open file: /etc/passwd, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in inode write ok[0m
+[32m[DEBUG] buf: 1[0m
+[32m[DEBUG] initialize cache! /etc/passwd[0m
+[32m[DEBUG] create /etc/passwd with 70 sizes[0m
+[32m[DEBUG] open file: /etc/ld.so.preload, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] [Inode.find] origin path=/etc/ld.so.preload[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] check err[0m
+[32m[DEBUG] find file successfully: /etc/ld.so.preload,[0m
+[32m[DEBUG] open file: /etc/ld.so.preload, flags: O_RDWR | O_CREATE[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] get r ok[0m
+[32m[DEBUG] in inode write ok[0m
+[32m[DEBUG] buf: 1[0m
+[32m[DEBUG] initialize cache! /etc/ld.so.preload[0m
+[32m[DEBUG] create /etc/ld.so.preload with 0 sizes[0m
+create_init_files success!
+[32m[DEBUG] [load_dl] encounter a static elf[0m
+[32m[DEBUG] elf program header count: 5[0m
+[32m[DEBUG] start_va 0x10000 end_va 0x133ae[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x10000, end ceil = 0x14000[0m
+[32m[DEBUG] before page offset, max end vpn is : 0x14000[0m
+[32m[DEBUG] start_va 0x14000 end_va 0x14e58[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x14000, end ceil = 0x15000[0m
+[32m[DEBUG] before page offset, max end vpn is : 0x15000[0m
+[32m[DEBUG] start_va 0x15000 end_va 0x1a139[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x15000, end ceil = 0x1b000[0m
+[32m[DEBUG] before page offset, max end vpn is : 0x1b000[0m
+[34m[ INFO] user heap bottom: 0x1c000, 114688[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x1c000, end ceil = 0x1c000[0m
+[32m[DEBUG] (ProcessControlBlock, new), from_elf passed[0m
+[34m[ INFO] (RecycleAllocator, alloc) recycle allocator alloc: current id 1, recycled [][0m
+[32m[DEBUG] in drop for gid[0m
+[34m[ INFO] (ProcessControlBlock, new), the heap bottom is : 0x1c000[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x3ffffee000, end ceil = 0x3fffff7000[0m
+[34m[ INFO] (MemorySetInner, find_insert_addr) hint = 0x3000000000, size = 4096[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x2ffffff000, end ceil = 0x3000000000[0m
+[34m[ INFO] (MemorySetInner, find_insert_addr) hint = 0x2fff448000, size = 32768[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x2fff440000, end ceil = 0x2fff448000[0m
+[32m[DEBUG] (ProcessControlBlockInner, alloc_user_res) user stack area: 0x2fff440000 - 0x2fff448000[0m
+[34m[ INFO] (insert_into_tid2task) tid: 0[0m
+[34m[ INFO] kernel: INITPROC is added to the task manager[0m
+[34m[ INFO] (trap_entry) into trap entry[0m
+[34m[ INFO] (suspend_current_and_run_next) suspending current task and running next task[0m
+[32m[DEBUG] in  trap, to syscall[0m
+[32m[DEBUG] in syscall, the args is : 1, 94208, 44, 94208, 0, 74884[0m
+[34m[ INFO] ##### syscall with id 64 #####[0m
+[32m[DEBUG] in sys write with buf: 0x17000, len: 44[0m
+[32m[DEBUG] current pid is :1[0m
+[32m[DEBUG] in write,to translated byte buffer[0m
+[34m[ INFO] (translated_byte_buffer) ptr: 0x17000, len: 44[0m
+[32m[DEBUG] to write file[0m
+[34m[ INFO] kernel: write to stdout[0m
+Usertests: Running /musl/basic_testcode.sh 
+[34m[ INFO] kernel: write to stdout done[0m
+[32m[DEBUG] in write, to return , ret is :44[0m
+[32m[DEBUG] in  trap, to syscall[0m
+[32m[DEBUG] in syscall, the args is : 0, 0, 0, 94208, 0, 74884[0m
+[34m[ INFO] ##### syscall with id 220 #####[0m
+[32m[DEBUG] (sys_fork) flags: 0, stack_ptr: 0x0, parent_tid_ptr: 0x0, tls_ptr: 0x17000, child_tid_ptr: 0x0[0m
+[34m[ INFO] (RecycleAllocator, alloc) recycle allocator alloc: current id 2, recycled [][0m
+[32m[DEBUG] (KernelStack), get_top[0m
+[32m[DEBUG] (ProcessControlBlock, fork) create child, pid: 2, ppid: 1, tid: 2[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x3ffffe5000, end ceil = 0x3ffffee000[0m
+[34m[ INFO] (MemorySetInner, find_insert_addr) hint = 0x3000000000, size = 4096[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x2ffffff000, end ceil = 0x3000000000[0m
+[34m[ INFO] (MemorySetInner, find_insert_addr) hint = 0x2fff448000, size = 32768[0m
+[32m[DEBUG] MapArea::new(as virtaddr, aligned) start floor = 0x2fff440000, end ceil = 0x2fff448000[0m
+[32m[DEBUG] (ProcessControlBlockInner, alloc_user_res) user stack area: 0x2fff440000 - 0x2fff448000[0m
+[32m[DEBUG] copying page: 0x2fff440000, src_paddr: 0xbfe14000, dst_paddr: 0x8232e000[0m
+[32m[DEBUG] copying page: 0x2fff441000, src_paddr: 0xbfe13000, dst_paddr: 0x8232d000[0m
+[32m[DEBUG] copying page: 0x2fff442000, src_paddr: 0xbfe12000, dst_paddr: 0x8232c000[0m
+[32m[DEBUG] copying page: 0x2fff443000, src_paddr: 0xbfe11000, dst_paddr: 0x8232b000[0m
+[32m[DEBUG] copying page: 0x2fff444000, src_paddr: 0xbfe10000, dst_paddr: 0x8232a000[0m
+[32m[DEBUG] copying page: 0x2fff445000, src_paddr: 0x8231f000, dst_paddr: 0x82329000[0m
+[32m[DEBUG] copying page: 0x2fff446000, src_paddr: 0x8231e000, dst_paddr: 0x82328000[0m
+[32m[DEBUG] copying page: 0x2fff447000, src_paddr: 0x8231c000, dst_paddr: 0x82326000[0m
+[34m[ INFO] (ProcessControlBlock, fork) clone user res ok[0m
+[34m[ INFO] (insert_into_tid2task) tid: 2[0m
+[32m[DEBUG] (sys_fork) the new tid is :2[0m
+[34m[ INFO] (suspend_current_and_run_next) suspending current task and running next task[0m
+[34m[ INFO] (trap_entry) into trap entry[0m
+[32m[DEBUG] in  trap, to syscall[0m
+[32m[DEBUG] in syscall, the args is : 82360, 206146141792, 0, 0, 0, 0[0m
+[34m[ INFO] ##### syscall with id 221 #####[0m
+[32m[DEBUG] in sys exec[0m
+[32m[DEBUG] current process id is :2[0m
+[32m[DEBUG] the pathp is :0x141b8[0m
+[32m[DEBUG] the path is :/musl/basic_testcode.sh[0m
+[32m[DEBUG] trim path ok,the path is :/musl/basic_testcode.sh[0m
+[32m[DEBUG] in set cwd[0m
+[32m[DEBUG] push busybox[0m
+[32m[DEBUG] to deal the argv[0m
+[32m[DEBUG] the argv is : /musl/basic_testcode.sh[0m
+[32m[DEBUG] the argv is : sh[0m
+[32m[DEBUG] the argv is : /musl/busybox[0m
+[32m[DEBUG] get cwd ok, the cwd is :/, the path is :/musl/busybox[0m
+[32m[DEBUG] to open,the path is: /musl/busybox[0m
+[32m[DEBUG] open file: /musl/busybox, flags: O_RDONLY[0m
+[32m[DEBUG] [Inode.find] origin path=/musl/busybox[0m
+[32m[DEBUG] get file ok[0m
+[32m[DEBUG] in check inode exist[0m
+[32m[DEBUG] READ block device buf=4096[0m
+[32m[DEBUG] block id: 69944[0m
+[32m[DEBUG] read size = block size : 512[0m
+[kernel] Panicked at src/drivers/virtio/blk.rs:77 called `Result::unwrap()` on an `Err` value: NotReady

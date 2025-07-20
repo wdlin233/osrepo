@@ -49,9 +49,10 @@ impl Disk {
 
     /// Read within one block, returns the number of bytes read.
     pub fn read_one(&mut self, buf: &mut [u8]) -> usize {
-        // info!("block id: {}", self.block_id);
+        debug!("block id: {}", self.block_id);
         let read_size = if self.offset == 0 && buf.len() >= BLOCK_SIZE {
             // whole block
+            //debug!("read size = block size : 512");
             self.dev.read_block(self.block_id, &mut buf[0..BLOCK_SIZE]);
             self.block_id += 1;
             BLOCK_SIZE

@@ -431,7 +431,9 @@ pub fn create_init_files() -> GeneralRet {
     let preloadbuf = UserBuffer::new(preloadvec);
     let preloadsize = preloadfile.write(preloadbuf)?;
     debug!("create /etc/ld.so.preload with {} sizes", preloadsize);
-
+    // info!("to open busybox");
+    // open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)?;
+    // info!("open ok");
     println!("create_init_files success!");
     Ok(())
 }

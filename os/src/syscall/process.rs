@@ -284,6 +284,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     debug!("get cwd ok, the cwd is :{}, the path is :{}", cwd, path);
     let abs_path = get_abs_path(&cwd, &path);
     debug!("to open,the path is: {}", abs_path);
+    //let abs_path = String::from("/glibc/busybox");
     let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
         .unwrap()
         .file()

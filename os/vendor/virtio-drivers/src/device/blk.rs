@@ -110,6 +110,7 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
     /// Sends the given request to the device and waits for a response, including the given data.
     fn request_read(&mut self, request: BlkReq, data: &mut [u8]) -> Result {
         let mut resp = BlkResp::default();
+        //debug!("in request read");
         self.queue.add_notify_wait_pop(
             &[request.as_bytes()],
             &mut [data, resp.as_bytes_mut()],
@@ -168,6 +169,7 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
     pub fn read_blocks(&mut self, block_id: usize, buf: &mut [u8]) -> Result {
         assert_ne!(buf.len(), 0);
         assert_eq!(buf.len() % SECTOR_SIZE, 0);
+        //debug!("in read blocks");
         self.request_read(
             BlkReq {
                 type_: ReqType::In,

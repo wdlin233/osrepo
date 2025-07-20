@@ -490,8 +490,10 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
         outputs: &'a mut [&'a mut [u8]],
     ) -> Result<u32> {
         if !self.can_pop() {
+            //debug!("not ready");
             return Err(Error::NotReady);
         }
+        //debug!("ready");
         // Read barrier not necessary, as can_pop already has one.
 
         // Get the index of the start of the descriptor chain for the next element in the used ring.
