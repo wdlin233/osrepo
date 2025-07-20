@@ -1,5 +1,6 @@
 use super::sys_gettid;
 use crate::alloc::string::ToString;
+use crate::fs::get_musl_busybox;
 use crate::mm::{shm_attach, shm_create, shm_drop, shm_find, MemorySet, ShmFlags};
 use crate::signal::{send_access_signal, send_signal_to_thread_group};
 use crate::syscall::{FutexCmd, FutexOpt};
@@ -11,7 +12,7 @@ use crate::task::{
 use crate::timer::{add_futex_timer, get_time_ms, TimeSpec};
 use crate::{
     config::PAGE_SIZE,
-    fs::{open, vfs::File, OpenFlags, NONE_MODE},
+    fs::{open, vfs::File, OpenFlags, KEEP_BUSYBOX_ELF, NONE_MODE},
     mm::{
         insert_bad_address, is_bad_address, remove_bad_address, translated_ref, translated_refmut,
         translated_str, MapPermission,
@@ -203,13 +204,13 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let mut path;
     unsafe {
         //debug!("in unsafe");
-        drop(inner);
+        //drop(inner);
         debug!("the pathp is :{:?}", pathp);
         //debug!("the path is :{}", c_ptr_to_string(pathp));
         debug!("the path is :{}", translated_str(pathp));
         path = trim_start_slash(translated_str(pathp));
         debug!("trim path ok,the path is :{}", path);
-        let inner = current_task.inner_exclusive_access();
+        //let inner = current_task.inner_exclusive_access();
         if path.contains("/musl") {
             debug!("in set cwd");
             inner.fs_info.set_cwd(String::from("/musl"));
@@ -256,7 +257,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
                 envp = envp.add(1);
             }
         }
-        drop(inner);
+        //drop(inner);
     }
 
     let env_path = "PATH=/:/bin:".to_string();
@@ -274,7 +275,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         //设置系统最大负载
         env.push(env_enough);
     }
-    let inner = current_task.inner_exclusive_access();
+    //let inner = current_task.inner_exclusive_access();
     let cwd = if !path.starts_with('/') {
         debug!("the path is not start with / ");
         inner.fs_info.cwd()
@@ -285,12 +286,29 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let abs_path = get_abs_path(&cwd, &path);
     debug!("to open,the path is: {}", abs_path);
     //let abs_path = String::from("/glibc/busybox");
+    // let elf_data: Vec<u8>;
+    // if abs_path != "/musl/busybox" {
+    //     let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
+    //         .unwrap()
+    //         .file()
+    //         .unwrap();
+    //     debug!("open app inode ok");
+    //     //let app_inode = get_musl_busybox().file().unwrap();
+    //     inner.fs_info.set_exe(abs_path);
+    //     elf_data = app_inode.inode.read_all().unwrap();
+    // } else {
+    //     elf_data = get_musl_busybox();
+    // }
+
     let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
         .unwrap()
         .file()
         .unwrap();
+    debug!("open app inode ok");
+    //let app_inode = get_musl_busybox().file().unwrap();
     inner.fs_info.set_exe(abs_path);
     let elf_data = app_inode.inode.read_all().unwrap();
+
     drop(inner);
     let len = argv.len();
     current_task.exec(&elf_data, argv, &mut env);

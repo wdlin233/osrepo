@@ -26,6 +26,7 @@ pub use ext4_lw::{fs_stat, ls, root_inode, sync};
 pub use fsidx::*;
 pub use fstruct::*;
 use hashbrown::HashSet;
+use lazy_static::*;
 use log::debug;
 pub use mount::MNT_TABLE;
 pub use net::*;
@@ -34,7 +35,6 @@ use spin::Lazy;
 pub use stat::*;
 pub use stdio::{Stdin, Stdout};
 pub use vfs::*;
-
 // 定义一份打开文件的标志
 bitflags! {
     pub struct OpenFlags: u32 {
@@ -195,7 +195,7 @@ pub fn flush_preload() {
         fn initproc_rv_start();
         fn initproc_rv_end();
     }
-
+    let _ff = KEEP_BUSYBOX_ELF.clone();
     let initproc = open("/initproc", OpenFlags::O_CREATE, DEFAULT_FILE_MODE)
         .unwrap()
         .file()
@@ -291,6 +291,31 @@ const ADJTIME: &str = "0.000000 0.000000 UTC\n";
 const LOCALTIME: &str =
     "lrwxrwxrwx 1 root root 33 11月 18  2023 /etc/localtime -> /usr/share/zoneinfo/Asia/Shanghai\n";
 const PRELOAD: &str = "";
+
+// lazy_static! {
+//     pub static ref KEEP_BUSYBOX_ELF: Option<Vec<u8>> = {
+//         let app_inode = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)
+//             .unwrap()
+//             .file()
+//             .unwrap();
+//         Some(app_inode.inode.read_all().unwrap())
+//     };
+// }
+
+// pub fn get_musl_busybox() -> Vec<u8> {
+//     unsafe { KEEP_BUSYBOX_ELF.as_ref().unwrap().clone() }
+// }
+
+lazy_static! {
+    pub static ref KEEP_BUSYBOX_ELF: Option<Arc<FileClass>> = {
+        let fd = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE).unwrap();
+        Some(Arc::new(fd))
+    };
+}
+
+pub fn get_musl_busybox() -> Arc<FileClass> {
+    unsafe { KEEP_BUSYBOX_ELF.as_ref().unwrap().clone() }
+}
 
 pub fn create_init_files() -> GeneralRet {
     //创建/proc文件夹
@@ -436,7 +461,7 @@ pub fn create_init_files() -> GeneralRet {
     let preloadsize = preloadfile.write(preloadbuf)?;
     debug!("create /etc/ld.so.preload with {} sizes", preloadsize);
     // info!("to open busybox");
-    // open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)?;
+
     // info!("open ok");
     println!("create_init_files success!");
     Ok(())
@@ -478,6 +503,7 @@ pub fn map_dynamic_link_file(path: &str) -> &str {
 pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass, SysErrNo> {
     // log::info!("[open] abs_path={}", abs_path);
     //判断是否是设备文件
+
     if find_device(abs_path) {
         let device = open_device_file(abs_path)?;
         return Ok(FileClass::Abs(device));
