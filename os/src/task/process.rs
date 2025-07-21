@@ -17,7 +17,8 @@ use crate::hal::trap::{trap_handler, TrapContext};
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{
-    flush_tlb, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr, VirtPageNum,
+    flush_tlb, put_data, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr,
+    VirtPageNum,
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
@@ -767,6 +768,10 @@ impl ProcessControlBlock {
             // attach task to child process
             let mut child_inner = child.inner_exclusive_access();
             child_inner.tasks.push(Some(Arc::clone(&task)));
+            if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
+                let child_token = child_inner.get_user_token();
+                put_data(child_token, child_tid, task.tid() as u32);
+            }
             drop(child_inner);
 
             #[cfg(target_arch = "riscv64")]

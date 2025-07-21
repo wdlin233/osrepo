@@ -444,6 +444,23 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     string
 }
 
+pub fn put_data<T: 'static>(token: usize, ptr: *mut T, data: T) {
+    let page_table = PageTable::from_token(token);
+    let mut va = VirtAddr::from(ptr as usize);
+    let pa = page_table.translate_va(va).unwrap();
+    let size = core::mem::size_of::<T>();
+    // 若数据跨页，则转换成字节数据写入
+    if PhysAddr(pa.0 + size - 1).floor() != pa.floor() {
+        let bytes =
+            unsafe { core::slice::from_raw_parts(&data as *const _ as usize as *const u8, size) };
+        for i in 0..size {
+            *(page_table.translate_va(va).unwrap().get_mut()) = bytes[i];
+            va.0 = va.0 + 1;
+        }
+    } else {
+        *translated_refmut(token, ptr) = data;
+    }
+}
 /// translate a pointer `ptr` in other address space to a immutable u8 slice in kernel address space. NOTICE: the content pointed to by the pointer `ptr` cannot cross physical pages, otherwise translated_byte_buffer should be used.
 pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
     let page_table = PageTable::from_token(token);
