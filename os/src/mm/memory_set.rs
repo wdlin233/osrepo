@@ -388,13 +388,49 @@ impl MemorySetInner {
                 );
                 let data_offset = start_va.raw() - start_va.floor().raw();
                 max_end_vpn = map_area.vaddr_range.get_end();
-                debug!("before page offset, max end vpn is : {}", max_end_vpn);
+                debug!("(map_elf) before page offset, max end vpn is : {}", max_end_vpn);
                 // A optimization for mapping data, keep aligned
                 self.push_with_offset(
                     map_area,
                     data_offset,
                     Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
                 );
+                // let file_size = ph.file_size() as usize;
+                // let mem_size = ph.mem_size() as usize;
+                // if mem_size > file_size {
+                //     let bss_start = start_va.raw() + file_size;
+                //     let bss_end = start_va.raw() + mem_size;
+
+                //     if bss_start < max_end_vpn.raw() {
+                //         // 清零物理内存
+                //         let zero_start = bss_start.max(start_va.floor().raw());
+                //         let zero_end = bss_end.min(max_end_vpn.raw());
+                //         if zero_end > zero_start {
+                //             if let Some((paddr, _flags)) = self.page_table.translate(VirtAddr::from(zero_start)) {
+                //                 let offset = zero_start % PAGE_SIZE;
+                //                 warn!(
+                //                     "(map_elf) zeroing bss from {:#x} to {:#x}, paddr: {:#x}, offset: {:#x}, end: {:#x}",
+                //                     zero_start, zero_end, paddr.raw(), offset, paddr.raw() + offset
+                //                 );
+                //                 let slice = unsafe {
+                //                     core::slice::from_raw_parts_mut(
+                //                         (paddr.raw() + offset) as *mut u8,
+                //                         zero_end - zero_start,
+                //                     )
+                //                 };
+                //                 slice.fill(0);
+                //             }
+                //         }
+                //     }
+                //     if bss_end > max_end_vpn.raw() {
+                //         max_end_vpn = VirtAddr::from(bss_end);
+                //         warn!(
+                //             "(map_elf) bss end {:#x} > max end vpn {:#x}, update max end vpn",
+                //             bss_end, max_end_vpn.raw()
+                //         );
+                //         unimplemented!()
+                //     }
+                // }
             }
         }
         (max_end_vpn, head_va.into())
@@ -491,6 +527,7 @@ impl MemorySetInner {
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
         self.page_table.change();
+        TLB::flush_all();
     }
     /// Translate a virtual page number to a page table entry
     /// PageTableEntry 被拆解为 PhysAddr 和 MappingFlags

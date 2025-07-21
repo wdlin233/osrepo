@@ -10,6 +10,7 @@ pub mod stat;
 pub mod stdio;
 pub mod vfs;
 
+use core::arch::global_asm;
 use crate::mm::UserBuffer;
 use crate::println;
 use crate::task::current_uid;
@@ -184,6 +185,10 @@ impl InodeType {
 
 // os\src\fs\mod.rs
 //将预加载到内存中的程序写入文件根目录
+#[cfg(target_arch = "riscv64")]
+global_asm!(include_str!("initproc_rv.S"));
+#[cfg(target_arch = "loongarch64")]
+global_asm!(include_str!("initproc_la.S"));
 pub fn flush_preload() {
     extern "C" {
         fn initproc_start();
@@ -204,7 +209,6 @@ pub fn flush_preload() {
         ) as &'static mut [u8]
     });
     initproc.write(UserBuffer::new(v));
-
     // let test = open(
     //     "/test_all_1stage.sh",
     //     OpenFlags::O_CREATE,
@@ -224,7 +228,7 @@ pub fn flush_preload() {
 }
 
 pub fn init() {
-    //flush_preload();
+    flush_preload();
     create_init_files();
     // TODO(ZMY):为了过libc-test utime的权宜之计,读取RTC太麻烦了
     //root_inode().set_timestamps(Some(0), Some(0), Some(0));

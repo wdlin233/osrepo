@@ -17,7 +17,7 @@ mod processor;
 mod stride;
 mod futex;
 
-use crate::fs::{open, OpenFlags, NONE_MODE};
+use crate::fs::{open, OpenFlags, DEFAULT_FILE_MODE, NONE_MODE};
 use crate::println;
 use crate::task::manager::{add_stopping_task, insert_into_tid2task, wakeup_parent};
 use crate::task::process::TaskStatus;
@@ -124,22 +124,15 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 
-#[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("initproc_rv.S"));
-#[cfg(target_arch = "loongarch64")]
-global_asm!(include_str!("initproc_la.S"));
 pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     // debug!("kernel: INITPROC is being initialized");
-    unsafe {
-        extern "C" {
-            fn initproc_rv_start();
-            fn initproc_rv_end();
-        }
-        let start = initproc_rv_start as usize as *const usize as *const u8;
-        let len = initproc_rv_end as usize - initproc_rv_start as usize;
-        let data = core::slice::from_raw_parts(start, len);
-        ProcessControlBlock::new(data)
-    }
+    let initproc = open("/initproc", OpenFlags::O_RDONLY, NONE_MODE)
+        .expect("open initproc error!")
+        .file()
+        .expect("initproc can not be abs file!");
+    let elf_data = initproc.inode.read_all().unwrap();
+    info!("kernel: INITPROC is initialized with elf_data length: {}", elf_data.len());
+    ProcessControlBlock::new(&elf_data)
 });
 
 ///Add init process to the manager
@@ -147,6 +140,13 @@ pub fn add_initproc() {
     add_task(INITPROC.clone());
     insert_into_tid2task(0, &INITPROC);
     insert_into_thread_group(0, &INITPROC);
+    let app_inode = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)
+        .unwrap()
+        .file()
+        .unwrap();
+    warn!("(sys_fork) open /musl/busybox ok, but it is not used in fork");
+    let _elf_data = app_inode.inode.read_all().unwrap();
+    warn!("(add_initproc) open /musl/busybox ok, but it is not used in initproc");
     info!("kernel: INITPROC is added to the task manager");
 }
 
