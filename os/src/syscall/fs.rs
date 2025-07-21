@@ -3,9 +3,9 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, open, open_device_file, remove_inode_idx, stat, File, FileClass,
-    FileDescriptor, Kstat, OpenFlags, Statx, StatxFlags, MAX_PATH_LEN, MNT_TABLE, NONE_MODE,
-    SEEK_CUR, SEEK_SET,
+    convert_kstat_to_statx, fs_stat, open, open_device_file, remove_inode_idx, stat, File,
+    FileClass, FileDescriptor, Kstat, OpenFlags, Statfs, Statx, StatxFlags, MAX_PATH_LEN,
+    MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
 use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
@@ -596,6 +596,15 @@ pub fn sys_dup(fd: usize) -> isize {
     inner.fd_table.set(new_fd, file);
     inner.fs_info.insert_with_glue(fd, new_fd);
     new_fd as isize
+}
+
+pub fn sys_statfs(_path: *const u8, statfs: *mut Statfs) -> isize {
+    //data_flow!({ *statfs = fs_stat() });
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    *translated_refmut(token, statfs) = fs_stat();
+    0
 }
 
 pub fn sys_dup3(old: usize, new: usize, flags: u32) -> isize {

@@ -30,6 +30,8 @@ pub const SYSCALL_LINKAT: usize = 37;
 pub const SYSCALL_UNMOUNT2: usize = 39;
 /// mount syscall
 pub const SYSCALL_MOUNT: usize = 40;
+/// stat fs
+pub const SYSCALL_STATFS: usize = 43;
 /// faccessat syscall
 pub const SYSCALL_FACCESSAT: usize = 48;
 /// chdir syscall
@@ -233,7 +235,7 @@ use uname::*;
 
 use crate::syscall::sys_result::SysInfo;
 use crate::{
-    fs::{Kstat, Statx},
+    fs::{Kstat, Statfs, Statx},
     signal::{SigAction, SigInfo, SignalFlags},
     system::UTSname,
     task::TmsInner,
@@ -244,6 +246,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_STATFS => sys_statfs(args[0] as *const u8, args[1] as *mut Statfs),
         SYSCALL_SOCKETPAIR => sys_socketpair(
             args[0] as u32,
             args[1] as u32,
