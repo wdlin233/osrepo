@@ -56,13 +56,9 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
         StorePageFault(paddr) | LoadPageFault(paddr) | InstructionPageFault(paddr) => {
             let mut res: bool;
             {
-                debug!("(kernel_intrrupt) page fault handling");
+                debug!("(kernel_intrrupt) page fault handling with paddr: {:#x}, trap_type: {:?}", paddr, trap_type);
                 let process = current_task().unwrap();
                 let inner = process.inner_exclusive_access();
-                info!(
-                    "(kernel_intrrupt) now handling page fault, paddr = {:#x}, trap_type = {:?}",
-                    paddr, trap_type
-                );
                 res = inner
                     .memory_set
                     .lazy_page_fault(VirtAddr::from(paddr).floor(), trap_type);

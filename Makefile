@@ -2,12 +2,12 @@ ARCH ?= riscv64
 DOCKER_NAME ?= docker.educg.net/cg/os-contest:20250516
 ifeq ($(ARCH), riscv64)
 	KERNEL_BIN := kernel-rv
-	KERNEL_ELF := os/target/riscv64gc-unknown-none-elf/release/os  # ELF 文件路径
+	KERNEL_ELF := os/target/riscv64gc-unknown-none-elf/release/os
 	FS_IMG := sdcard-rv.img
 	GDB_ARCH := riscv:rv64
 else ifeq ($(ARCH), loongarch64)
 	KERNEL_BIN := kernel-la
-	KERNEL_ELF := os/target/loongarch64-unknown-none/release/os  # 根据实际路径调整
+	KERNEL_ELF := /os/target/loongarch64-unknown-none/release/os
 	FS_IMG := sdcard-la.img
 	GDB_ARCH := loongarch64
 else
@@ -25,10 +25,23 @@ docker:
 build_docker: 
 	docker build -t ${DOCKER_NAME} .
 
+# all:
+# 	@cd user && make build ARCH=riscv64
+# 	@cd user_la && make build ARCH=loongarch64
+# 	@cd os && make build ARCH=riscv64
+# 	@cd os && make build ARCH=loongarch64
+# 	@cp ./os/target/riscv64gc-unknown-none-elf/release/os.bin ./kernel-rv
+# 	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
+
 all:
 	@cd user && make build ARCH=riscv64
 	@cd os && make build ARCH=riscv64
-	@cp ./os/target/riscv64gc-unknown-none-elf/release/os.bin ./${KERNEL_BIN}
+	@cp ./os/target/riscv64gc-unknown-none-elf/release/os.bin ./kernel-rv
+
+# all:
+# 	@cd user_la && make build ARCH=loongarch64
+# 	@cd os && make build ARCH=loongarch64
+# 	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
 
 clean:
 	@cd ./os && make clean
@@ -44,11 +57,8 @@ QEMU_EXEC = qemu-system-riscv64 -machine virt -kernel ${KERNEL_BIN} -m 1G -nogra
 else ifeq ($(ARCH), loongarch64)
 QEMU_EXEC = qemu-system-loongarch64 -kernel ${KERNEL_BIN} -m 1G -nographic -smp 1 \
             -drive file=${FS_IMG},if=none,format=raw,id=x0 \
-            -device virtio-blk-pci,drive=x0,bus=virtio-mmio-bus.0 -no-reboot \
-            -device virtio-net-pci,netdev=net0 \
-            id=net0,hostfwd=tcp::5555-:5555,hostfwd=udp::5555-:5555  \
-            -drive file=disk-la.img,if=none,format=raw,id=x1 \
-            -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
+            -device virtio-blk-pci,drive=x0 -no-reboot
+        
 endif
 
 run: all

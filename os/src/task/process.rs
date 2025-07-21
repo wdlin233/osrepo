@@ -11,7 +11,7 @@ use crate::config::{
     PRE_ALLOC_PAGES, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
     USER_TRAP_CONTEXT_TOP,
 };
-use crate::fs::File;
+use crate::fs::{open, File};
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::mm::{
     translated_refmut, MapAreaType, MapPermission, MapType, MemorySet, MemorySetInner, VAddrRange,
@@ -394,8 +394,12 @@ impl ProcessControlBlock {
     pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>, env: &mut Vec<String>) {
         debug!("kernel: exec, pid = {}", self.getpid());
         let (memory_set, user_heap_bottom, entry_point, mut aux) = MemorySet::from_elf(elf_data);
+        warn!(
+            "(ProcessControlBlock, exec) from_elf passed, user_heap_bottom: {:#x}, entry_point: {:#x}",
+            user_heap_bottom,
+            entry_point
+        );
         memory_set.activate();
-
         let mut inner = self.inner_exclusive_access();
         if inner.clear_child_tid != 0 {
             *translated_refmut(inner.clear_child_tid as *mut u32) = 0;

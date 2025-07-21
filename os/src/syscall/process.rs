@@ -197,7 +197,6 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let mut argv = Vec::<String>::new();
     let mut env = Vec::<String>::new();
     let mut path;
-    
     unsafe {
         //debug!("in unsafe");
         drop(inner);
@@ -281,7 +280,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     info!("(sys_exec) open file successfully: {}", abs_path);
     let inner = current_task.inner_exclusive_access();
     inner.fs_info.set_exe(abs_path);
+    // warn!("(sys_exec) open file successfully: {}", inner.fs_info.get_exe());
     let elf_data = app_inode.inode.read_all().unwrap();
+    // warn!("(sys_exec) elf_data length is :{}", elf_data.len());
     drop(inner);
     let len = argv.len();
     current_task.exec(&elf_data, argv, &mut env);

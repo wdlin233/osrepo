@@ -140,13 +140,13 @@ pub fn add_initproc() {
     add_task(INITPROC.clone());
     insert_into_tid2task(0, &INITPROC);
     insert_into_thread_group(0, &INITPROC);
-    let app_inode = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)
-        .unwrap()
-        .file()
-        .unwrap();
-    warn!("(sys_fork) open /musl/busybox ok, but it is not used in fork");
-    let _elf_data = app_inode.inode.read_all().unwrap();
-    warn!("(add_initproc) open /musl/busybox ok, but it is not used in initproc");
+    // let app_inode = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)
+    //     .unwrap()
+    //     .file()
+    //     .unwrap();
+    // warn!("(sys_fork) open /musl/busybox ok, but it is not used in fork");
+    // let _elf_data = app_inode.inode.read_all().unwrap();
+    // warn!("(add_initproc) open /musl/busybox ok, but it is not used in initproc");
     info!("kernel: INITPROC is added to the task manager");
 }
 
