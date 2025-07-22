@@ -198,16 +198,18 @@ impl PageTable {
 
     #[inline]
     pub fn change(&self) {
-        // Write page table entry for
-        debug!("in change");
-        let a = (8usize << 60) | (self.0.raw() >> 12);
-        debug!("the change ,a is : {:#x}", a);
-        let b = Satp::from_bits(a);
-        debug!("from bits ok");
-        unsafe { satp::write(b) }
-        debug!("stap write ok");
+        // // Write page table entry for
+        // debug!("in change");
+        // let a = (8usize << 60) | (self.0.raw() >> 12);
+        // debug!("the change ,a is : {:#x}", a);
+        // let b = Satp::from_bits(a);
+        // debug!("from bits ok");
+        // unsafe { satp::write(b) }
+        // debug!("stap write ok");
+        // TLB::flush_all();
+        // debug!("flush ok");
+        unsafe { satp::write(Satp::from_bits((8 << 60) | (self.0.raw() >> 12))) }
         TLB::flush_all();
-        debug!("flush ok");
     }
 }
 

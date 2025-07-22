@@ -407,85 +407,94 @@ impl MemorySetInner {
         let mut memory_set = Self::new_bare();
         // copy data sections/trap_context/user_stack
         for area in user_space.get_mut().areas.iter_mut() {
-            if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
-                continue;
-            }
-            let mut new_area = MapArea::from_another(area);
-            if area.area_type == MapAreaType::Mmap
-                && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
-            {
-                GROUP_SHARE.lock().add_area(new_area.groupid);
-            }
-            if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
-                //已经分配且独占/被写过的部分以及读共享部分按cow处理
-                //其余是未分配部分，直接clone即可
-                if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {
-                    let frames = area.data_frames.values().cloned().collect();
-                    memory_set.push_with_given_frames(new_area, frames);
-                    continue;
-                }
-                new_area.data_frames = area.data_frames.clone();
-                for (vpn, _) in area.data_frames.iter() {
-                    let vpn = *vpn;
-                    let (src_ppn, mut pte_flags) =
-                        user_space.get_mut().page_table.translate(vpn).unwrap();
-                    //清空可写位，设置COW位
-                    //下面两步不合起来是因为flags只有8位，全都用掉了
-                    //所以Cow位没有放到flags里面
-                    let need_cow =
-                        pte_flags.contains(MappingFlags::W) | pte_flags.contains(MappingFlags::Cow);
-                    pte_flags &= !MappingFlags::W;
-                    if need_cow {
-                        pte_flags |= MappingFlags::Cow;
-                    }
-                    user_space.get_mut().page_table.set_flags(vpn, pte_flags);
-                    // 设置新的pagetable
-                    memory_set
-                        .page_table
-                        .map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
-                }
-                memory_set.push_lazily(new_area);
-                continue;
-            }
-            // let mut page_table = &mut user_space.page_table;
-            // ELF是cow
-            if area.area_type == MapAreaType::Elf {
-                for vpn in area.vaddr_range {
-                    let (src_ppn, flags) = user_space.get_mut().translate(vpn).unwrap();
-                    let mut pte_flags = flags & !MappingFlags::W;
-                    //清空可写位，设置COW位
-                    //下面两步不合起来是因为flags只有8位，全都用掉了
-                    //所以Cow位没有放到flags里面
-                    pte_flags |= MappingFlags::Cow;
-                    user_space.get_mut().page_table.set_flags(vpn, pte_flags);
-                    // 设置新的pagetable
-                    memory_set
-                        .page_table
-                        .map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
-                }
-                new_area.data_frames = area.data_frames.clone();
-                memory_set.push_lazily(new_area);
-                continue;
-            }
-            // 映射相同的Frame
-            if area.area_type == MapAreaType::Shm {
-                let frames = area.data_frames.values().cloned().collect();
-                memory_set.push_with_given_frames(new_area, frames);
-                continue;
-            }
+            // if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
+            //     continue;
+            // }
 
-            //既不是cow也不是mmap还不是shm
-            memory_set.push(new_area, None);
+            // if area.area_type == MapAreaType::Mmap
+            //     && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+            // {
+            //     GROUP_SHARE.lock().add_area(new_area.groupid);
+            // }
+            // if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+            //     //已经分配且独占/被写过的部分以及读共享部分按cow处理
+            //     //其余是未分配部分，直接clone即可
+            //     if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {
+            //         let frames = area.data_frames.values().cloned().collect();
+            //         memory_set.push_with_given_frames(new_area, frames);
+            //         continue;
+            //     }
+            //     new_area.data_frames = area.data_frames.clone();
+            //     for (vpn, _) in area.data_frames.iter() {
+            //         let vpn = *vpn;
+            //         let (src_ppn, mut pte_flags) =
+            //             user_space.get_mut().page_table.translate(vpn).unwrap();
+            //         //清空可写位，设置COW位
+            //         //下面两步不合起来是因为flags只有8位，全都用掉了
+            //         //所以Cow位没有放到flags里面
+            //         let need_cow =
+            //             pte_flags.contains(MappingFlags::W) | pte_flags.contains(MappingFlags::Cow);
+            //         pte_flags &= !MappingFlags::W;
+            //         if need_cow {
+            //             pte_flags |= MappingFlags::Cow;
+            //         }
+            //         user_space.get_mut().page_table.set_flags(vpn, pte_flags);
+            //         // 设置新的pagetable
+            //         memory_set
+            //             .page_table
+            //             .map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
+            //     }
+            //     memory_set.push_lazily(new_area);
+            //     continue;
+            // }
+            // // let mut page_table = &mut user_space.page_table;
+            // // ELF是cow
+            // if area.area_type == MapAreaType::Elf {
+            //     for vpn in area.vaddr_range {
+            //         let (src_ppn, flags) = user_space.get_mut().translate(vpn).unwrap();
+            //         let mut pte_flags = flags & !MappingFlags::W;
+            //         //清空可写位，设置COW位
+            //         //下面两步不合起来是因为flags只有8位，全都用掉了
+            //         //所以Cow位没有放到flags里面
+            //         pte_flags |= MappingFlags::Cow;
+            //         user_space.get_mut().page_table.set_flags(vpn, pte_flags);
+            //         // 设置新的pagetable
+            //         memory_set
+            //             .page_table
+            //             .map_page(vpn, src_ppn, pte_flags, MappingSize::Page4KB);
+            //     }
+            //     new_area.data_frames = area.data_frames.clone();
+            //     memory_set.push_lazily(new_area);
+            //     continue;
+            // }
+            // // 映射相同的Frame
+            // if area.area_type == MapAreaType::Shm {
+            //     let frames = area.data_frames.values().cloned().collect();
+            //     memory_set.push_with_given_frames(new_area, frames);
+            //     continue;
+            // }
+
+            // //既不是cow也不是mmap还不是shm
+            // memory_set.push(new_area, None);
 
             // copy data from another space
+            let mut new_area = MapArea::from_another(area);
+            memory_set.push(new_area, None);
             for vpn in area.vaddr_range {
                 let src_ppn = user_space.translate(vpn).unwrap().0;
                 let dst_ppn = memory_set.translate(vpn).unwrap().0;
-                let dst =
-                    unsafe { core::slice::from_raw_parts_mut(dst_ppn.raw() as *mut u8, PAGE_SIZE) };
-                dst.copy_from_slice(unsafe {
-                    core::slice::from_raw_parts(src_ppn.raw() as *const u8, PAGE_SIZE)
-                });
+                // let dst =
+                //     unsafe { core::slice::from_raw_parts_mut(dst_ppn.raw() as *mut u8, PAGE_SIZE) };
+                // dst.copy_from_slice(unsafe {
+                //     core::slice::from_raw_parts(src_ppn.raw() as *const u8, PAGE_SIZE)
+                // });
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        src_ppn.get_ptr::<u8>(),
+                        dst_ppn.get_mut_ptr(),
+                        PAGE_SIZE,
+                    );
+                }
             }
         }
         TLB::flush_all();
