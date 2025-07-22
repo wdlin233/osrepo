@@ -149,6 +149,12 @@ impl ProcessControlBlockInner {
         let kernel_va = self.trap_cx_ppn.get_mut_ptr::<TrapFrame>();
         unsafe { kernel_va.as_mut().unwrap() }
     }
+    // pub fn trap_cx(&self) -> &'static mut TrapFrame {
+    //     let paddr = &self.trap_cx as *const TrapFrame as usize as *mut TrapFrame;
+    //     // let paddr: PhysAddr = self.trap_cx.into();
+    //     // unsafe { paddr.get_mut_ptr::<TrapFrame>().as_mut().unwrap() }
+    //     unsafe { paddr.as_mut().unwrap() }
+    // }
     pub fn is_zombie(&self) -> bool {
         self.task_status == TaskStatus::Zombie
     }
@@ -412,14 +418,15 @@ impl ProcessControlBlock {
     pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>, env: &mut Vec<String>) {
         debug!("kernel: exec, pid = {}", self.getpid());
         let (memory_set, user_heap_bottom, entry_point, mut aux) = MemorySet::from_elf(elf_data);
-        memory_set.activate();
-
+        
+        //memory_set.activate();
+        debug!("activate ok");
         let mut inner = self.inner_exclusive_access();
         if inner.clear_child_tid != 0 {
             *translated_refmut(inner.clear_child_tid as *mut u32) = 0;
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
-
+        
         inner.alloc_user_res(self.tid.0);
         inner.sig_table = Arc::new(SigTable::new());
         let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));

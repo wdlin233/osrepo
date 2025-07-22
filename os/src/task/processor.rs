@@ -71,65 +71,68 @@ pub fn run_tasks() {
         //let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
         //info!("(run_tasks) idle task cx ptr: {:p}", idle_task_cx_ptr);
         //info!("(run_tasks) in run_tasks loop beginning.");
-        if let Some(current_task) = take_current_task() {
-            let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
+        // if let Some(current_task) = take_current_task() {
+        //     let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
 
-            let mut current_inner = current_task.inner_exclusive_access();
-            check_timer();
-            if let Some(next_task) = fetch_task() {
-                debug!(
-                    "(run_tasks) next task tid: {}, pid: {}",
-                    next_task.gettid(),
-                    next_task.getpid()
-                );
-                let mut next_inner = next_task.inner_exclusive_access();
-                let next_task_cx_ptr = &next_inner.task_cx as *const KContext;
-                next_inner.task_status = TaskStatus::Running;
-                let next_token = next_inner.memory_set.token_pt(); // for activating
-                change_current_uid(next_task.getuid() as u32);
-                drop(next_inner);
-                drop(current_inner);
-                PROCESSOR.exclusive_access().current = Some(next_task);
-                add_task(current_task);
-                unsafe {
-                    context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, next_token);
-                }
-            } else {
-                debug!("(run_tasks) no next task, continue with current task");
-                current_inner.task_status = TaskStatus::Running;
-                let current_task_cx_ptr = &current_inner.task_cx as *const KContext;
-                drop(current_inner);
-                PROCESSOR.exclusive_access().current = Some(current_task);
-                unsafe {
-                    context_switch(idle_task_cx_ptr, current_task_cx_ptr);
-                }
-            }
-        } else {
-            let idle_task_cx_ptr = PROCESSOR.exclusive_access().get_idle_task_cx_ptr();
+        //     let mut current_inner = current_task.inner_exclusive_access();
+        //     check_timer();
+        //     if let Some(next_task) = fetch_task() {
+        //         debug!(
+        //             "(run_tasks) next task tid: {}, pid: {}",
+        //             next_task.gettid(),
+        //             next_task.getpid()
+        //         );
+        //         let mut next_inner = next_task.inner_exclusive_access();
+        //         let next_task_cx_ptr = &next_inner.task_cx as *const KContext;
+        //         next_inner.task_status = TaskStatus::Running;
+        //         let next_token = next_inner.memory_set.token_pt(); // for activating
+        //         change_current_uid(next_task.getuid() as u32);
+        //         drop(next_inner);
+        //         drop(current_inner);
+        //         PROCESSOR.exclusive_access().current = Some(next_task);
+        //         add_task(current_task);
+        //         unsafe {
+        //             context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, next_token);
+        //         }
+        //     } else {
+        //         debug!("(run_tasks) no next task, continue with current task");
+        //         current_inner.task_status = TaskStatus::Running;
+        //         let current_task_cx_ptr = &current_inner.task_cx as *const KContext;
+        //         drop(current_inner);
+        //         PROCESSOR.exclusive_access().current = Some(current_task);
+        //         unsafe {
+        //             context_switch(idle_task_cx_ptr, current_task_cx_ptr);
+        //         }
+        //     }
+        // } else {
+        let mut processor = PROCESSOR.exclusive_access();
+        // info!(
+        //     "(run_tasks) it is first schedule, idle task cx ptr: {:p}",
+        //     idle_task_cx_ptr
+        // );
+        if let Some(task) = fetch_task() {
+            let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
+            // access coming task TCB exclusively
+            let mut task_inner = task.inner_exclusive_access();
+            // TODO timer
+            task_inner.tms.set_begin();
+            let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
+            task_inner.task_status = TaskStatus::Running;
+            let token = task_inner.memory_set.token_pt(); // activate memoryset
+            drop(task_inner);
+            processor.current = Some(task);
+            drop(processor);
             // info!(
-            //     "(run_tasks) it is first schedule, idle task cx ptr: {:p}",
-            //     idle_task_cx_ptr
+            //     "(run_tasks) switching from idle task cx ptr: {:p} to next task cx ptr: {:p}",
+            //     idle_task_cx_ptr, next_task_cx_ptr
             // );
-            if let Some(task) = fetch_task() {
-                // access coming task TCB exclusively
-                let mut task_inner = task.inner_exclusive_access();
-                // TODO timer
-                task_inner.tms.set_begin();
-                let next_task_cx_ptr = &task_inner.task_cx as *const KContext;
-                task_inner.task_status = TaskStatus::Running;
-                let token = task_inner.memory_set.token_pt(); // activate memoryset
-                drop(task_inner);
-                PROCESSOR.exclusive_access().current = Some(task);
-                // info!(
-                //     "(run_tasks) switching from idle task cx ptr: {:p} to next task cx ptr: {:p}",
-                //     idle_task_cx_ptr, next_task_cx_ptr
-                // );
-                unsafe {
-                    context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, token);
-                }
-                check_timer();
-                //debug!("switch ok");
+            unsafe {
+                context_switch_pt(idle_task_cx_ptr, next_task_cx_ptr, token);
+                //context_switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
+            check_timer();
+            //debug!("switch ok");
+            //}
         }
     }
 }
@@ -142,7 +145,7 @@ pub fn take_current_task() -> Option<Arc<ProcessControlBlock>> {
 
 /// Get a copy of the current task
 pub fn current_task() -> Option<Arc<ProcessControlBlock>> {
-    //debug!("to get processor");
+    debug!("to get processor");
     PROCESSOR.exclusive_access().current()
 }
 

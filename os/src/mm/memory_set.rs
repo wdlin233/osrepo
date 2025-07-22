@@ -66,7 +66,7 @@ impl MemorySet {
     }
     #[inline(always)]
     pub fn token_pt(&self) -> PageTable {
-        self.inner.get_unchecked_mut().page_table.0
+        self.inner.get_unchecked_mut().token_pt()
     }
     #[inline(always)]
     pub fn insert_framed_area(
@@ -216,6 +216,9 @@ impl MemorySetInner {
     pub fn token(&self) -> Arc<PageTableWrapper> {
         self.page_table.clone()
     }
+    pub fn token_pt(&self) -> PageTable {
+        self.page_table.0
+    }
 
     pub fn insert_framed_area_with_hint(
         &mut self,
@@ -344,6 +347,7 @@ impl MemorySetInner {
             MapPermission::R | MapPermission::W | MapPermission::U,
             MapAreaType::Brk,
         );
+        debug!("in from elf, to return");
         // 返回 address空间,用户栈顶,入口地址
         (memory_set, user_heap_bottom, entry_point, auxv)
     }
@@ -428,8 +432,8 @@ impl MemorySetInner {
                     //清空可写位，设置COW位
                     //下面两步不合起来是因为flags只有8位，全都用掉了
                     //所以Cow位没有放到flags里面
-                    let need_cow = pte_flags.contains(MappingFlags::W)
-                        || pte_flags.contains(MappingFlags::Cow);
+                    let need_cow =
+                        pte_flags.contains(MappingFlags::W) | pte_flags.contains(MappingFlags::Cow);
                     pte_flags &= !MappingFlags::W;
                     if need_cow {
                         pte_flags |= MappingFlags::Cow;
@@ -489,6 +493,7 @@ impl MemorySetInner {
     }
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
+        debug!("in activate, to page table change");
         self.page_table.change();
     }
     /// Translate a virtual page number to a page table entry
@@ -990,6 +995,7 @@ impl MemorySetInner {
                 debug!("mmap");
             }
             if let Some((_paddr, flags)) = self.page_table.translate(vpn) {
+                debug!("to cow");
                 if flags.contains(MappingFlags::Cow) {
                     debug!("is cow,to deal");
                     cow_page_fault(vpn.into(), &mut self.page_table, area);

@@ -286,28 +286,28 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let abs_path = get_abs_path(&cwd, &path);
     debug!("to open,the path is: {}", abs_path);
     //let abs_path = String::from("/glibc/busybox");
-    // let elf_data: Vec<u8>;
-    // if abs_path != "/musl/busybox" {
-    //     let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
-    //         .unwrap()
-    //         .file()
-    //         .unwrap();
-    //     debug!("open app inode ok");
-    //     //let app_inode = get_musl_busybox().file().unwrap();
-    //     inner.fs_info.set_exe(abs_path);
-    //     elf_data = app_inode.inode.read_all().unwrap();
-    // } else {
-    //     elf_data = get_musl_busybox();
-    // }
+    let elf_data: Vec<u8>;
+    if abs_path != "/musl/busybox" {
+        let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
+            .unwrap()
+            .file()
+            .unwrap();
+        debug!("open app inode ok");
+        //let app_inode = get_musl_busybox().file().unwrap();
+        inner.fs_info.set_exe(abs_path);
+        elf_data = app_inode.inode.read_all().unwrap();
+    } else {
+        elf_data = get_musl_busybox();
+    }
 
-    let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
-        .unwrap()
-        .file()
-        .unwrap();
-    debug!("open app inode ok");
-    //let app_inode = get_musl_busybox().file().unwrap();
-    inner.fs_info.set_exe(abs_path);
-    let elf_data = app_inode.inode.read_all().unwrap();
+    // let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
+    //     .unwrap()
+    //     .file()
+    //     .unwrap();
+    // debug!("open app inode ok");
+    // //let app_inode = get_musl_busybox().file().unwrap();
+    // inner.fs_info.set_exe(abs_path);
+    // let elf_data = app_inode.inode.read_all().unwrap();
 
     drop(inner);
     let len = argv.len();

@@ -23,13 +23,16 @@ use crate::{
 #[no_mangle]
 pub fn trap_entry() {
     info!("(trap_entry) into trap entry");
+    let ctx = current_trap_cx() as *mut TrapFrame;
+    let ctx_mut = unsafe { ctx.as_mut().unwrap() };
+    debug!("get ctx ok");
     loop {
         // if let Some(signo) = check_if_any_sig_for_current_task() {
         //     debug!("(trap_entry) found signo in trap_return");
         //     handle_signal(signo);
         // }
-        let ctx = current_trap_cx();
-        run_user_task(ctx);
+        //let ctx_mut = current_trap_cx();
+        run_user_task(ctx_mut);
     }
 }
 
@@ -65,6 +68,7 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
                 debug!("get process ok");
                 let inner = process.inner_exclusive_access();
                 debug!("get inner ok");
+                //inner.memory_set.activate();
                 res = inner
                     .memory_set
                     .lazy_page_fault(VirtAddr::from(paddr).floor(), trap_type);

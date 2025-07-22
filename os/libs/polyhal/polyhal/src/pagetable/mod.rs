@@ -300,7 +300,7 @@ impl PageTable {
                 let paddr = pte.address();
                 *pte = PTE::new_page(paddr, flags.into());
                 TLB::flush_vaddr(vaddr);
-                Ok(())                
+                Ok(())
             } else {
                 Err("PTE is not valid")
             }

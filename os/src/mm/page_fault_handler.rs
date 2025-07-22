@@ -1,22 +1,16 @@
+use crate::config::PAGE_SIZE_BITS;
 use alloc::sync::Arc;
 use alloc::vec;
+use core::arch::asm;
 use polyhal::pagetable::TLB;
 use polyhal::{MappingFlags, MappingSize, PageTable, PageTableWrapper, PhysAddr, VirtAddr};
-use core::arch::asm;
-use crate::config::PAGE_SIZE_BITS;
 
 use crate::mm::map_area::CowTrait;
 use crate::mm::MapPermission;
 use crate::{
-    fs::{
-        SEEK_CUR, SEEK_SET,
-        vfs::File,
-    }, 
-    mm::{
-        group::GROUP_SHARE, map_area::MapArea, 
-        translated_byte_buffer, UserBuffer,
-    },
     config::PAGE_SIZE,
+    fs::{vfs::File, SEEK_CUR, SEEK_SET},
+    mm::{group::GROUP_SHARE, map_area::MapArea, translated_byte_buffer, UserBuffer},
 };
 
 ///堆触发的lazy alocation，必是写
@@ -44,7 +38,7 @@ pub fn mmap_read_page_fault(va: VirtAddr, page_table: &Arc<PageTableWrapper>, vm
             flags.set_cow();
         }
         page_table.map_page(vpn, paddr, flags, MappingSize::Page4KB);
-        
+
         TLB::flush_all();
     } else {
         //第一次读，分配页面
@@ -113,10 +107,12 @@ pub fn cow_page_fault(va: VirtAddr, page_table: &Arc<PageTableWrapper>, vma: &mu
     // debug!("handle va {:#x}, count={}", va.0, Arc::strong_count(frame));
     if Arc::strong_count(frame) == 1 {
         let (_paddr, mut flags) = page_table.translate(vpn).unwrap();
-        if flags.contains(MappingFlags::Cow) { // page_table.reset_cow(vpn);
+        if flags.contains(MappingFlags::Cow) {
+            // page_table.reset_cow(vpn);
             flags &= !MappingFlags::Cow;
         }
-        if flags.contains(MappingFlags::W) { // page_table.set_w(vpn);
+        if flags.contains(MappingFlags::W) {
+            // page_table.set_w(vpn);
             flags &= MappingFlags::W;
         }
         page_table.set_flags(vpn, flags);
@@ -125,23 +121,21 @@ pub fn cow_page_fault(va: VirtAddr, page_table: &Arc<PageTableWrapper>, vma: &mu
     }
 
     //旧物理页的内容复制到新物理页
-    let src_ptr =  &mut page_table.translate(vpn).unwrap().0.raw();
-    let src = unsafe {
-        core::slice::from_raw_parts_mut(src_ptr as *mut usize, PAGE_SIZE)
-    };
+    let src_ptr = &mut page_table.translate(vpn).unwrap().0.raw();
+    let src = unsafe { core::slice::from_raw_parts_mut(src_ptr as *mut usize, PAGE_SIZE) };
     vma.unmap_one(page_table, vpn);
     vma.map_one(page_table, vpn);
-    let dst_ptr = &mut page_table.translate(vpn).unwrap().0.raw(); 
-    let dst = unsafe {
-        core::slice::from_raw_parts_mut(dst_ptr as *mut usize, PAGE_SIZE)
-    };
+    let dst_ptr = &mut page_table.translate(vpn).unwrap().0.raw();
+    let dst = unsafe { core::slice::from_raw_parts_mut(dst_ptr as *mut usize, PAGE_SIZE) };
     dst.copy_from_slice(src);
-    
+
     let (_paddr, mut flags) = page_table.translate(vpn).unwrap();
-    if flags.contains(MappingFlags::Cow) { // page_table.reset_cow(vpn);
+    if flags.contains(MappingFlags::Cow) {
+        // page_table.reset_cow(vpn);
         flags &= !MappingFlags::Cow;
     }
-    if flags.contains(MappingFlags::W) { // page_table.set_w(vpn);
+    if !flags.contains(MappingFlags::W) {
+        // page_table.set_w(vpn);
         flags &= MappingFlags::W;
     }
     page_table.set_flags(vpn, flags);

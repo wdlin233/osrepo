@@ -89,7 +89,8 @@ impl TaskManager {
             .iter()
             .enumerate()
             .find(|(_, task)| {
-                task.getpid() == pid && task.inner_exclusive_access().task_status == TaskStatus::Ready
+                task.getpid() == pid
+                    && task.inner_exclusive_access().task_status == TaskStatus::Ready
             })
             .map(|(idx, _)| idx);
         if let Some(idx) = idx {
@@ -120,10 +121,10 @@ lazy_static! {
 pub fn add_task(task: Arc<ProcessControlBlock>) {
     //debug!("kernel: TaskManager::add_task");
     let tid = task.gettid();
-    if if_in_manager(tid) {
-        warn!("(add_task) tid: {} already in task manager", tid);
-        return;
-    }
+    // if if_in_manager(tid) {
+    //     warn!("(add_task) tid: {} already in task manager", tid);
+    //     return;
+    // }
 
     TASK_MANAGER.exclusive_access().add(task);
     insert_in_manager(tid);
@@ -184,8 +185,6 @@ pub fn wakeup_parent(pid: usize) {
     TASK_MANAGER.exclusive_access().wakeup_parent(pid);
 }
 
-
-
 /// Get process by pid
 pub fn tid2task(tid: usize) -> Option<Arc<ProcessControlBlock>> {
     info!("(tid2task) tid: {}", tid);
@@ -215,8 +214,6 @@ pub fn process_num() -> usize {
     TID_TO_TASK.exclusive_access().len()
 }
 
-
-
 lazy_static! {
     /// 线程组实现
     pub static ref THREAD_GROUP: UPSafeCell<BTreeMap<usize, Vec<Arc<ProcessControlBlock>>>> =
@@ -225,7 +222,7 @@ lazy_static! {
     pub static ref PROCESS_GROUP: UPSafeCell<BTreeMap<usize, Vec<Arc<ProcessControlBlock>>>> =
         unsafe { UPSafeCell::new(BTreeMap::new()) };
     /// TID_IN is a set of thread ids that are currently in the system
-    pub static ref TID_IN: UPSafeCell<HashSet<usize>> = 
+    pub static ref TID_IN: UPSafeCell<HashSet<usize>> =
         unsafe { UPSafeCell::new(HashSet::new()) };
 }
 
@@ -240,7 +237,6 @@ pub fn insert_into_thread_group(pid: usize, process: &Arc<ProcessControlBlock>) 
 pub fn remove_all_from_thread_group(pid: usize) {
     THREAD_GROUP.exclusive_access().remove(&pid);
 }
-
 
 pub fn insert_into_process_group(ppid: usize, process: &Arc<ProcessControlBlock>) {
     PROCESS_GROUP

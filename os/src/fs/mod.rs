@@ -292,30 +292,30 @@ const LOCALTIME: &str =
     "lrwxrwxrwx 1 root root 33 11月 18  2023 /etc/localtime -> /usr/share/zoneinfo/Asia/Shanghai\n";
 const PRELOAD: &str = "";
 
-// lazy_static! {
-//     pub static ref KEEP_BUSYBOX_ELF: Option<Vec<u8>> = {
-//         let app_inode = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)
-//             .unwrap()
-//             .file()
-//             .unwrap();
-//         Some(app_inode.inode.read_all().unwrap())
-//     };
-// }
-
-// pub fn get_musl_busybox() -> Vec<u8> {
-//     unsafe { KEEP_BUSYBOX_ELF.as_ref().unwrap().clone() }
-// }
-
 lazy_static! {
-    pub static ref KEEP_BUSYBOX_ELF: Option<Arc<FileClass>> = {
-        let fd = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE).unwrap();
-        Some(Arc::new(fd))
+    pub static ref KEEP_BUSYBOX_ELF: Option<Vec<u8>> = {
+        let app_inode = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE)
+            .unwrap()
+            .file()
+            .unwrap();
+        Some(app_inode.inode.read_all().unwrap())
     };
 }
 
-pub fn get_musl_busybox() -> Arc<FileClass> {
+pub fn get_musl_busybox() -> Vec<u8> {
     unsafe { KEEP_BUSYBOX_ELF.as_ref().unwrap().clone() }
 }
+
+// lazy_static! {
+//     pub static ref KEEP_BUSYBOX_ELF: Option<Arc<FileClass>> = {
+//         let fd = open("/musl/busybox", OpenFlags::O_RDONLY, NONE_MODE).unwrap();
+//         Some(Arc::new(fd))
+//     };
+// }
+
+// pub fn get_musl_busybox() -> Arc<FileClass> {
+//     unsafe { KEEP_BUSYBOX_ELF.as_ref().unwrap().clone() }
+// }
 
 pub fn create_init_files() -> GeneralRet {
     //创建/proc文件夹

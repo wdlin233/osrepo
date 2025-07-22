@@ -1,15 +1,13 @@
+use crate::mm::frame_allocator::FrameTracker;
 use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
-    mm::{
-        addr_range::VAddrRange, frame_alloc, group::GROUP_SHARE,
-    },
+    mm::{addr_range::VAddrRange, frame_alloc, group::GROUP_SHARE},
     syscall::MmapFlags,
 };
-use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
+use alloc::{collections::BTreeMap, vec::Vec};
 use polyhal::{MappingFlags, MappingSize, PageTableWrapper, VirtAddr};
- use crate::mm::frame_allocator::FrameTracker;
 
 #[derive(Clone)]
 pub struct MapArea {
@@ -42,8 +40,7 @@ impl MapArea {
         let end_vpn: VirtAddr = end_va.ceil();
         debug!(
             "MapArea::new(as virtaddr, aligned) start floor = {}, end ceil = {}",
-            start_vpn,
-            end_vpn
+            start_vpn, end_vpn
         );
         Self {
             vaddr_range: VAddrRange::new(start_vpn, end_vpn),
@@ -58,7 +55,10 @@ impl MapArea {
     }
     pub fn from_another(another: &Self) -> Self {
         Self {
-            vaddr_range: VAddrRange::new(another.vaddr_range.get_start(), another.vaddr_range.get_end()),
+            vaddr_range: VAddrRange::new(
+                another.vaddr_range.get_start(),
+                another.vaddr_range.get_end(),
+            ),
             data_frames: BTreeMap::new(),
             map_type: another.map_type,
             map_perm: another.map_perm,
@@ -170,7 +170,11 @@ impl MapArea {
             groupid: groupid,
         }
     }
-    pub fn map_given_frames(&mut self, page_table: &mut Arc<PageTableWrapper>, frames: Vec<Arc<FrameTracker>>) {
+    pub fn map_given_frames(
+        &mut self,
+        page_table: &mut Arc<PageTableWrapper>,
+        frames: Vec<Arc<FrameTracker>>,
+    ) {
         for (vpn, frame) in self.vaddr_range.clone().into_iter().zip(frames.into_iter()) {
             page_table.map_page(vpn, frame.paddr, self.map_perm.into(), MappingSize::Page4KB);
             self.data_frames.insert(vpn, frame);
@@ -229,7 +233,7 @@ impl Into<MappingFlags> for MapPermission {
         }
         flags
     }
-}   
+}
 
 /// Map area type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
