@@ -69,8 +69,7 @@ pub fn suspend_current_and_run_next() {
 
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
-    info!("TASK_MANAGER.ready_queue.len(): {}", TASK_MANAGER.exclusive_access().ready_queue.len());
-    let task_cx_ptr = &mut task_inner.task_cx as *mut KContext;
+    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     info!("task_cx_ptr: {:#x?}", task_cx_ptr);
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
@@ -238,11 +237,11 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
     unsafe {
         extern "C" {
-            fn initproc_rv_start();
-            fn initproc_rv_end();
+            fn initproc_start();
+            fn initproc_end();
         }
-        let start = initproc_rv_start as usize as *const usize as *const u8;
-        let len = initproc_rv_end as usize - initproc_rv_start as usize;
+        let start = initproc_start as usize as *const usize as *const u8;
+        let len = initproc_end as usize - initproc_start as usize;
         let data = core::slice::from_raw_parts(start, len);
         ProcessControlBlock::new(data)
     }

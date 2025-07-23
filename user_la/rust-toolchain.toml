@@ -1,5 +1,0 @@
-[toolchain]
-channel = "nightly-2025-01-01"
-components = [ "rustfmt", "rustc-dev", "llvm-tools-preview", "rust-src" ]
-targets = [ "loongarch64-unknown-none" ]
-profile = "minimal"

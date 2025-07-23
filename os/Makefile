@@ -2,26 +2,13 @@
 ARCH := riscv64
 MODE := release
 
-# Building mode argument
-ifeq ($(MODE), release)
-	MODE_ARG := --release
-endif
-
-# Binutils
-OBJDUMP := rust-objdump --arch-name=riscv64
+# Binutils, objcopy riscv64 only
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
 # Disassembly
 DISASM ?= -d
 
-# Tesecases
-TESTSUITS := $(wildcard ../testsuits/$(ARCH)/*)
-TESTCASES := $(filter-out, $(TESTSUITS))
-
-# debug
-GDB_PORT := 1238
-TMUX_SESSION := os-debug2
-
+# QEMU execution
 ifeq ($(ARCH), riscv64)
   	TARGET := riscv64gc-unknown-none-elf
 	KERNEL_ELF := target/$(TARGET)/$(MODE)/os
@@ -31,6 +18,7 @@ ifeq ($(ARCH), riscv64)
 				-machine virt \
 				-kernel $(KERNEL_ELF) \
 				-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+	FS_IMG := sdcard-rv.img
 else ifeq ($(ARCH), loongarch64)
   	TARGET := loongarch64-unknown-none
 	KERNEL_ELF := target/$(TARGET)/$(MODE)/os
@@ -38,14 +26,6 @@ else ifeq ($(ARCH), loongarch64)
 				-m 1G \
 				-kernel $(KERNEL_ELF) \
 				-device virtio-blk-pci,drive=x0
-else
-  	$(error "ARCH" must be one of "riscv64" or "loongarch64")
-endif
-
-
-ifeq ($(ARCH), riscv64)
-	FS_IMG := sdcard-rv.img
-else ifeq ($(ARCH), loongarch64)
 	FS_IMG := sdcard-la.img
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")
@@ -62,9 +42,13 @@ endif
 #                        -rtc base=utc \
 #                        -drive file=disk-la.img,if=none,format=raw,id=x1 -device virtio-blk-pci,drive=x1,bus=virtio-mmio-bus.1
 ifeq ($(ARCH),riscv64)
-build: env kernel config
+build: env config kernel $(KERNEL_BIN)
+
+$(KERNEL_BIN): kernel
+	@echo "Building kernel binary..."
+	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 else ifeq ($(ARCH),loongarch64)
-build: env kernel config
+build: env config kernel
 else
 	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
@@ -75,53 +59,6 @@ env:
 	cargo install cargo-binutils
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
-
-$(KERNEL_BIN):
-	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
-
-# -s 目录的文件会被载入文件系统镜像内，-t 是文件系统镜像生成的目录
-#		
-ifeq ($(ARCH),riscv64)
-fs-img:
-	@sudo mkdir -p /mnt/image_part
-	@make -C ../user build
-	@sudo mount $(FS_IMG) /mnt/image_part
-	@sudo cp ../user/build/elf/* /mnt/image_part/
-	@sudo cp -r $(TESTSUITS) /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox_testcode.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox_cmd.txt /mnt/image_part/
-	-sudo cp ../testcases/musl/busybox /mnt/image_part/
-	-sudo mkdir -p /mnt/image_part/lib
-	-sudo cp ../testcases/musl/lib/* /mnt/image_part/lib/
-	-sudo cp ../testcases/musl/*.sh /mnt/image_part/
-	-sudo cp ../testcases/musl/*.exe /mnt/image_part/
-	-sudo mkdir -p /mnt/image_part/basic
-	-sudo cp -r ../testcases/musl/basic/* /mnt/image_part/basic/
-	@sudo ls /mnt/image_part/
-	@sudo umount /mnt/image_part
-else ifeq ($(ARCH),loongarch64)
-fs-img:
-	@sudo mkdir -p /mnt/image_part2
-	-sudo mount $(FS_IMG) /mnt/image_part2
-	@make build -C ../user_la
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/initproc /mnt/image_part2/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/user_shell /mnt/image_part2/
-	@sudo cp ../user_la/target/loongarch64-unknown-none/release/usertest /mnt/image_part2/
-	@sudo cp -r $(TESTSUITS) /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/busybox_testcode.sh /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/busybox_cmd.txt /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/busybox /mnt/image_part2/
-	-sudo mkdir -p /mnt/image_part2/lib
-	-sudo cp ../testcases/loongarch/musl/lib/* /mnt/image_part2/lib/
-	-sudo cp ../testcases/loongarch/musl/*.sh /mnt/image_part2/
-	-sudo cp ../testcases/loongarch/musl/*.exe /mnt/image_part2/
-	-sudo mkdir -p /mnt/image_part2/basic
-	-sudo cp -r ../testcases/loongarch/musl/basic/* /mnt/image_part2/basic/
-	@sudo ls /mnt/image_part2/
-	@sudo umount /mnt/image_part2
-else
-	$(error "ARCH" must be one of "riscv64" or "loongarch64")
-endif
 
 # cargo build $(MODE_ARG) --target $(TARGET)
 kernel:
@@ -136,20 +73,15 @@ clean:
 	-tmux kill-server
 	@sudo umount /mnt/image_part
 
+# Debugging
 ifeq ($(ARCH),riscv64)
 modify:
 	@cp ${HOME}/sdcard-rv.img  ${HOME}/osrepo/os/sdcard-rv.img
-else ifeq ($(ARCH),loongarch64)
-modify:
-	@cp ${HOME}/sdcard-la.img  ${HOME}/osrepo/os/sdcard-la.img
-else
-	$(error "ARCH" must be one of "riscv64" or "loongarch64")
-endif
-
-ifeq ($(ARCH),riscv64)
 disasm: kernel
 	rust-objdump --arch-name=riscv64 $(DISASM) $(KERNEL_ELF) > disasm_rv.s
 else ifeq ($(ARCH),loongarch64)
+modify:
+	@cp ${HOME}/sdcard-la.img  ${HOME}/osrepo/os/sdcard-la.img
 disasm: kernel	
 	loongarch64-unknown-linux-gnu-objdump $(DISASM) $(KERNEL_ELF) > disasm_la.s
 else
@@ -164,55 +96,7 @@ QEMU_EXEC += -nographic \
 			 -D qemu.log \
 # -monitor telnet:127.0.0.1:5555,server,nowait
 
-# @qemu-system-riscv64 \
-# 	-M 128m \
-# 	-machine virt \
-# 	-nographic \
-# 	-bios $(BOOTLOADER) \
-# 	-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
-# 	-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
-#     -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-
-# qemu-system-loongarch64 \
-# 		-m 1G \
-# 		-smp 1 \
-# 		-kernel $(KERNEL_ELF) \
-# 		$(VGA) \
-# 		-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
-# 		-device ahci,id=ahci0 \
-# 		-device ide-hd,drive=x0,bus=ahci0.0
-
-
 run-inner:
 	$(QEMU_EXEC)
-
-
-# ====== GDB 调试配置 ======
-GDB_PORT := 1234
-GDB := gdb-multiarch
-
-# 通用调试目标
-gdb: build
-	@echo "启动 QEMU GDB 服务器..."
-	$(QEMU_EXEC) -s -S
-
-gdb-connect:
-ifeq ($(ARCH), riscv64)
-	@echo "连接 RISC-V GDB..."
-	$(GDB) -ex "target remote :1234" \
-	       -ex "file $(KERNEL_ELF)" \
-	       -ex "set arch riscv:rv64"  # 注意这里是 riscv:rv64
-else ifeq ($(ARCH), loongarch64)
-	@echo "连接 LoongArch GDB..."
-	$(GDB) -ex "target remote :$(GDB_PORT)" -ex "file $(KERNEL_ELF)" -ex "set arch loongarch64"
-endif
-
-# 自动调试 (需要 tmux)
-gdb-auto: build
-	@tmux new-session -d \
-		"$(QEMU_EXEC) -s -S" && \
-	tmux split-window -h \
-		"$(GDB) -ex 'target remote :$(GDB_PORT)' -ex 'file $(KERNEL_ELF)' -ex 'set arch $(ARCH)' -ex 'b rust_main'" && \
-	tmux -2 attach-session -d
 
 .PHONY: build env kernel clean disasm disasm-vim run-inner fs-img gdbserver gdbclient config modfiy gdb gdb-connect gdb-auto
