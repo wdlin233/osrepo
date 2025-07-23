@@ -69,7 +69,9 @@ pub fn suspend_current_and_run_next() {
 
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
-    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    info!("TASK_MANAGER.ready_queue.len(): {}", TASK_MANAGER.exclusive_access().ready_queue.len());
+    let task_cx_ptr = &mut task_inner.task_cx as *mut KContext;
+    info!("task_cx_ptr: {:#x?}", task_cx_ptr);
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
