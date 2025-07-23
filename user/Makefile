@@ -12,29 +12,17 @@ MODE := release
 APP_DIR := src/bin
 TARGET_DIR := target/$(TARGET)/$(MODE)
 BUILD_DIR := build
-OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
-#OBJCOPY := loongarch64-unknown-linux-gnu-objcopy
-PY := python3
-
-ifeq ($(MODE), release)
-	MODE_ARG := --release
-endif
 
 APPS := $(wildcard $(APP_DIR)/*.rs)
 ELFS := $(patsubst $(APP_DIR)/%.rs, $(TARGET_DIR)/%, $(APPS))
 
 binary: config
 	@echo $(ELFS)
-	cargo build $(MODE_ARG)
+	cargo build --release
 	@$(foreach elf, $(ELFS), \
 		$(OBJCOPY) $(elf) --strip-all -O binary $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.bin, $(elf)); \
 		cp $(elf) $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.elf, $(elf));)
-
-disasm:
-	@$(foreach elf, $(ELFS), \
-		$(OBJDUMP) $(elf) -S > $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.asm, $(elf));)
-	@$(foreach t, $(ELFS), cp $(t).asm $(BUILD_DIR)/asm/;)
 
 pre:
 	@mkdir -p $(BUILD_DIR)/bin/
@@ -48,12 +36,12 @@ build: clean pre binary
 	@$(foreach t, $(ELFS), cp $(t).bin $(BUILD_DIR)/bin/;)
 	@$(foreach t, $(ELFS), cp $(t) $(BUILD_DIR)/elf/;)
 else ifeq ($(ARCH),loongarch64)
-build:
+build: clean
 	@cargo build --release --target $(TARGET)
 endif
 
 config:
-	rustup target add riscv64gc-unknown-none-elf
+	rustup target add $(TARGET)
 	@rm -rf .cargo
 	@cp -r cargo .cargo
 

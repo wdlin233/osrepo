@@ -5,17 +5,18 @@ ifeq ($(ARCH), riscv64)
 	KERNEL_ELF := os/target/riscv64gc-unknown-none-elf/release/os
 	FS_IMG := sdcard-rv.img
 	GDB_ARCH := riscv:rv64
+	GDB := gdb-multiarch
 else ifeq ($(ARCH), loongarch64)
 	KERNEL_BIN := kernel-la
-	KERNEL_ELF := /os/target/loongarch64-unknown-none/release/os
+	KERNEL_ELF := os/target/loongarch64-unknown-none/release/os
 	FS_IMG := sdcard-la.img
-	GDB_ARCH := loongarch64
+	GDB_ARCH := loongarch
+	GDB := loongarch64-unknown-linux-gnu-gdb
 else
   	$(error "ARCH" must be one of "riscv64" or "loongarch64")
 endif
 
 GDB_PORT := 1234
-GDB := gdb-multiarch
 
 .PHONY: docker build_docker all gdbserver gdb gdb-connect gdb-auto
 
@@ -27,21 +28,21 @@ build_docker:
 
 # all:
 # 	@cd user && make build ARCH=riscv64
-# 	@cd user_la && make build ARCH=loongarch64
 # 	@cd os && make build ARCH=riscv64
+# 	@cd user && make build ARCH=loongarch64
 # 	@cd os && make build ARCH=loongarch64
 # 	@cp ./os/target/riscv64gc-unknown-none-elf/release/os.bin ./kernel-rv
 # 	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
 
-all:
-	@cd user && make build ARCH=riscv64
-	@cd os && make build ARCH=riscv64
-	@cp ./os/target/riscv64gc-unknown-none-elf/release/os.bin ./kernel-rv
-
 # all:
-# 	@cd user_la && make build ARCH=loongarch64
-# 	@cd os && make build ARCH=loongarch64
-# 	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
+# 	@cd user && make build ARCH=riscv64
+# 	@cd os && make build ARCH=riscv64
+# 	@cp ./os/target/riscv64gc-unknown-none-elf/release/os.bin ./kernel-rv
+
+all:
+	@cd user && make build ARCH=loongarch64
+	@cd os && make build ARCH=loongarch64
+	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
 
 clean:
 	@cd ./os && make clean
@@ -58,7 +59,6 @@ else ifeq ($(ARCH), loongarch64)
 QEMU_EXEC = qemu-system-loongarch64 -kernel ${KERNEL_BIN} -m 1G -nographic -smp 1 \
             -drive file=${FS_IMG},if=none,format=raw,id=x0 \
             -device virtio-blk-pci,drive=x0 -no-reboot
-        
 endif
 
 run: all

@@ -1,5 +1,5 @@
 
-OUTPUT_ARCH(riscv)
+OUTPUT_ARCH(%ARCH%)
 ENTRY(_start)
 
 BASE_ADDRESS = 0x10000;
