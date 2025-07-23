@@ -574,13 +574,21 @@ impl MemorySetInner {
         }
     }
     pub fn lazy_page_fault(&mut self, vpn: VirtAddr, scause: TrapType) -> bool {
-        let (_paddr, flags) = self.page_table.translate(vpn).unwrap();
-        //debug!("vpn={:#X},enter lazy", vpn.0);
-        if flags.contains(MappingFlags::P) {
-            // pte.is_some() && pte.unwrap().is_valid()
-            debug!("valid, to return");
-            return false;
+        if let Some(pte) = self.page_table.translate(vpn) {
+            let (_paddr, flags) = pte;
+            debug!("get pte ok");
+            if flags.contains(MappingFlags::P) {
+                // pte.is_some() && pte.unwrap().is_valid())
+                debug!("valid, to return");
+                return false;
+            }
         }
+        //debug!("vpn={:#X},enter lazy", vpn.0);
+        // if flags.contains(MappingFlags::P) {
+        //     // pte.is_some() && pte.unwrap().is_valid())
+        //     debug!("valid, to return");
+        //     return false;
+        // }
         //println!("vpn={:#X},enter lazy2", vpn.0);
         //mmap
         if let Some(area) = self
@@ -620,6 +628,7 @@ impl MemorySetInner {
             lazy_page_fault(vpn.into(), &mut self.page_table, area);
             return true;
         }
+        debug!("not mmap, brk, stack");
         false
     }
     fn push_with_offset(&mut self, mut map_area: MapArea, offset: usize, data: Option<&[u8]>) {

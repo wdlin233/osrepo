@@ -125,21 +125,21 @@ pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
 /// Kernel stack for a process
 pub struct KernelStack {
     tid: usize,
-    inner: Arc<[u128; KERNEL_STACK_SIZE / size_of::<u128>()]>,
+    //inner: Arc<[u128; KERNEL_STACK_SIZE / size_of::<u128>()]>,
 }
 
 impl KernelStack {
     pub fn new(tid_handle: &TidHandle) -> Self {
         KernelStack {
             tid: tid_handle.0,
-            inner: Arc::new([0u128; KERNEL_STACK_SIZE / size_of::<u128>()]),
+            //inner: Arc::new([0u128; KERNEL_STACK_SIZE / size_of::<u128>()]),
         }
     }
 
-    pub fn get_position(&self) -> (usize, usize) {
-        let bottom = self.inner.as_ptr() as usize;
-        (bottom, bottom + KERNEL_STACK_SIZE)
-    }
+    // pub fn get_position(&self) -> (usize, usize) {
+    //     let bottom = self.inner.as_ptr() as usize;
+    //     (bottom, bottom + KERNEL_STACK_SIZE)
+    // }
 
     /// return the top of the kernel stack
     pub fn get_top(&self) -> (usize, usize) {

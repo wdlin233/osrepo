@@ -426,9 +426,9 @@ impl ProcessControlBlock {
         debug!("kernel: exec, pid = {}", self.getpid());
         let mut inner = self.inner_exclusive_access();
         let (memory_set, user_heap_bottom, entry_point, mut aux) = MemorySet::from_elf(elf_data);
-
+        memory_set.activate();
         inner.memory_set = Arc::new(memory_set);
-        inner.memory_set.activate();
+
         //debug!("activate ok");
 
         if inner.clear_child_tid != 0 {
@@ -578,7 +578,8 @@ impl ProcessControlBlock {
         //对齐地址
         user_sp -= user_sp % size;
         inner.fd_table.close_on_exec();
-
+        inner.memory_set.activate();
+        inner.trap_cx = TrapFrame::new();
         // initialize trap_cx
         debug!("(ProcessControlBlock, exec) init context");
         let mut trap_cx = TrapFrame::new();
@@ -621,7 +622,6 @@ impl ProcessControlBlock {
         let tid_handle = tid_alloc();
         let kernel_stack = KernelStack::new(&tid_handle);
         let (kstack_bottom, kernel_stack_top) = kernel_stack.get_position();
-
         // 检查是否共享虚拟内存
         let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
             Arc::clone(&parent.memory_set)
@@ -720,13 +720,13 @@ impl ProcessControlBlock {
         });
         let mut inner = child.inner_exclusive_access();
         // let memory_set = inner.memory_set.clone();
-        // memory_set.insert_framed_area(
-        //     kstack_bottom.into(),
-        //     kernel_stack_top.into(),
-        //     MapType::Framed,
-        //     MapPermission::R | MapPermission::W,
-        //     MapAreaType::Stack,
-        // );
+        inner.memory_set.insert_framed_area(
+            kstack_bottom.into(),
+            kernel_stack_top.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W,
+            MapAreaType::Stack,
+        );
         // if flags.contains(CloneFlags::CLONE_THREAD) {
         //     inner.alloc_user_res(tid);
         //     *inner.get_trap_cx() = parent.get_trap_cx().clone();
