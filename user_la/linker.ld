@@ -4,36 +4,29 @@ ENTRY( _start)
 
 SECTIONS
 {
-    . = 0x10000;
+  . = 0x10000;
+  . = ALIGN(4K);
   .text : {
     *(.text.entry)
     *(.text .text.*)
     PROVIDE(etext = .);
   }
-    . = ALIGN(16K);
-  .rodata : {
-  . = ALIGN(16);
-    *(.srodata .srodata.*)
-    . = ALIGN(16);
+  . = ALIGN(4K);
+  .rodata ALIGN(4K): {
     *(.rodata .rodata.*)
+    *(.srodata .srodata.*)
   }
-    . = ALIGN(16K);
-  .data : {
-  . = ALIGN(16);
-    *(.sdata .sdata.*)
-    . = ALIGN(16);
+  . = ALIGN(4K);
+  .data ALIGN(4K): {
     *(.data .data.*)
+    *(.sdata .sdata.*)
   }
-    . = ALIGN(16K);
-  .bss : {
+  . = ALIGN(4K);
+  .bss ALIGN(4K): {
     sbss = .;
-    . = ALIGN(16);
-    *(.sbss .sbss.*)
-    . = ALIGN(16);
     *(.bss .bss.*)
+    *(.sbss .sbss.*)
+    ebss = .;
   }
-    . = ALIGN(16K);
-  ebss = .;
-
   PROVIDE(end = .);
 }

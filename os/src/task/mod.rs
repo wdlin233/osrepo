@@ -19,7 +19,7 @@ mod futex;
 
 use crate::fs::{open, OpenFlags, DEFAULT_FILE_MODE, NONE_MODE};
 use crate::println;
-use crate::task::manager::{add_stopping_task, insert_into_tid2task, wakeup_parent};
+use crate::task::manager::{add_stopping_task, insert_into_tid2task, wakeup_parent, TASK_MANAGER};
 use crate::task::process::TaskStatus;
 use crate::timer::remove_timer;
 use crate::alloc::{sync::Arc, vec::Vec};
@@ -57,7 +57,9 @@ pub fn suspend_current_and_run_next() {
 
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
+    info!("TASK_MANAGER.ready_queue.len(): {}", TASK_MANAGER.exclusive_access().ready_queue.len());
     let task_cx_ptr = &mut task_inner.task_cx as *mut KContext;
+    info!("task_cx_ptr: {:#x?}", task_cx_ptr);
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);

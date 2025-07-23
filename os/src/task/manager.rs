@@ -14,7 +14,7 @@ use lazy_static::*;
 use spin::{Lazy, Mutex};
 ///A array of `ProcessControlBlock` that is thread-safe
 pub struct TaskManager {
-    ready_queue: VecDeque<Arc<ProcessControlBlock>>,
+    pub ready_queue: VecDeque<Arc<ProcessControlBlock>>,
     ///block map : <pid,>
     block_map: BTreeMap<usize, Arc<ProcessControlBlock>>,
     /// The stopping task, leave a reference so that the kernel stack will not be recycled when switching tasks
