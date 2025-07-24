@@ -1,7 +1,12 @@
 use core::arch::riscv64::sfence_vma;
 
 use bitflags::bitflags;
-use riscv::register::satp::{self, Satp};
+use core::arch::asm;
+use riscv::register::{
+    mstatus,
+    satp::{self, Satp},
+};
+//use riscv::register::satp;
 
 use super::{MappingFlags, PageTable, PTE, TLB};
 use crate::{PhysAddr, VirtAddr};
@@ -64,6 +69,7 @@ impl PTE {
 
     #[inline]
     pub(crate) fn new_table(paddr: PhysAddr) -> Self {
+        debug!("in new table");
         Self((paddr.raw() >> 2) | (PTEFlags::V).bits() as usize)
     }
 
@@ -208,7 +214,23 @@ impl PageTable {
         // debug!("stap write ok");
         // TLB::flush_all();
         // debug!("flush ok");
-        unsafe { satp::write(Satp::from_bits((8 << 60) | (self.0.raw() >> 12))) }
+        info!("in page table change");
+        let pc: usize;
+        let sp: usize;
+        unsafe {
+            asm!("auipc {}, 0", out(reg) pc);
+        }
+        unsafe {
+            asm!("mv {}, sp", out(reg) sp);
+        }
+        info!("PC={:#x}, SP={:#x}", pc, sp);
+        let pc_page = pc & !0xFFF;
+        debug!("need map PC page: {:#x}", pc_page);
+        let root_ppn = self.0.raw();
+        debug!("the root ppn is : {:#x}", root_ppn);
+        let satp_bits = (8usize << 60) | root_ppn >> 12;
+        debug!("the satp bits is : {:#x}", satp_bits);
+        unsafe { satp::write(Satp::from_bits(satp_bits)) }
         TLB::flush_all();
     }
 }
@@ -233,6 +255,8 @@ impl TLB {
     /// TLB::flush_all();
     #[inline]
     pub fn flush_all() {
-        riscv::asm::sfence_vma_all();
+        unsafe {
+            riscv::asm::sfence_vma_all();
+        }
     }
 }

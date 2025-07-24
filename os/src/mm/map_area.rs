@@ -70,12 +70,14 @@ impl MapArea {
     }
     pub fn map_one(&mut self, page_table: &Arc<PageTableWrapper>, vaddr: VirtAddr) {
         let p_tracker = frame_alloc().expect("cant allocate frame");
+        //debug!("in map, to map page");
         page_table.map_page(
             vaddr, // aligned
             p_tracker.paddr,
             self.map_perm.into(),
             MappingSize::Page4KB,
         );
+        //debug!("in map, map page ok");
         self.data_frames.insert(vaddr, p_tracker);
     }
     pub fn unmap_one(&mut self, page_table: &Arc<PageTableWrapper>, vaddr: VirtAddr) {

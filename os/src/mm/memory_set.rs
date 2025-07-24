@@ -1,6 +1,8 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 use super::frame_alloc;
 use super::MapType;
+use crate::config::USER_STACK_SIZE;
+use crate::config::USER_STACK_TOP;
 use crate::config::{
     DL_INTERP_OFFSET, KERNEL_ADDR_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, USER_HEAP_BOTTOM,
     USER_HEAP_SIZE,
@@ -92,9 +94,16 @@ impl MemorySet {
         self.inner.get_unchecked_mut().push(map_area, data);
     }
     #[inline(always)]
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
-        let (memory_set, user_heap_bottom, entry_point, auxv) = MemorySetInner::from_elf(elf_data);
-        (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
+    pub fn from_elf(elf_data: &[u8], tid: usize) -> (Self, usize, usize, Vec<Aux>, usize) {
+        let (memory_set, user_heap_bottom, entry_point, auxv, ustack_top) =
+            MemorySetInner::from_elf(elf_data, tid);
+        (
+            Self::new(memory_set),
+            user_heap_bottom,
+            entry_point,
+            auxv,
+            ustack_top,
+        )
     }
     #[inline(always)]
     pub fn activate(&self) {
@@ -272,6 +281,7 @@ impl MemorySetInner {
     /// Assuming that there are no conflicts in the virtual address
     /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+        //debug!("in push, to map");
         map_area.map(&self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&self.page_table, data, 0);
@@ -281,10 +291,15 @@ impl MemorySetInner {
     pub fn push_lazily(&mut self, map_area: MapArea) {
         self.areas.push(map_area);
     }
+    fn ustack_space(tid: usize) -> (usize, usize) {
+        let ustack_bottom = USER_STACK_TOP - tid * (USER_STACK_SIZE + PAGE_SIZE);
+        let ustack_top = ustack_bottom + USER_STACK_SIZE;
+        (ustack_bottom, ustack_top)
+    }
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8], tid: usize) -> (Self, usize, usize, Vec<Aux>, usize) {
         let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
         // map program headers of elf, with U flag
@@ -331,10 +346,19 @@ impl MemorySetInner {
         });
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_heap_bottom: usize = max_end_va.into();
+        let mut ustack_bottom: usize = max_end_va.into();
 
         // guard page
-        user_heap_bottom += PAGE_SIZE;
+        ustack_bottom += PAGE_SIZE;
+        let ustack_top = ustack_bottom + USER_STACK_SIZE;
+        memory_set.insert_framed_area(
+            ustack_bottom.into(),
+            ustack_top.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W | MapPermission::U,
+            MapAreaType::Stack,
+        );
+        let user_heap_bottom = ustack_top + PAGE_SIZE;
         info!(
             "user heap bottom: {:#x}, {}",
             user_heap_bottom, user_heap_bottom
@@ -347,9 +371,17 @@ impl MemorySetInner {
             MapPermission::R | MapPermission::W | MapPermission::U,
             MapAreaType::Brk,
         );
+        // let (ustack_base, ustack_top) = MemorySetInner::ustack_space(tid);
+        // memory_set.insert_framed_area(
+        //     ustack_base.into(),
+        //     ustack_top.into(),
+        //     MapType::Framed,
+        //     MapPermission::R | MapPermission::W | MapPermission::U,
+        //     MapAreaType::Stack,
+        // );
         debug!("in from elf, to return");
         // 返回 address空间,用户栈顶,入口地址
-        (memory_set, user_heap_bottom, entry_point, auxv)
+        (memory_set, user_heap_bottom, entry_point, auxv, ustack_top)
     }
     fn map_elf(&mut self, elf: &ElfFile, offset: VirtAddr) -> (VirtAddr, VirtAddr) {
         let elf_header = elf.header;
@@ -503,7 +535,11 @@ impl MemorySetInner {
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
         debug!("in activate, to page table change");
-        self.page_table.change();
+        self.page_table.change()
+        // let a = self.page_table.0;
+        // let b = a.root().raw();
+        // unsafe { satp::write(Satp::from_bits((8 << 60) | (b >> 12))) }
+        // TLB::flush_all();
     }
     /// Translate a virtual page number to a page table entry
     /// PageTableEntry 被拆解为 PhysAddr 和 MappingFlags

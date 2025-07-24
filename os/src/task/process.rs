@@ -148,12 +148,10 @@ impl Tms {
 impl ProcessControlBlockInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapFrame {
         debug!("in get trap cx, the trap cx ppn is : {}", self.trap_cx_ppn);
-        let kernel_va: *mut TrapFrame = self.trap_cx_ppn.get_mut_ptr::<TrapFrame>();
-        unsafe { kernel_va.as_mut().unwrap() }
-        //let paddr = &self.trap_cx as *const TrapFrame as usize as *mut TrapFrame;
-        // let paddr: PhysAddr = self.trap_cx.into();
-        // unsafe { paddr.get_mut_ptr::<TrapFrame>().as_mut().unwrap() }
-        //unsafe { paddr.as_mut().unwrap() }
+        // let kernel_va: *mut TrapFrame = self.trap_cx_ppn.get_mut_ptr::<TrapFrame>();
+        // unsafe { kernel_va.as_mut().unwrap() }
+        let paddr = &self.trap_cx as *const TrapFrame as usize as *mut TrapFrame;
+        unsafe { paddr.as_mut().unwrap() }
     }
     pub fn is_zombie(&self) -> bool {
         self.task_status == TaskStatus::Zombie
@@ -196,25 +194,26 @@ impl ProcessControlBlockInner {
     }
     /// 创建用户栈、上下文
     pub fn alloc_user_res(&mut self, tid: usize) {
-        debug!("in alloc user res");
-        let (trap_cx_base, trap_top) = trap_cx_space(tid);
-        // self.memory_set.get_mut().insert_framed_area_with_hint(
-        //     USER_TRAP_CONTEXT_TOP,
-        //     PAGE_SIZE,
+        debug!("in alloc user res, the tid is : {}", tid);
+        // let (trap_cx_base, trap_top) = trap_cx_space(tid);
+        // // self.memory_set.get_mut().insert_framed_area_with_hint(
+        // //     USER_TRAP_CONTEXT_TOP,
+        // //     PAGE_SIZE,
+        // //     MapPermission::R | MapPermission::W,
+        // //     MapAreaType::Trap,
+        // // );
+        // debug!(
+        //     "the trap base is : {:#x}, the trap top is : {:#x}",
+        //     trap_cx_base, trap_top
+        // );
+        // self.memory_set.get_mut().insert_framed_area(
+        //     trap_cx_base.into(),
+        //     trap_top.into(),
+        //     MapType::Framed,
         //     MapPermission::R | MapPermission::W,
         //     MapAreaType::Trap,
         // );
-        debug!(
-            "the trap base is : {:#x}, the trap top is : {:#x}",
-            trap_cx_base, trap_top
-        );
-        self.memory_set.get_mut().insert_framed_area(
-            VirtAddr::from(trap_cx_base),
-            VirtAddr::from(trap_top),
-            MapType::Framed,
-            MapPermission::R | MapPermission::W,
-            MapAreaType::Trap,
-        );
+        // debug!("insert trap ok");
         let (ustack_base, ustack_top) = ustack_space(tid);
         debug!(
             "the ustack base is : {}, the ustack top is : {}",
@@ -227,22 +226,23 @@ impl ProcessControlBlockInner {
         //     MapAreaType::Stack,
         // );
         self.memory_set.get_mut().insert_framed_area(
-            VirtAddr::from(ustack_base),
-            VirtAddr::from(ustack_top),
+            ustack_base.into(),
+            ustack_top.into(),
             MapType::Framed,
             MapPermission::R | MapPermission::W | MapPermission::U,
             MapAreaType::Stack,
         );
-
-        let trap_cx_ppn = self
-            .memory_set
-            .translate(VirtAddr::from(trap_cx_base).floor())
-            .unwrap()
-            .0;
-        debug!("the trap cx ppn is : {}", trap_cx_ppn);
-        self.trap_cx_ppn = trap_cx_ppn;
+        debug!("insert ustack ok");
+        // let trap_cx_ppn = self
+        //     .memory_set
+        //     .translate(VirtAddr::from(trap_cx_base).floor())
+        //     .unwrap()
+        //     .0;
+        // debug!("the trap cx ppn is : {}", trap_cx_ppn);
+        // self.trap_cx_ppn = trap_cx_ppn;
+        //self.trap_cx_base = trap_cx_base;
         self.user_stack_top = ustack_top;
-        self.trap_cx_base = trap_cx_base;
+
         debug!("alloc user res ok");
         // let user_stack_range = VAddrRange::new(
         //     VirtAddr::from(ustack_base).floor(),
@@ -360,9 +360,11 @@ impl ProcessControlBlock {
     /// new process from elf file
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data);
-        debug!("(ProcessControlBlock, new), from_elf passed");
         let tid_handle = tid_alloc();
+        let (memory_set, heap_bottom, entry_point, _, ustack_top) =
+            MemorySet::from_elf(elf_data, tid_handle.0);
+        debug!("(ProcessControlBlock, new), from_elf passed");
+
         let kernel_stack = KernelStack::new(&tid_handle);
         let (kernel_stack_bottom, kernel_stack_top) = kernel_stack.get_top();
         let user = current_user().unwrap();
@@ -405,7 +407,7 @@ impl ProcessControlBlock {
 
         // 只映射用户地址空间，由于只有在新建 initproc 时使用，写死 app_id 为 1.
         let mut inner = process.inner_exclusive_access();
-        inner.memory_set.activate();
+        //inner.memory_set.activate();
 
         inner.memory_set.insert_framed_area(
             kernel_stack_bottom.into(),
@@ -414,11 +416,12 @@ impl ProcessControlBlock {
             MapPermission::R | MapPermission::W,
             MapAreaType::Stack,
         );
-
-        inner.alloc_user_res(process.tid.0);
+        debug!("process.tid is : {}", process.tid.0);
+        //inner.alloc_user_res(process.tid.0);
+        inner.user_stack_top = ustack_top;
         let trap_cx = inner.get_trap_cx();
 
-        //*trap_cx = TrapFrame::new();
+        *trap_cx = TrapFrame::new();
         trap_cx[TrapFrameArgs::SEPC] = entry_point;
         trap_cx[TrapFrameArgs::SP] = inner.user_stack_top;
         drop(inner);
@@ -429,9 +432,11 @@ impl ProcessControlBlock {
     pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>, env: &mut Vec<String>) {
         debug!("kernel: exec, pid = {}", self.getpid());
         let mut inner = self.inner_exclusive_access();
-        let (memory_set, user_heap_bottom, entry_point, mut aux) = MemorySet::from_elf(elf_data);
+        let (memory_set, user_heap_bottom, entry_point, mut aux, ustack_top) =
+            MemorySet::from_elf(elf_data, self.tid.0);
+        memory_set.activate();
         inner.memory_set = Arc::new(memory_set);
-        inner.memory_set.activate();
+        //inner.memory_set.activate();
 
         //debug!("activate ok");
 
@@ -439,8 +444,10 @@ impl ProcessControlBlock {
             *translated_refmut(inner.clear_child_tid as *mut u32) = 0;
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
-
-        inner.alloc_user_res(self.tid.0);
+        //inner.trap_cx = TrapFrame::new();
+        debug!("in exec, to alloc, the tid is : {}", self.tid.0);
+        //inner.alloc_user_res(self.tid.0);
+        inner.user_stack_top = ustack_top;
         inner.sig_table = Arc::new(SigTable::new());
         let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));
         inner.fd_table = fd_table;
@@ -583,7 +590,8 @@ impl ProcessControlBlock {
         user_sp -= user_sp % size;
         inner.fd_table.close_on_exec();
 
-        inner.trap_cx = TrapFrame::new();
+        inner.memory_set.activate();
+
         // initialize trap_cx
         debug!("(ProcessControlBlock, exec) init context");
         let mut trap_cx = TrapFrame::new();
@@ -723,7 +731,7 @@ impl ProcessControlBlock {
             },
         });
         let mut inner = child.inner_exclusive_access();
-        inner.memory_set.activate();
+        //inner.memory_set.activate();
 
         inner.memory_set.insert_framed_area(
             kstack_bottom.into(),
@@ -732,23 +740,29 @@ impl ProcessControlBlock {
             MapPermission::R | MapPermission::W,
             MapAreaType::Stack,
         );
-        if flags.contains(CloneFlags::CLONE_THREAD) {
-            inner.alloc_user_res(tid);
-            *inner.get_trap_cx() = parent.get_trap_cx().clone();
-        } else {
-            //inner.clone_user_res(&parent, tid);
-            let (trap_bottom, trap_top) = trap_cx_space(self.tid.0);
-            let trap_cx_ppn = inner
-                .memory_set
-                .translate(VirtAddr::from(trap_bottom).floor())
-                .unwrap()
-                .0;
-            inner.trap_cx_ppn = trap_cx_ppn;
-            inner.trap_cx_base = trap_bottom;
-            info!("(ProcessControlBlock, fork) clone user res ok");
-            inner.get_trap_cx()[TrapFrameArgs::RET] = 0; // 应该是这么写吧
-        }
+        // if flags.contains(CloneFlags::CLONE_THREAD) {
+        //     inner.alloc_user_res(tid);
+        //     *inner.get_trap_cx() = parent.get_trap_cx().clone();
+        // } else {
+        //     inner.clone_user_res(&parent, tid);
+        //     let (trap_bottom, trap_top) = trap_cx_space(self.tid.0);
+        //     debug!(
+        //         "in clone user res, the trap bottom is : {:#x}, the trap top is : {:#x}",
+        //         trap_bottom, trap_top
+        //     );
+        //     let trap_cx_ppn = inner
+        //         .memory_set
+        //         .translate(VirtAddr::from(trap_bottom).floor())
+        //         .unwrap()
+        //         .0;
 
+        //     inner.trap_cx_ppn = trap_cx_ppn;
+
+        //     inner.trap_cx_base = trap_bottom;
+        //     info!("(ProcessControlBlock, fork) clone user res ok");
+        //     inner.get_trap_cx()[TrapFrameArgs::RET] = 0; // 应该是这么写吧
+        // }
+        inner.get_trap_cx()[TrapFrameArgs::RET] = 0;
         //debug!("(ProcessControlBlock, fork) child trap_cx: {:#?}", inner.get_trap_cx());
 
         let trap_cx = inner.get_trap_cx();

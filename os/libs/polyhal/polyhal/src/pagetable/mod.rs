@@ -23,6 +23,8 @@ use crate::{components::common::frame_alloc, PhysAddr, VirtAddr};
 
 use super::common::frame_dealloc;
 
+use log::*;
+
 /// The size of the page table.
 pub const PAGE_SIZE: usize = PageTable::PAGE_SIZE;
 
@@ -76,7 +78,9 @@ impl PageTable {
         flags: MappingFlags,
         _size: MappingSize,
     ) {
+        //debug!("in page table, to map page");
         let mut pte_list = Self::get_pte_list(self.0);
+        //debug!("get pte list ok");
         if Self::PAGE_LEVEL == 4 {
             let pte = &mut pte_list[vaddr.pn_index(3)];
             if !pte.is_valid() {
@@ -87,22 +91,33 @@ impl PageTable {
         // level 3
         {
             let pte = &mut pte_list[vaddr.pn_index(2)];
+            // debug!("get pte ok");
             if !pte.is_valid() {
-                *pte = PTE::new_table(frame_alloc());
+                debug!("pte not valid");
+                let paddr = frame_alloc();
+                debug!("frame alloc ok");
+                *pte = PTE::new_table(paddr);
             }
             pte_list = Self::get_pte_list(pte.address());
         }
+        //debug!("level 3 ok");
         // level 2
         {
             let pte = &mut pte_list[vaddr.pn_index(1)];
+            //debug!("get pte ok");
             if !pte.is_valid() {
+                //debug!("pte not valid");
                 *pte = PTE::new_table(frame_alloc());
             }
+            //debug!("pte valid");
             pte_list = Self::get_pte_list(pte.address());
         }
+        //debug!("level 2 ok");
         // level 1, map page
         pte_list[vaddr.pn_index(0)] = PTE::new_page(paddr, flags.into());
+        //debug!("level 1 ok");
         TLB::flush_vaddr(vaddr);
+        //debug!("flush ok, to return");
     }
 
     /// Mapping a page to specific address(kernel space address).

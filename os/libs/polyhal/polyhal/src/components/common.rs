@@ -1,6 +1,7 @@
 use lazyinit::LazyInit;
 
 use crate::PhysAddr;
+use log::*;
 
 /// Page Allocation trait for privoids that page allocation
 pub trait PageAlloc: Sync {
@@ -29,6 +30,7 @@ pub fn get_cpu_num() -> usize {
 /// alloc a persistent memory page
 #[inline]
 pub(crate) fn frame_alloc() -> PhysAddr {
+    debug!("page alloc to alloc");
     PAGE_ALLOC.alloc()
 }
 

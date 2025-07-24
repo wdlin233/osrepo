@@ -5,14 +5,14 @@ use core::{
     mem::size_of,
 };
 
+use crate::println;
 use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use polyhal::pagetable::PAGE_SIZE;
-use lazy_static::*;
-use polyhal::{pa, PhysAddr};
-use crate::println;
 use buddy_system_allocator::FrameAllocator;
+use lazy_static::*;
+use polyhal::pagetable::PAGE_SIZE;
+use polyhal::{pa, PhysAddr};
 
 lazy_static! {
     /// frame allocator instance through lazy_static!
@@ -29,7 +29,9 @@ pub fn add_frame_range(mm_start: usize, mm_end: usize) {
         .fill(0);
     }
     let start = (mm_start + 0xfff) / PAGE_SIZE;
-    FRAME_ALLOCATOR.exclusive_access().add_frame(start, mm_end / PAGE_SIZE);
+    FRAME_ALLOCATOR
+        .exclusive_access()
+        .add_frame(start, mm_end / PAGE_SIZE);
 }
 
 /// Allocate a physical page frame in FrameTracker style
@@ -43,6 +45,7 @@ pub fn frame_alloc() -> Option<Arc<FrameTracker>> {
 }
 
 pub fn frame_alloc_persist() -> Option<PhysAddr> {
+    debug!("in frame alloc persist");
     FRAME_ALLOCATOR
         .exclusive_access()
         .alloc(1)
@@ -56,7 +59,10 @@ pub fn frames_alloc(count: usize) -> Option<Vec<Arc<FrameTracker>>> {
         .exclusive_access()
         .alloc(count)
         .map(|x| pa!(x * PAGE_SIZE))?;
-    info!("(frames_alloc) Allocating {} frames starting at {}", count, start);
+    info!(
+        "(frames_alloc) Allocating {} frames starting at {}",
+        count, start
+    );
     let ret = (0..count)
         .into_iter()
         .map(|idx| (start + idx * PAGE_SIZE))
@@ -68,7 +74,9 @@ pub fn frames_alloc(count: usize) -> Option<Vec<Arc<FrameTracker>>> {
 
 /// Deallocate a physical page frame with a given ppn
 pub fn frame_dealloc(paddr: PhysAddr) {
-    FRAME_ALLOCATOR.exclusive_access().dealloc(paddr.raw() / PAGE_SIZE, 1);
+    FRAME_ALLOCATOR
+        .exclusive_access()
+        .dealloc(paddr.raw() / PAGE_SIZE, 1);
 }
 
 #[derive(Clone)]

@@ -17,7 +17,7 @@ pub const TICKS_PER_SEC: usize = 100;
 /// The number of milliseconds per second
 pub const MSEC_PER_SEC: usize = 1000;
 /// kernel stack size
-pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
+pub const KERNEL_STACK_SIZE: usize = 4096 * 5;
 /// kernel stack top address
 pub const KSTACK_TOP: usize = 0x40_0000_0000 - PAGE_SIZE + 1;
 
@@ -55,7 +55,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_BITS: usize = 0xc;
 //#[cfg(target_arch = "riscv64")]
 /// user app's stack size
-pub const USER_STACK_SIZE: usize = 4 * 1024 * 8;
+pub const USER_STACK_SIZE: usize = 4 * 1024 * 5;
 //#[cfg(target_arch = "riscv64")]
 /// kernel heap size
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;

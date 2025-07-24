@@ -148,8 +148,8 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
-    insert_into_tid2task(0, &INITPROC);
-    insert_into_thread_group(0, &INITPROC);
+    insert_into_tid2task(1, &INITPROC);
+    insert_into_thread_group(1, &INITPROC);
     info!("kernel: INITPROC is added to the task manager");
 }
 

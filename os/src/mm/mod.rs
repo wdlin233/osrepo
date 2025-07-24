@@ -6,31 +6,33 @@
 //!
 //! Every task or process has a memory_set to control its virtual memory.
 //mod address;
+mod addr_range;
 mod frame_allocator; // frame allocator
 mod group;
+mod heap_allocator;
 mod map_area;
 mod memory_set;
 mod page_fault_handler;
 mod page_table;
-mod heap_allocator;
-mod addr_range;
 mod shm;
 
+pub use addr_range::{
+    insert_bad_address, is_bad_address, remove_bad_address, VAddrRange, BAD_ADDRESS,
+};
 pub use frame_allocator::{frame_alloc, frame_dealloc, frames_alloc, FrameTracker};
-pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile, MapType};
+pub use map_area::{MapArea, MapAreaType, MapPermission, MapType, MmapFile};
 pub use memory_set::{MemorySet, MemorySetInner};
 pub use page_table::{
-    translated_byte_buffer, translated_ref,
-    translated_refmut, translated_str, UserBuffer, UserBufferIterator,
+    translated_byte_buffer, translated_ref, translated_refmut, translated_str, UserBuffer,
+    UserBufferIterator,
 };
-pub use addr_range::{insert_bad_address, is_bad_address, remove_bad_address, BAD_ADDRESS, VAddrRange};
 pub use shm::*;
 
+use log::*;
 use polyhal::common::PageAlloc;
 use polyhal::instruction::{ebreak, shutdown};
 use polyhal::mem::{get_fdt, get_mem_areas};
 use polyhal::println;
-
 pub struct PageAllocImpl;
 
 impl PageAlloc for PageAllocImpl {
@@ -56,13 +58,13 @@ pub fn init() {
         frame_allocator::add_frame_range(*start, start + size);
     });
     debug!("Memory regions initialized");
-    if let Ok(fdt) = get_fdt() {
-        fdt.all_nodes().for_each(|x| {
-            if let Some(mut compatibles) = x.compatible() {
-                log::debug!("Node Compatiable: {:?}", compatibles.next());
-            }
-        });
-    }
+    // if let Ok(fdt) = get_fdt() {
+    //     fdt.all_nodes().for_each(|x| {
+    //         if let Some(mut compatibles) = x.compatible() {
+    //             log::debug!("Node Compatiable: {:?}", compatibles.next());
+    //         }
+    //     });
+    // }
 
     // test
     //ebreak();
