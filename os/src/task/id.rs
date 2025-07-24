@@ -248,22 +248,14 @@ pub struct TaskUserRes {
 
 #[cfg(target_arch = "riscv64")]
 /// Return the bottom addr (low addr) of the trap context for a task
-fn trap_cx_bottom_from_tid(tid: usize) -> usize {
+pub fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     //debug!("in trap cx bottom from tid, the tid is : {}", tid);
     USER_TRAP_CONTEXT_TOP - tid * PAGE_SIZE
 }
 /// Return the bottom addr (high addr) of the user stack for a task
-fn ustack_bottom_from_tid(_ustack_base: usize, tid: usize) -> usize {
+pub fn ustack_bottom_from_tid(_ustack_base: usize, tid: usize) -> usize {
     USER_STACK_TOP - tid * (PAGE_SIZE + USER_STACK_SIZE)
 }
-
-// fn uheap_bottom_from_tid(tid: usize) -> usize {
-//     HEAP_BASE + tid * HEAP_SIZE
-// }
-
-// fn uheap_top_from_tid(tid: usize) -> usize {
-//     uheap_bottom_from_tid(tid) - PAGE_SIZE - 1
-// }
 
 impl TaskUserRes {
     /// Create a new TaskUserRes (Task User Resource)
@@ -274,36 +266,15 @@ impl TaskUserRes {
     ) -> Self {
         //debug!("in task user res new");
         let tid = process.inner_exclusive_access().alloc_tid();
-        // debug!(
-        //     "in task user res new, ustack_base:{},tid:{}",
-        //     ustack_base, tid
-        // );
-        //let is_exec = alloc_user_res;
+        debug!("new a res, the tid is : {}", tid);
         let is_exec = true;
-        // let user_hp = if is_exec {
-        //     uheap_bottom_from_tid(tid)
-        // } else {
-        //     uheap_bottom_from_tid(tid - 1)
-        // };
-        // let user_sp = if is_exec {
-        //     debug!("get user sp, give tid");
-        //     ustack_bottom_from_tid(ustack_base, tid) + USER_STACK_SIZE
-        // } else {
-        //     debug!("get user sp,give  tid");
-        //     ustack_bottom_from_tid(ustack_base, tid - 1) + USER_STACK_SIZE
-        // };
-        //debug!("in taskuserres new,user_sp(brk):{}",user_sp);
-
         let mut task_user_res = Self {
             tid,
             ustack_base,
             process: Arc::downgrade(&process),
-            // heap_bottom: user_hp,
-            // program_brk: user_hp,
             is_exec,
         };
         if alloc_user_res {
-            //debug!("to alloc user res");
             task_user_res.alloc_user_res();
         }
         task_user_res
@@ -319,18 +290,9 @@ impl TaskUserRes {
         //debug!("in alloc user res");
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
-
-        // alloc user stack
-        //debug!("to get ustack bottom, give tid, tid is : {}", self.tid);
+        debug!("in alloc , give tid, tid is : {}", self.tid);
         let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
-        // self.heap_bottom = ustack_top + PAGE_SIZE;
-        // self.program_brk = ustack_top + PAGE_SIZE;
-
-        // debug!(
-        //     "ustack_bottom = {},ustack_top = {}",
-        //     ustack_bottom, ustack_top
-        // );
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
@@ -338,15 +300,6 @@ impl TaskUserRes {
             MapAreaType::Stack,
         );
 
-        // alloc user heap
-        // debug!("heap_bottom = {},program_brk = {}",self.heap_bottom,self.program_brk);
-        // process_inner.memory_set.insert_framed_area(
-        //     self.heap_bottom.into(),
-        //     self.program_brk.into(),
-        //     MapPermission::default() | MapPermission::W,
-        //     MapAreaType::Brk,
-        // );
-        // alloc trap_cx
         #[cfg(target_arch = "riscv64")]
         {
             debug!("to get trap cx bottom, give tid, like up");

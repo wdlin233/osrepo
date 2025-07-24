@@ -68,7 +68,7 @@ pub struct ProcessControlBlockInner {
     /// tasks(also known as threads)
     pub tasks: Vec<Option<Arc<TaskControlBlock>>>,
     /// task resource allocator
-    pub task_res_allocator: RecycleAllocator,
+    //pub task_res_allocator: RecycleAllocator,
     /// mutex list
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
     /// semaphore list
@@ -203,13 +203,13 @@ impl ProcessControlBlockInner {
     // } use fstruct.rs instead
     /// allocate a new task id
     pub fn alloc_tid(&mut self) -> usize {
-        self.task_res_allocator.alloc()
-        //tid_alloc().0
+        //self.task_res_allocator.alloc()
+        tid_alloc().0
     }
     /// deallocate a task id
     pub fn dealloc_tid(&mut self, tid: usize) {
-        self.task_res_allocator.dealloc(tid)
-        //tid_dealloc(tid);
+        //self.task_res_allocator.dealloc(tid)
+        tid_dealloc(tid);
     }
     /// the count of tasks(threads) in this process
     pub fn thread_count(&self) -> usize {
@@ -326,7 +326,7 @@ impl ProcessControlBlock {
                     fs_info: Arc::new(FsInfo::new(String::from("/"))),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
-                    task_res_allocator: RecycleAllocator::new(0),
+                    //task_res_allocator: RecycleAllocator::new(0),
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
@@ -691,7 +691,7 @@ impl ProcessControlBlock {
                         fd_table: new_fd_table,
                         signals: SignalFlags::empty(),
                         tasks: Vec::new(),
-                        task_res_allocator: RecycleAllocator::new(0),
+                        //task_res_allocator: RecycleAllocator::new(0),
                         mutex_list: Vec::new(),
                         semaphore_list: Vec::new(),
                         condvar_list: Vec::new(),
@@ -732,7 +732,7 @@ impl ProcessControlBlock {
                         fd_table: new_fd_table,
                         signals: SignalFlags::empty(),
                         tasks: Vec::new(),
-                        task_res_allocator: RecycleAllocator::new(0),
+                        //task_res_allocator: RecycleAllocator::new(0),
                         mutex_list: Vec::new(),
                         semaphore_list: Vec::new(),
                         condvar_list: Vec::new(),

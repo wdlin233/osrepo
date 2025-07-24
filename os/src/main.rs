@@ -87,7 +87,7 @@ pub fn main(cpu: usize) -> ! {
 
     fs::list_apps();
     task::add_initproc();
-    fs::init();
+    //fs::init();
 
     task::run_tasks();
     panic!("Unreachable section for kernel!");

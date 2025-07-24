@@ -1,6 +1,6 @@
 //! Types related to task management & Functions for completely changing TCB
 
-use super::id::TaskUserRes;
+use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid, TaskUserRes};
 #[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
@@ -23,7 +23,7 @@ pub struct TaskControlBlock {
 
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
-
+    pub tid: usize,
     /// The physical page number of the frame where the trap context is placed
     #[cfg(target_arch = "riscv64")]
     pub trap_cx_ppn: PhysPageNum,
@@ -79,6 +79,50 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
+    pub fn alloc_user_res(&mut self) {
+        let process = self.process.upgrade().unwrap();
+        let process_inner = process.inner_exclusive_access();
+        debug!("in alloc , give tid, tid is : {}", self.tid());
+        let ustack_bottom = ustack_bottom_from_tid(self.tid());
+        let ustack_top = ustack_bottom + USER_STACK_SIZE;
+        process_inner.memory_set.insert_framed_area(
+            ustack_bottom.into(),
+            ustack_top.into(),
+            MapPermission::default() | MapPermission::W,
+            MapAreaType::Stack,
+        );
+
+        #[cfg(target_arch = "riscv64")]
+        {
+            debug!("to get trap cx bottom, give tid, like up");
+            let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
+            let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+            //debug!("to map trap cx info");
+            process_inner.memory_set.insert_framed_area(
+                trap_cx_bottom.into(),
+                trap_cx_top.into(),
+                MapPermission::R | MapPermission::W,
+                MapAreaType::Trap,
+            );
+        }
+    }
+    #[cfg(target_arch = "riscv64")]
+    /// The physical page number(ppn) of the trap context for a task with tid
+    pub fn trap_cx_ppn(&self, tid: usize) -> PhysPageNum {
+        debug!(
+            "in get trap cx ppn , self tid is : {}, tid is : {}",
+            self.tid(),
+            tid
+        );
+        let process = self.process.upgrade().unwrap();
+        let process_inner = process.inner_exclusive_access();
+        let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(tid).into();
+        process_inner
+            .memory_set
+            .translate(trap_cx_bottom_va.into())
+            .unwrap()
+            .ppn()
+    }
     /// Create a new task
     pub fn new(
         process: Arc<ProcessControlBlock>,
@@ -86,11 +130,15 @@ impl TaskControlBlock {
         alloc_user_res: bool,
     ) -> Self {
         //debug!("in tcb new");
-        let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
+        //let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
+        let tid = process.inner_exclusive_access().alloc_tid();
+        if alloc_user_res {
+            self.alloc_user_res();
+        }
         let (kstack, kstack_top, _trap_cx_ppn) = {
             #[cfg(target_arch = "riscv64")]
             {
-                let trap_cx_ppn = res.trap_cx_ppn();
+                let trap_cx_ppn = self.trap_cx_ppn(self.tid());
                 debug!("(TaskControlBlock, new) trap cx ppn is : {}", trap_cx_ppn.0);
                 let kstack = kstack_alloc();
                 let kstack_top = kstack.get_top();
@@ -111,6 +159,7 @@ impl TaskControlBlock {
             kstack: kstack.unwrap(),
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
+                    tid,
                     #[cfg(target_arch = "loongarch64")]
                     kstack: kstack.unwrap(),
                     res: Some(res),
@@ -123,26 +172,12 @@ impl TaskControlBlock {
             },
         }
     }
-    pub fn inner_lock(&self) -> MutexGuard<TaskControlBlockInner> {
-        unimplemented!()
-    }
+
     pub fn tid(&self) -> usize {
         let inner = self.inner_exclusive_access();
-        let id = inner.res.as_ref().unwrap().tid;
+        let id = inner.tid;
         id
-        //unimplemented!()
-        // #[cfg(target_arch = "riscv64")]
-        // {
-        //     kstack_alloc().get_tid()
-        // }
-        // #[cfg(target_arch = "loongarch64")]
-        // {
-        //     0 // LoongArch64 does not have a tid in the kernel stack
-        // }
     }
-    // pub fn getpid(&self) -> usize {
-    //     self.process.upgrade().unwrap().get
-    // }
 }
 
 #[derive(Copy, Clone, PartialEq)]
