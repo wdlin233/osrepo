@@ -14,13 +14,6 @@ use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
 use crate::mm::page_fault_handler::{
     cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
 };
-//,USER_STACK_SIZE};
-#[cfg(target_arch = "loongarch64")]
-use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
-#[cfg(target_arch = "riscv64")]
-use crate::hal::{
-    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
-};
 use crate::mm::page_table::flush_tlb;
 use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
 use crate::sync::UPSafeCell;
@@ -43,6 +36,19 @@ use riscv::register::{
     scause::{Exception, Trap},
 };
 use xmas_elf::ElfFile;
+
+extern "C" {
+    fn stext();
+    fn etext();
+    fn srodata();
+    fn erodata();
+    fn sdata();
+    fn edata();
+    fn sbss_with_stack();
+    fn ebss();
+    fn ekernel();
+    fn sigreturn_trampoline();
+}
 
 #[cfg(target_arch = "riscv64")]
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
@@ -338,12 +344,13 @@ impl MemorySetInner {
     #[cfg(target_arch = "riscv64")]
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
-        self.page_table.map(
-            VirtAddr::from(TRAMPOLINE).into(),
-            PhysAddr::from(strampoline as usize).into(),
-            PTEFlags::R | PTEFlags::X,
-            false,
-        );
+        // self.page_table.map(
+        //     VirtAddr::from(TRAMPOLINE).into(),
+        //     PhysAddr::from(strampoline as usize).into(),
+        //     PTEFlags::R | PTEFlags::X,
+        //     false,
+        // );
+        unimplemented!("map_trampoline is not implemented for loongarch64");
     }
 
     #[cfg(target_arch = "riscv64")]

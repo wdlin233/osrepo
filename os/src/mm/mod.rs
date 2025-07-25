@@ -39,7 +39,7 @@ pub use page_table::{
 pub use shm::*;
 
 #[cfg(target_arch = "loongarch64")]
-use crate::config::VIRT_BIAS;
+use crate::config::VIRT_ADDR_OFFSET;
 
 #[cfg(target_arch = "loongarch64")]
 use crate::mm::system_allocator::init_heap;
@@ -62,13 +62,13 @@ pub fn init() {
 #[macro_export]
 macro_rules! virt_to_phys {
     ($va:expr) => {
-        $va - crate::config::VIRT_BIAS
+        $va - crate::config::VIRT_ADDR_OFFSET
     };
 }
 /// Translate a physical address to a virtual address.
 #[macro_export]
 macro_rules! phys_to_virt {
     ($pa:expr) => {
-        $pa + crate::config::VIRT_BIAS
+        $pa + crate::config::VIRT_ADDR_OFFSET
     };
 }

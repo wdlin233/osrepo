@@ -80,8 +80,11 @@ pub const USER_HEAP_SIZE: usize = 0x10_0000;
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
-pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
-pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
+#[cfg(target_arch = "riscv64")]
+pub const VIRT_ADDR_OFFSET: usize = 0xffff_ffc0_0000_0000; // virtual address bias for loongarch64
+#[cfg(target_arch= "loongarch64")]
+pub const VIRT_ADDR_OFFSET: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
+pub const UART: usize = 0x1FE001E0 + VIRT_ADDR_OFFSET;
 
 #[cfg(target_arch = "riscv64")]
 /// physical memory end address
@@ -100,7 +103,7 @@ pub const USER_STACK_SIZE: usize = 4096 * 8;
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
 
 #[cfg(target_arch = "loongarch64")]
-pub const MEMORY_END: usize = 0x000000000_1000_0000 + VIRT_BIAS;
+pub const MEMORY_END: usize = 0x000000000_1000_0000 + VIRT_ADDR_OFFSET;
 #[cfg(target_arch = "loongarch64")]
 pub const PAGE_SIZE: usize = 0x4000; //16kB
 #[cfg(target_arch = "loongarch64")]
