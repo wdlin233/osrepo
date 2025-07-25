@@ -1,12 +1,4 @@
-use polyhal::{println, VirtAddr};
-use polyhal_trap::{
-    trap::{
-        run_user_task,
-        TrapType::{self, *},
-    },
-    trapframe::{TrapFrame, TrapFrameArgs},
-};
-
+use crate::task::handle;
 use crate::{
     signal::{
         check_if_any_sig_for_current_task, handle_signal, send_signal_to_thread, SignalFlags,
@@ -17,6 +9,14 @@ use crate::{
         current_task, current_trap_cx, exit_current_and_run_next, suspend_current_and_run_next,
     },
     timer::get_time,
+};
+use polyhal::{println, VirtAddr};
+use polyhal_trap::{
+    trap::{
+        run_user_task,
+        TrapType::{self, *},
+    },
+    trapframe::{TrapFrame, TrapFrameArgs},
 };
 
 /// trap entry for TaskContext
@@ -99,7 +99,7 @@ fn kernel_interrupt(ctx: &mut TrapFrame, trap_type: TrapType) {
             exit_current_and_run_next(-2);
         }
     }
-
+    handle();
     // handle signals (handle the sent signal)
     // println!("[K] trap_handler:: handle_signals");
     if let Some(signo) = check_if_any_sig_for_current_task() {

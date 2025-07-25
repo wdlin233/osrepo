@@ -16,7 +16,7 @@ use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::mm::{
     translated_refmut, MapAreaType, MapPermission, MapType, MemorySet, MemorySetInner, VAddrRange,
 };
-use crate::signal::{SigTable, SignalFlags};
+use crate::signal::{SigAction, SigTable, SignalFlags};
 use crate::sync::UPSafeCell;
 use crate::syscall::CloneFlags;
 use crate::task::alloc::kernel_stack_position;
@@ -77,6 +77,40 @@ pub struct ProcessControlBlockInner {
     pub heap_top: usize,
     pub robust_list: RobustList,
     pub trap_ctx_backup: Option<TrapFrame>,
+    pub frozen: bool,
+    pub killed: bool,
+    pub signals: SignalFlags,
+    pub handling_sig: isize,
+    pub signal_actions: SignalActions,
+}
+/// Action for a signal
+#[repr(C, align(16))]
+#[derive(Debug, Clone, Copy)]
+pub struct SignalAction {
+    pub handler: usize,
+    pub mask: SignalFlags,
+}
+
+impl Default for SignalAction {
+    fn default() -> Self {
+        Self {
+            handler: 0,
+            mask: SignalFlags::from_bits(40).unwrap(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SignalActions {
+    pub table: [SignalAction; 31 + 1],
+}
+
+impl Default for SignalActions {
+    fn default() -> Self {
+        Self {
+            table: [SignalAction::default(); 31 + 1],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -377,6 +411,9 @@ impl ProcessControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
+                    signal_actions: SignalActions::default(),
+                    handling_sig: -1,
+                    signals: SignalFlags::empty(),
                     trap_cx: TrapFrame::new(),
                     trap_cx_ppn: PhysAddr::new(0),
                     trap_cx_base: 0,
@@ -397,6 +434,8 @@ impl ProcessControlBlock {
                     heap_top: heap_bottom,
                     robust_list: RobustList::default(),
                     trap_ctx_backup: None,
+                    frozen: false,
+                    killed: false,
                 })
             },
         });
@@ -707,6 +746,11 @@ impl ProcessControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
+                    signal_actions: parent.signal_actions.clone(),
+                    handling_sig: -1,
+                    signals: SignalFlags::empty(),
+                    frozen: false,
+                    killed: false,
                     trap_cx: parent.trap_cx.clone(),
                     trap_cx_ppn: PhysAddr::new(0),
                     trap_cx_base: 0,

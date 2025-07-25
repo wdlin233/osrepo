@@ -103,7 +103,10 @@ impl SignalFlags {
             | SignalFlags::SIGXFSZ
             | SignalFlags::SIGSYS;
         let ignore_signals = SignalFlags::SIGCHLD | SignalFlags::SIGURG | SignalFlags::SIGWINCH;
-        let stop_signals = SignalFlags::SIGSTOP | SignalFlags::SIGTSTP | SignalFlags::SIGTTIN | SignalFlags::SIGTTOU;
+        let stop_signals = SignalFlags::SIGSTOP
+            | SignalFlags::SIGTSTP
+            | SignalFlags::SIGTTIN
+            | SignalFlags::SIGTTOU;
         let continue_signals = SignalFlags::SIGCONT;
         if terminate_signals.contains(*self) {
             SigOp::Terminate
