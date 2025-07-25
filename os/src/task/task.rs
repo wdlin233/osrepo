@@ -1,6 +1,6 @@
 //! Types related to task management & Functions for completely changing TCB
 
-use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid, TaskUserRes};
+use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid};
 #[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
@@ -101,13 +101,10 @@ impl TaskControlBlock {
             MapPermission::default() | MapPermission::W,
             MapAreaType::Stack,
         );
-
         #[cfg(target_arch = "riscv64")]
         {
-            debug!("to get trap cx bottom, give tid, like up");
             let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
             let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-            //debug!("to map trap cx info");
             process_inner.memory_set.insert_framed_area(
                 trap_cx_bottom.into(),
                 trap_cx_top.into(),
@@ -116,6 +113,20 @@ impl TaskControlBlock {
             );
         }
     }
+    // #[cfg(target_arch = "riscv64")]
+    // pub fn alloc_user_trap(&self) {
+    //     let process = self.process.upgrade().unwrap();
+    //     let process_inner = process.inner_exclusive_access();
+    //     debug!("to get trap cx bottom, give tid, like up");
+    //     let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
+    //     let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+    //     process_inner.memory_set.insert_framed_area(
+    //         trap_cx_bottom.into(),
+    //         trap_cx_top.into(),
+    //         MapPermission::R | MapPermission::W,
+    //         MapAreaType::Trap,
+    //     );
+    // }
     #[cfg(target_arch = "riscv64")]
     /// The physical page number(ppn) of the trap context for a task with tid
     pub fn trap_cx_ppn(&self, tid: usize) -> PhysPageNum {
@@ -136,6 +147,7 @@ impl TaskControlBlock {
     #[cfg(target_arch = "riscv64")]
     /// The bottom usr vaddr (low addr) of the trap context for a task with tid
     pub fn trap_cx_user_va(&self) -> usize {
+        //debug!("in tcb, trap cx user va");
         trap_cx_bottom_from_tid(self.tid())
     }
     /// Create a new task
@@ -181,13 +193,14 @@ impl TaskControlBlock {
         }
         #[cfg(target_arch = "riscv64")]
         {
+            //new_task.alloc_user_trap();
             if alloc_user_res {
-                let trap_cx_ppn = new_task.trap_cx_ppn(1);
+                let trap_cx_ppn = new_task.trap_cx_ppn(tid);
                 //let trap_cx_ppn = new_task.trap_cx_ppn(new_task.tid());
                 new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
             } else {
                 //let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
-                let trap_cx_ppn = new_task.trap_cx_ppn(1);
+                let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
                 new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
             }
         }

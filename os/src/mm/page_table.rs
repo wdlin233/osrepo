@@ -225,6 +225,14 @@ impl PageTableEntry {
         let new_flags: usize = (self.bits & 0xFF) as usize | flags.bits().clone();
         self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
     }
+    pub fn set_flags(&mut self, flags: PTEFlags) {
+        //let new_flags: u8 = flags.bits().clone();
+        #[cfg(target_arch = "riscv64")]
+        let new_flags: u8 = flags.bits().clone();
+        #[cfg(target_arch = "loongarch64")]
+        let new_flags: usize = flags.bits().clone();
+        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
+    }
 }
 
 /// page table structure
@@ -399,6 +407,11 @@ impl PageTable {
     }
     pub fn reset_w(&mut self, vpn: VirtPageNum) {
         self.find_pte_create(vpn).unwrap().reset_w();
+    }
+    pub fn set_flags(&mut self, vpn: VirtPageNum, flags: PTEFlags) {
+        self.find_pte_create(vpn)
+            .unwrap()
+            .set_flags(flags | PTEFlags::V);
     }
 }
 

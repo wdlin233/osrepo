@@ -160,7 +160,7 @@ pub fn remove_from_pid2process(pid: usize) {
 }
 /// Take a process out of the ready queue
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
-    //debug!("kernel: TaskManager::fetch_task");
+    debug!("kernel: TaskManager::fetch_task");
     TASK_MANAGER.exclusive_access().fetch()
 }
 

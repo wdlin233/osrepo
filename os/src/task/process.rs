@@ -68,7 +68,7 @@ pub struct ProcessControlBlockInner {
     /// tasks(also known as threads)
     pub tasks: Vec<Option<Arc<TaskControlBlock>>>,
     /// task resource allocator
-    //pub task_res_allocator: RecycleAllocator,
+    pub task_res_allocator: RecycleAllocator,
     /// mutex list
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
     /// semaphore list
@@ -195,21 +195,15 @@ impl ProcessControlBlockInner {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    // /// allocate a new file descriptor
-    // pub fn alloc_fd(&mut self) -> usize {
-    //     let fd_table = &mut self
-    //         .fd_table
-    //         .get().files;
-    // } use fstruct.rs instead
     /// allocate a new task id
     pub fn alloc_tid(&mut self) -> usize {
-        //self.task_res_allocator.alloc()
-        tid_alloc().0
+        self.task_res_allocator.alloc()
+        //tid_alloc().0
     }
     /// deallocate a task id
     pub fn dealloc_tid(&mut self, tid: usize) {
-        //self.task_res_allocator.dealloc(tid)
-        tid_dealloc(tid);
+        self.task_res_allocator.dealloc(tid)
+        //tid_dealloc(tid);
     }
     /// the count of tasks(threads) in this process
     pub fn thread_count(&self) -> usize {
@@ -326,7 +320,7 @@ impl ProcessControlBlock {
                     fs_info: Arc::new(FsInfo::new(String::from("/"))),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
-                    //task_res_allocator: RecycleAllocator::new(0),
+                    task_res_allocator: RecycleAllocator::new(0),
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
@@ -345,7 +339,7 @@ impl ProcessControlBlock {
         });
         info!("in pcb new, the heap bottom is : {}", heap_bottom);
         // create a main thread, we should allocate ustack and trap_cx here
-        let task = Arc::new(TaskControlBlock::new(Arc::clone(&process), true, 1));
+        let task = Arc::new(TaskControlBlock::new(Arc::clone(&process), true, 0));
         // debug!("kernel: finish create main thread.");
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
@@ -633,7 +627,7 @@ impl ProcessControlBlock {
                         fd_table: new_fd_table,
                         signals: SignalFlags::empty(),
                         tasks: Vec::new(),
-                        //task_res_allocator: RecycleAllocator::new(0),
+                        task_res_allocator: RecycleAllocator::new(0),
                         mutex_list: Vec::new(),
                         semaphore_list: Vec::new(),
                         condvar_list: Vec::new(),
@@ -674,7 +668,7 @@ impl ProcessControlBlock {
                         fd_table: new_fd_table,
                         signals: SignalFlags::empty(),
                         tasks: Vec::new(),
-                        //task_res_allocator: RecycleAllocator::new(0),
+                        task_res_allocator: RecycleAllocator::new(0),
                         mutex_list: Vec::new(),
                         semaphore_list: Vec::new(),
                         condvar_list: Vec::new(),
@@ -695,9 +689,10 @@ impl ProcessControlBlock {
             parent.children.push(Arc::clone(&child));
             // create main thread of child process
             let task = Arc::new(TaskControlBlock::new(Arc::clone(&child), false, parent_tid));
-            // attach task to child process
             let mut child_inner = child.inner_exclusive_access();
             child_inner.tasks.push(Some(Arc::clone(&task)));
+            //child_inner.memory_set.clone_trap(&parent);
+
             if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
                 let child_token = child_inner.get_user_token();
                 put_data(child_token, child_tid, task.tid() as u32);
@@ -752,19 +747,6 @@ impl ProcessControlBlock {
         self.inner_exclusive_access().clear_child_tid = new;
     }
 }
-
-// impl ProcessControlBlock {
-//     /// Create a new child process directly from the parent process
-//     pub fn spwan(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
-//         let child = Arc::new(Self::new(elf_data));
-
-//         child.inner_exclusive_access().parent = Some(Arc::downgrade(self));
-//         self.inner_exclusive_access().children.push(Arc::clone(&child));
-
-//         child
-//     }
-//     // seems a unnecessary syscall, tempolarily remove it
-// }
 
 bitflags! {
     /// Open file flags

@@ -121,10 +121,8 @@ impl MemorySet {
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
-    pub fn from_existed_user(user_space: &MemorySet) -> Self {
-        Self::new(MemorySetInner::from_existed_user(
-            user_space.inner.get_unchecked_mut(),
-        ))
+    pub fn from_existed_user(user_space: &Arc<MemorySet>) -> Self {
+        Self::new(MemorySetInner::from_existed_user(user_space))
     }
     #[cfg(target_arch = "riscv64")]
     #[inline(always)]
@@ -321,11 +319,7 @@ impl MemorySetInner {
     /// Assuming that there are no conflicts in the virtual address
     /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        // debug!(
-        //     "in mem set inner push, the map area is, start : {}, end :{}",
-        //     map_area.vpn_range.get_start().0,
-        //     map_area.vpn_range.get_end().0
-        // );
+        debug!("in mem set push");
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
@@ -481,127 +475,6 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::SECURE, 0 as usize));
         auxv.push(Aux::new(AuxType::NOTELF, 0x112d as usize));
 
-        // let mut head_va = 0;
-        // let mut has_found_header_va = false;
-
-        // debug!("elf program header count: {}", ph_count);
-        // for i in 0..ph_count {
-        //     let ph = elf.program_header(i).unwrap();
-        //     if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-        //         let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-        //         let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-        //         debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
-        //         if !has_found_header_va {
-        //             head_va = start_va.0;
-        //             has_found_header_va = true;
-        //         }
-        //         #[cfg(target_arch = "riscv64")]
-        //         let mut map_perm = MapPermission::U;
-        //         #[cfg(target_arch = "loongarch64")]
-        //         let mut map_perm = MapPermission::default();
-
-        //         let ph_flags = ph.flags();
-        //         #[cfg(target_arch = "riscv64")]
-        //         {
-        //             if ph_flags.is_read() {
-        //                 map_perm |= MapPermission::R;
-        //             }
-        //             if ph_flags.is_write() {
-        //                 map_perm |= MapPermission::W;
-        //             }
-        //             if ph_flags.is_execute() {
-        //                 map_perm |= MapPermission::X;
-        //             }
-        //         }
-        //         #[cfg(target_arch = "loongarch64")]
-        //         {
-        //             if !ph_flags.is_read() {
-        //                 map_perm |= MapPermission::NR;
-        //             }
-        //             if ph_flags.is_write() {
-        //                 map_perm |= MapPermission::W;
-        //             }
-        //             if !ph_flags.is_execute() {
-        //                 map_perm |= MapPermission::NX;
-        //             }
-        //         }
-        //         debug!(
-        //             "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-        //             start_va, end_va, map_perm
-        //         );
-        //         #[cfg(target_arch = "riscv64")]
-        //         let map_area = MapArea::new(
-        //             start_va,
-        //             end_va,
-        //             MapType::Framed,
-        //             map_perm,
-        //             MapAreaType::Elf,
-        //         );
-        //         #[cfg(target_arch = "loongarch64")]
-        //         let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
-
-        // A optimization for mapping data, keep aligned
-        // if start_va.page_offset() == 0 {
-        //     debug!("page offset == 0");
-        //     memory_set.push(
-        //         map_area,
-        //         Some(
-        //             &elf.input
-        //                 [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-        //         ),
-        //     );
-        // } else {
-        //     debug!("page offset != 0");
-        //     //error!("start_va page offset is not zero, start_va: {:?}", start_va);
-        //     let data_len = start_va.page_offset() + ph.file_size() as usize;
-        //     let mut data: Vec<u8> = Vec::with_capacity(data_len);
-        //     data.resize(data_len, 0);
-        //     data[start_va.page_offset()..].copy_from_slice(
-        //         &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-        //     );
-        //     debug!("to mem set push");
-        //     memory_set.push(map_area, Some(data.as_slice()));
-        // }
-        //}
-        //}
-
-        //     let data_offset = start_va.0 - start_va.floor().0 * PAGE_SIZE;
-        //     max_end_vpn = map_area.vpn_range.get_end();
-        //     debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
-        //     memory_set.push_with_offset(
-        //         map_area,
-        //         data_offset,
-        //         Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
-        //     );
-        // auxv.push(Aux {
-        //     aux_type: AuxType::PHDR,
-        //     value: head_va + elf.header.pt2.ph_offset() as usize,
-        // });
-        // // map user stack with U flags
-        // let max_end_va: VirtAddr = max_end_vpn.into();
-        // let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
-
-        // // guard page
-        // user_heap_bottom += PAGE_SIZE;
-        // info!(
-        //     "user heap bottom: {:#x}, {}",
-        //     user_heap_bottom, user_heap_bottom
-        // );
-        // let user_heap_top: usize = user_heap_bottom;
-        // memory_set.insert_framed_area(
-        //     user_heap_bottom.into(),
-        //     user_heap_top.into(),
-        //     MapPermission::R | MapPermission::W | MapPermission::U,
-        //     MapAreaType::Brk,
-        // );
-        // // 返回 address空间,用户栈顶,入口地址
-        // (
-        //     memory_set,
-        //     user_heap_bottom,
-        //     elf.header.pt2.entry_point() as usize,
-        //     auxv,
-        // )
-        // Get ph_head addr for auxv
         let (max_end_vpn, head_va) = memory_set.map_elf(&elf, VirtAddr(0));
         auxv.push(Aux {
             aux_type: AuxType::PHDR,
@@ -724,29 +597,69 @@ impl MemorySetInner {
         (max_end_vpn, head_va.into())
     }
     /// Create a new address space by copy code&data from a exited process's address space.
-    pub fn from_existed_user(user_space: &Self) -> Self {
+    pub fn from_existed_user(user_space: &Arc<MemorySet>) -> Self {
         let mut memory_set = Self::new_bare();
         #[cfg(target_arch = "riscv64")]
         // map trampoline
         memory_set.map_trampoline();
         // copy data sections/trap_context/user_stack
-        for area in user_space.areas.iter() {
-            let new_area = MapArea::from_another(area);
+        for area in user_space.get_mut().areas.iter() {
+            let mut new_area = MapArea::from_another(area);
             // 映射相同的Frame
             if area.area_type == MapAreaType::Shm {
                 let frames = area.data_frames.values().cloned().collect();
                 memory_set.push_with_given_frames(new_area, frames);
                 continue;
             }
-
+            if area.area_type == MapAreaType::Mmap
+                && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+            {
+                GROUP_SHARE.lock().add_area(new_area.groupid);
+            }
+            // Mmap和brk是lazy allocation
+            if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+                //已经分配且独占/被写过的部分以及读共享部分按cow处理
+                //其余是未分配部分，直接clone即可
+                if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {
+                    let frames = area.data_frames.values().cloned().collect();
+                    memory_set.push_with_given_frames(new_area, frames);
+                    continue;
+                }
+                new_area.data_frames = area.data_frames.clone();
+                for (vpn, _) in area.data_frames.iter() {
+                    let vpn = *vpn;
+                    let pte = user_space.get_mut().page_table.translate(vpn).unwrap();
+                    let mut pte_flags = pte.flags();
+                    let src_ppn = pte.ppn();
+                    //清空可写位，设置COW位
+                    let need_cow = pte_flags.contains(PTEFlags::W) | pte.is_cow();
+                    pte_flags &= !PTEFlags::W;
+                    user_space.get_mut().page_table.set_flags(vpn, pte_flags);
+                    if need_cow {
+                        user_space.get_mut().page_table.set_cow(vpn);
+                    }
+                    // 设置新的pagetable
+                    memory_set.page_table.map(vpn, src_ppn, pte_flags, need_cow);
+                }
+                memory_set.push_lazily(new_area);
+                continue;
+            }
             memory_set.push(new_area, None);
-            // copy data from another space
+            debug!("area type is : {:?}", area.area_type);
             for vpn in area.vpn_range {
-                let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                let src = user_space.translate(vpn);
+                let dst = memory_set.translate(vpn);
+                if src.is_none() || dst.is_none() {
+                    warn!("vpn={:?}", vpn);
+                }
+                let src_ppn = src.unwrap().ppn();
+                let dst_ppn = dst.unwrap().ppn();
+                // 打印权限
+                //debug!("vpn={:?} ", vpn);
                 dst_ppn
                     .get_bytes_array()
                     .copy_from_slice(src_ppn.get_bytes_array());
+                //debug!("copy ok");
             }
         }
         memory_set

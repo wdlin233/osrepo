@@ -75,7 +75,7 @@ impl MapArea {
         }
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        // only Framed type in LA64
+        //debug!("in map one");
         let ppn: PhysPageNum;
         #[cfg(target_arch = "riscv64")]
         match self.map_type {
@@ -83,6 +83,7 @@ impl MapArea {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
+                debug!("in map one, to alloc frame");
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, Arc::new(frame));
@@ -116,6 +117,7 @@ impl MapArea {
         page_table.unmap(vpn);
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
+        debug!("in map area map");
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
