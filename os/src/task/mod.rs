@@ -105,11 +105,11 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let process = task.process.upgrade().unwrap();
-    let tid = task_inner.res.as_ref().unwrap().tid;
+    let tid = task_inner.tid;
     let num = process.get_task_len();
     // record exit code
     task_inner.exit_code = Some(exit_code);
-    task_inner.res = None;
+    //task_inner.res = None;
     // here we do not remove the thread since we are still using the kstack
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
@@ -155,7 +155,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
         // otherwise they will be deallocated twice
-        let mut recycle_res = Vec::<TaskUserRes>::new();
+        // let mut recycle_res = Vec::<TaskControlBlock>::new();
         for task in process_inner.tasks.iter().filter(|t| t.is_some()) {
             let task = task.as_ref().unwrap();
             // if other tasks are Ready in TaskManager or waiting for a timer to be
@@ -166,16 +166,16 @@ pub fn exit_current_and_run_next(exit_code: i32) {
             // removed when the PCB is deallocated.
             //trace!("kernel: exit_current_and_run_next .. remove_inactive_task");
             remove_inactive_task(Arc::clone(&task));
-            let mut task_inner = task.inner_exclusive_access();
-            if let Some(res) = task_inner.res.take() {
-                recycle_res.push(res);
-            }
+            //let mut task_inner = task.inner_exclusive_access();
+            // if let Some(res) = task_inner.take() {
+            //     recycle_res.push(res);
+            // }
         }
         // dealloc_tid and dealloc_user_res require access to PCB inner, so we
         // need to collect those user res first, then release process_inner
         // for now to avoid deadlock/double borrow problem.
         drop(process_inner);
-        recycle_res.clear();
+        // recycle_res.clear();
         //debug!("recycle res ok");
         let mut process_inner = process.inner_exclusive_access();
         process_inner.children.clear();

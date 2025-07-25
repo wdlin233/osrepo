@@ -152,13 +152,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 #[cfg(target_arch = "riscv64")]
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .trap_cx_user_va()
+    current_task().unwrap().trap_cx_user_va()
 }
 
 #[cfg(target_arch = "riscv64")]

@@ -89,11 +89,6 @@ pub const IDLE_PID: usize = 0;
 
 pub struct HeapidHandle(pub usize);
 
-/// Allocate a new PID
-pub fn heap_id_alloc() -> HeapidHandle {
-    HeapidHandle(HEAP_ID_ALLOCATOR.exclusive_access().alloc())
-}
-
 /// A handle to a pid
 pub struct PidHandle(pub usize);
 
@@ -253,7 +248,7 @@ pub fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     USER_TRAP_CONTEXT_TOP - tid * PAGE_SIZE
 }
 /// Return the bottom addr (high addr) of the user stack for a task
-pub fn ustack_bottom_from_tid(_ustack_base: usize, tid: usize) -> usize {
+pub fn ustack_bottom_from_tid(tid: usize) -> usize {
     USER_STACK_TOP - tid * (PAGE_SIZE + USER_STACK_SIZE)
 }
 
@@ -291,7 +286,7 @@ impl TaskUserRes {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
         debug!("in alloc , give tid, tid is : {}", self.tid);
-        let ustack_bottom = ustack_bottom_from_tid(self.ustack_base, self.tid);
+        let ustack_bottom = ustack_bottom_from_tid(self.tid);
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
@@ -321,7 +316,7 @@ impl TaskUserRes {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
         // dealloc ustack manually
-        let ustack_bottom_va: VirtAddr = ustack_bottom_from_tid(self.ustack_base, self.tid).into();
+        let ustack_bottom_va: VirtAddr = ustack_bottom_from_tid(self.tid).into();
         process_inner
             .memory_set
             .remove_area_with_start_vpn(ustack_bottom_va.into());
@@ -403,17 +398,13 @@ impl TaskUserRes {
                 .ppn()
         }
     }
-    /// the bottom addr (low addr) of the user stack for a task
-    pub fn ustack_base(&self) -> usize {
-        self.ustack_base
-    }
     /// the top addr (high addr) of the user stack for a task
     pub fn ustack_top(&self, _get_self: bool) -> usize {
         debug!(
             "in ustack top, ustack base is :{}, tid is :{}",
             self.ustack_base, self.tid
         );
-        ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
+        ustack_bottom_from_tid(self.tid) + USER_STACK_SIZE
         // if _get_self {
         //     ustack_bottom_from_tid(self.ustack_base, self.tid) + USER_STACK_SIZE
         // } else {

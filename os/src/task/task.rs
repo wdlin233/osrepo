@@ -4,8 +4,13 @@ use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid, TaskUserRes};
 #[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
+use crate::config::{
+    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
+    USER_TRAP_CONTEXT_TOP,
+};
 use crate::hal::trap::TrapContext;
-use crate::{mm::PhysPageNum, sync::UPSafeCell};
+use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum};
+use crate::sync::UPSafeCell;
 use alloc::sync::{Arc, Weak};
 use core::cell::RefMut;
 use spin::MutexGuard;
@@ -22,8 +27,9 @@ pub struct TaskControlBlock {
 }
 
 pub struct TaskControlBlockInner {
-    pub res: Option<TaskUserRes>,
+    //pub res: Option<TaskUserRes>,
     pub tid: usize,
+    pub ptid: usize,
     /// The physical page number of the frame where the trap context is placed
     #[cfg(target_arch = "riscv64")]
     pub trap_cx_ppn: PhysPageNum,
@@ -53,6 +59,10 @@ impl TaskControlBlock {
 }
 
 impl TaskControlBlockInner {
+    pub fn ustack_top(&self, _get_self: bool) -> usize {
+        debug!("in ustack top,  tid is :{}", self.tid);
+        ustack_bottom_from_tid(self.tid) + USER_STACK_SIZE
+    }
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         #[cfg(target_arch = "riscv64")]
         {
@@ -79,7 +89,7 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
-    pub fn alloc_user_res(&mut self) {
+    pub fn alloc_user_res(&self) {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
         debug!("in alloc , give tid, tid is : {}", self.tid());
@@ -123,26 +133,21 @@ impl TaskControlBlock {
             .unwrap()
             .ppn()
     }
+    #[cfg(target_arch = "riscv64")]
+    /// The bottom usr vaddr (low addr) of the trap context for a task with tid
+    pub fn trap_cx_user_va(&self) -> usize {
+        trap_cx_bottom_from_tid(self.tid())
+    }
     /// Create a new task
-    pub fn new(
-        process: Arc<ProcessControlBlock>,
-        ustack_base: usize,
-        alloc_user_res: bool,
-    ) -> Self {
-        //debug!("in tcb new");
-        //let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
+    pub fn new(process: Arc<ProcessControlBlock>, alloc_user_res: bool, parent_tid: usize) -> Self {
         let tid = process.inner_exclusive_access().alloc_tid();
-        if alloc_user_res {
-            self.alloc_user_res();
-        }
-        let (kstack, kstack_top, _trap_cx_ppn) = {
+        debug!("in tcb new, the tid is : {}", tid);
+        let (kstack, kstack_top) = {
             #[cfg(target_arch = "riscv64")]
             {
-                let trap_cx_ppn = self.trap_cx_ppn(self.tid());
-                debug!("(TaskControlBlock, new) trap cx ppn is : {}", trap_cx_ppn.0);
                 let kstack = kstack_alloc();
                 let kstack_top = kstack.get_top();
-                (Some(kstack), kstack_top, Some(trap_cx_ppn))
+                (Some(kstack), kstack_top)
             }
             #[cfg(target_arch = "loongarch64")]
             {
@@ -150,27 +155,43 @@ impl TaskControlBlock {
                 let kstack = KernelStack::new();
                 let kstack_top = kstack.get_trap_addr(); //存放了trap上下文后的地址
                                                          // debug!("create task: kstack_top={:#x}", kstack_top);
-                (Some(kstack), kstack_top, Some(0)) // Some(0) as None to avoid gerneric type
+                (Some(kstack), kstack_top)
             }
         };
-        Self {
+        let mut new_task = TaskControlBlock {
             process: Arc::downgrade(&process),
             #[cfg(target_arch = "riscv64")]
             kstack: kstack.unwrap(),
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
                     tid,
+                    ptid: parent_tid,
                     #[cfg(target_arch = "loongarch64")]
                     kstack: kstack.unwrap(),
-                    res: Some(res),
                     #[cfg(target_arch = "riscv64")]
-                    trap_cx_ppn: _trap_cx_ppn.unwrap(),
+                    trap_cx_ppn: PhysPageNum(0),
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
                 })
             },
+        };
+        if alloc_user_res {
+            new_task.alloc_user_res();
         }
+        #[cfg(target_arch = "riscv64")]
+        {
+            if alloc_user_res {
+                let trap_cx_ppn = new_task.trap_cx_ppn(1);
+                //let trap_cx_ppn = new_task.trap_cx_ppn(new_task.tid());
+                new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
+            } else {
+                //let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
+                let trap_cx_ppn = new_task.trap_cx_ppn(1);
+                new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
+            }
+        }
+        new_task
     }
 
     pub fn tid(&self) -> usize {

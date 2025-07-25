@@ -2,7 +2,7 @@
 
 use super::add_task;
 use super::aux::{Aux, AuxType};
-use super::id::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
+use super::id::{tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
@@ -301,7 +301,7 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let heap_id = heap_id_alloc().0;
+        let heap_id = 0;
         let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data, heap_id);
         //info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
         //    elf_data.len(), ustack_base, entry_point);
@@ -344,18 +344,13 @@ impl ProcessControlBlock {
             },
         });
         info!("in pcb new, the heap bottom is : {}", heap_bottom);
-        let ustack_base = 0;
         // create a main thread, we should allocate ustack and trap_cx here
-        let task = Arc::new(TaskControlBlock::new(
-            Arc::clone(&process),
-            ustack_base,
-            true,
-        ));
+        let task = Arc::new(TaskControlBlock::new(Arc::clone(&process), true, 1));
         // debug!("kernel: finish create main thread.");
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
-        let ustack_top = task_inner.res.as_ref().unwrap().ustack_top(true);
+        let ustack_top = task_inner.ustack_top(true);
         #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
@@ -392,7 +387,7 @@ impl ProcessControlBlock {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        let heap_id = heap_id_alloc().0;
+        let heap_id = 0;
         let (memory_set, user_heap_bottom, entry_point, mut aux) =
             MemorySet::from_elf(elf_data, heap_id);
         let new_token = memory_set.token();
@@ -410,23 +405,21 @@ impl ProcessControlBlock {
         // since memory_set has been changed
         //trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
+        task.alloc_user_res();
+        let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
-        let ustack_base = 0;
-        task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
-        task_inner.res.as_mut().unwrap().is_exec = true;
-        task_inner.res.as_mut().unwrap().alloc_user_res();
+
         debug!(
             "kernel: exec .. alloc user resource for main thread again, pid = {}",
             self.getpid()
         );
         #[cfg(target_arch = "riscv64")]
         {
-            task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+            task_inner.trap_cx_ppn = trap_cx_ppn;
             debug!("in pcb exec, trap cx ppn is : {}", task_inner.trap_cx_ppn.0);
         }
         // push arguments on user stack
-        //trace!("kernel: exec .. push arguments on user stack");
-        let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top(true) as usize;
+        let mut user_sp = task_inner.ustack_top(true) as usize;
         info!("in pcb exec, initial user_sp = {}", user_sp);
 
         //      00000000000100b0 <main>:
@@ -437,56 +430,6 @@ impl ProcessControlBlock {
         //          100b8: aa 87        	mv	a5, a0          ; a5 = argc
         //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
         //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
-
-        /*
-        -----------------------ustack top == sp(init)
-                .
-                .
-                .
-            ------------
-            env string 2
-            ------------
-            env string 1
-        ------------------------env_st
-            地址对齐
-        --------------------------
-
-                .
-                .
-                .
-            -------------
-            args string 2
-            -------------
-            args string 1
-        ---------------------------args_st
-            地址对齐
-        ----------------------------
-            aux空间
-            以两个0为结束标志
-        ----------------------------
-                0(envp 结束)
-            ---------------------
-                .
-                .
-                .
-            ---------------------
-            envp2 -> env string 2
-            ---------------------
-            envp1 -> env string 1
-        -----------------------------env_base
-                0(argv 结束)
-            --------------------------
-                .
-                .
-                .
-            --------------------------
-                argv2 -> args string 2
-            --------------------------
-                argv1 -> args string 1
-        --------------------------------argv_base
-            argc
-        ---------------------------------sp(final)
-        */
 
         //usize大小
         let size = core::mem::size_of::<usize>();
@@ -625,6 +568,7 @@ impl ProcessControlBlock {
         //unimplemented!()
         let user = self.user.clone();
         let mut parent = self.inner_exclusive_access();
+        let parent_tid = parent.get_task(0).tid();
         assert_eq!(parent.thread_count(), 1);
 
         // 检查是否共享虚拟内存
@@ -633,9 +577,7 @@ impl ProcessControlBlock {
         } else {
             Arc::new(MemorySet::from_existed_user(&parent.memory_set))
         };
-        // 检查是否共享文件系统信息
-        //filesystem information.  This includes the root
-        //of the filesystem, the current working directory, and the umask
+        debug!("get memory set ok");
         let fs_info = if flags.contains(CloneFlags::CLONE_FS) {
             Arc::clone(&parent.fs_info)
         } else {
@@ -752,19 +694,7 @@ impl ProcessControlBlock {
             // add child
             parent.children.push(Arc::clone(&child));
             // create main thread of child process
-            let task = Arc::new(TaskControlBlock::new(
-                Arc::clone(&child),
-                parent
-                    .get_task(0)
-                    .inner_exclusive_access()
-                    .res
-                    .as_ref()
-                    .unwrap()
-                    .ustack_base(),
-                // here we do not allocate trap_cx or ustack again
-                // but mention that we allocate a new kstack here
-                false,
-            ));
+            let task = Arc::new(TaskControlBlock::new(Arc::clone(&child), false, parent_tid));
             // attach task to child process
             let mut child_inner = child.inner_exclusive_access();
             child_inner.tasks.push(Some(Arc::clone(&task)));
