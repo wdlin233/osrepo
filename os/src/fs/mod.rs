@@ -10,7 +10,6 @@ pub mod stat;
 pub mod stdio;
 pub mod vfs;
 
-use core::arch::global_asm;
 use crate::mm::UserBuffer;
 use crate::println;
 use crate::task::current_uid;
@@ -185,30 +184,26 @@ impl InodeType {
 
 // os\src\fs\mod.rs
 //将预加载到内存中的程序写入文件根目录
-#[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("initproc_rv.S"));
-#[cfg(target_arch = "loongarch64")]
-global_asm!(include_str!("initproc_la.S"));
 pub fn flush_preload() {
     extern "C" {
-        fn initproc_start();
-        fn initproc_end();
-        // fn test_start();
-        // fn test_end();
+        fn initproc_rv_start();
+        fn initproc_rv_end();
     }
 
     let initproc = open("/initproc", OpenFlags::O_CREATE, DEFAULT_FILE_MODE)
         .unwrap()
         .file()
         .unwrap();
+    debug!("in fs init, initproc ok");
     let mut v = Vec::new();
     v.push(unsafe {
         core::slice::from_raw_parts_mut(
-            initproc_start as *mut u8,
-            initproc_end as usize - initproc_start as usize,
+            initproc_rv_start as *mut u8,
+            initproc_rv_end as usize - initproc_rv_start as usize,
         ) as &'static mut [u8]
     });
     initproc.write(UserBuffer::new(v));
+
     // let test = open(
     //     "/test_all_1stage.sh",
     //     OpenFlags::O_CREATE,
@@ -228,7 +223,7 @@ pub fn flush_preload() {
 }
 
 pub fn init() {
-    flush_preload();
+    //flush_preload();
     create_init_files();
     // TODO(ZMY):为了过libc-test utime的权宜之计,读取RTC太麻烦了
     //root_inode().set_timestamps(Some(0), Some(0), Some(0));
@@ -444,6 +439,7 @@ fn create_file(abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass,
     //debug!("to creat file, the file is :{}", abs_path);
     // 一定能找到,因为除了RootInode外都有父结点
     let parent_dir = root_inode();
+    debug!("in create file, get root inode ok");
     let (readable, writable) = flags.read_write();
     let inode = parent_dir.create(abs_path, flags.node_type())?;
     inode.fmode_set(mode);
@@ -451,6 +447,7 @@ fn create_file(abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass,
     inode.set_timestamps(None, Some((get_time_ms() / 1000) as u64), None);
     insert_inode_idx(abs_path, inode.clone());
     let osinode = OSInode::new(readable, writable, inode);
+    debug!("in create file, to return");
     Ok(FileClass::File(Arc::new(osinode)))
 }
 
@@ -478,23 +475,23 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
     //判断是否是设备文件
     if find_device(abs_path) {
         let device = open_device_file(abs_path)?;
+        debug!("find device ok");
         return Ok(FileClass::Abs(device));
     }
     // 如果是动态链接文件,转换路径
-    if is_dynamic_link_file(abs_path) {
-        abs_path = map_dynamic_link_file(abs_path);
-        // log::info!("dynamic path={}", abs_path);
-    }
-    debug!("(fs::open) open file: {}, flags: {:?}", abs_path, flags);
+    // if is_dynamic_link_file(abs_path) {
+    //     abs_path = map_dynamic_link_file(abs_path);
+    //     debug!("dynamic path={}", abs_path);
+    // }
+    // debug!("open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {
         debug!("the abs_path already has inode");
         inode = find_inode_idx(abs_path);
     } else {
-        info!("(fs::open) open file: {}, but not found in idx", abs_path);
         let found_res = root_inode().find(abs_path, flags, 0);
-        info!("(fs::open) find file successfully: {},", abs_path);
+        debug!("find file successfully: {},", abs_path);
         if found_res.clone().err() == Some(SysErrNo::ENOTDIR) {
             info!("open file: {}, but not a directory", abs_path);
             return Err(SysErrNo::ENOTDIR);

@@ -1,103 +1,47 @@
 //! mtvec register
 
-use crate::result::{Error, Result};
-
-const MASK: usize = usize::MAX;
-const TRAP_MASK: usize = 0b11;
-
-read_write_csr! {
-    /// mtvec register
-    Mtvec: 0x305,
-    mask: MASK,
+/// mtvec register
+#[derive(Clone, Copy, Debug)]
+pub struct Mtvec {
+    bits: usize,
 }
 
-csr_field_enum! {
-    /// Trap mode
-    TrapMode {
-        default: Direct,
-        Direct = 0,
-        Vectored = 1,
-    }
-}
-
-read_write_csr_field! {
-    Mtvec,
-    /// Accesses the trap-vector mode.
-    trap_mode,
-    TrapMode: [0:1],
+/// Trap mode
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TrapMode {
+    Direct = 0,
+    Vectored = 1,
 }
 
 impl Mtvec {
+    /// Returns the contents of the register as raw bits
+    pub fn bits(&self) -> usize {
+        self.bits
+    }
+
     /// Returns the trap-vector base-address
-    #[inline]
-    pub const fn address(&self) -> usize {
-        self.bits & !TRAP_MASK
+    pub fn address(&self) -> usize {
+        self.bits - (self.bits & 0b11)
     }
 
-    /// Sets the trap-vector base-address.
-    ///
-    /// # Note
-    ///
-    /// Panics if the address is not aligned to 4-bytes.
-    #[inline]
-    pub fn set_address(&mut self, address: usize) {
-        self.try_set_address(address).unwrap();
-    }
-
-    /// Attempts to set the trap-vector base-address.
-    ///
-    /// # Note
-    ///
-    /// Returns an error if the address is not aligned to 4-bytes.
-    #[inline]
-    pub fn try_set_address(&mut self, address: usize) -> Result<()> {
-        // check for four-byte alignment
-        if (address & TRAP_MASK) != 0 {
-            Err(Error::InvalidFieldVariant {
-                field: "mtvec::address",
-                value: address,
-            })
-        } else {
-            self.bits = address | (self.bits & TRAP_MASK);
-            Ok(())
+    /// Returns the trap-vector mode
+    pub fn trap_mode(&self) -> Option<TrapMode> {
+        let mode = self.bits & 0b11;
+        match mode {
+            0 => Some(TrapMode::Direct),
+            1 => Some(TrapMode::Vectored),
+            _ => None,
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+read_csr_as!(Mtvec, 0x305, __read_mtvec);
 
-    #[test]
-    fn test_mtvec() {
-        let mut m = Mtvec::from_bits(0);
+write_csr!(0x305, __write_mtvec);
 
-        (1..=usize::BITS)
-            .map(|r| (((1u128 << r) - 1) as usize) & !TRAP_MASK)
-            .for_each(|address| {
-                m.set_address(address);
-                assert_eq!(m.address(), address);
-
-                assert_eq!(m.try_set_address(address), Ok(()));
-                assert_eq!(m.address(), address);
-            });
-
-        (1..=usize::BITS)
-            .filter_map(|r| match ((1u128 << r) - 1) as usize {
-                addr if (addr & TRAP_MASK) != 0 => Some(addr),
-                _ => None,
-            })
-            .for_each(|address| {
-                assert_eq!(
-                    m.try_set_address(address),
-                    Err(Error::InvalidFieldVariant {
-                        field: "mtvec::address",
-                        value: address,
-                    })
-                );
-            });
-
-        test_csr_field!(m, trap_mode: TrapMode::Direct);
-        test_csr_field!(m, trap_mode: TrapMode::Vectored);
-    }
+/// Writes the CSR
+#[inline]
+pub unsafe fn write(addr: usize, mode: TrapMode) {
+    let bits = addr + mode as usize;
+    _write(bits);
 }

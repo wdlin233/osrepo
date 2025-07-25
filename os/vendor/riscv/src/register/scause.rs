@@ -1,140 +1,133 @@
 //! scause register
 
-pub use crate::interrupt::Trap;
-pub use riscv_pac::{CoreInterruptNumber, ExceptionNumber, InterruptNumber}; // re-export useful riscv-pac traits
+use bit_field::BitField;
+use core::mem::size_of;
 
-read_write_csr! {
-    /// scause register
-    Scause: 0x142,
-    mask: usize::MAX,
+/// scause register
+#[derive(Clone, Copy)]
+pub struct Scause {
+    bits: usize,
 }
 
-#[cfg(target_arch = "riscv32")]
-read_write_csr_field! {
-    Scause,
-    /// Returns the type of the trap:
-    ///
-    /// - `true`: an interrupt caused the trap
-    /// - `false`: an exception caused the trap
-    interrupt: 31,
+/// Trap Cause
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Trap {
+    Interrupt(Interrupt),
+    Exception(Exception),
 }
 
-#[cfg(not(target_arch = "riscv32"))]
-read_write_csr_field! {
-    Scause,
-    /// Returns the type of the trap:
-    ///
-    /// - `true`: an interrupt caused the trap
-    /// - `false`: an exception caused the trap
-    interrupt: 63,
+/// Interrupt
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Interrupt {
+    UserSoft,
+    VirtualSupervisorSoft,
+    SupervisorSoft,
+    UserTimer,
+    VirtualSupervisorTimer,
+    SupervisorTimer,
+    UserExternal,
+    VirtualSupervisorExternal,
+    SupervisorExternal,
+    Unknown,
 }
 
-#[cfg(target_arch = "riscv32")]
-read_write_csr_field! {
-    Scause,
-    /// Returns the code field
-    code: [0:30],
+/// Exception
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Exception {
+    InstructionMisaligned,
+    InstructionFault,
+    IllegalInstruction,
+    Breakpoint,
+    LoadFault,
+    StoreMisaligned,
+    StoreFault,
+    UserEnvCall,
+    VirtualSupervisorEnvCall,
+    InstructionPageFault,
+    LoadPageFault,
+    StorePageFault,
+    InstructionGuestPageFault,
+    LoadGuestPageFault,
+    VirtualInstruction,
+    StoreGuestPageFault,
+    Unknown,
 }
 
-#[cfg(not(target_arch = "riscv32"))]
-read_write_csr_field! {
-    Scause,
-    /// Returns the code field
-    code: [0:62],
+impl Interrupt {
+    pub fn from(nr: usize) -> Self {
+        match nr {
+            0 => Interrupt::UserSoft,
+            1 => Interrupt::SupervisorSoft,
+            2 => Interrupt::VirtualSupervisorSoft,
+            4 => Interrupt::UserTimer,
+            5 => Interrupt::SupervisorTimer,
+            6 => Interrupt::VirtualSupervisorTimer,
+            8 => Interrupt::UserExternal,
+            9 => Interrupt::SupervisorExternal,
+            10 => Interrupt::VirtualSupervisorExternal,
+            _ => Interrupt::Unknown,
+        }
+    }
+}
+
+impl Exception {
+    pub fn from(nr: usize) -> Self {
+        match nr {
+            0 => Exception::InstructionMisaligned,
+            1 => Exception::InstructionFault,
+            2 => Exception::IllegalInstruction,
+            3 => Exception::Breakpoint,
+            5 => Exception::LoadFault,
+            6 => Exception::StoreMisaligned,
+            7 => Exception::StoreFault,
+            8 => Exception::UserEnvCall,
+            10 => Exception::VirtualSupervisorEnvCall,
+            12 => Exception::InstructionPageFault,
+            13 => Exception::LoadPageFault,
+            15 => Exception::StorePageFault,
+            20 => Exception::InstructionGuestPageFault,
+            21 => Exception::LoadGuestPageFault,
+            22 => Exception::VirtualInstruction,
+            23 => Exception::StoreGuestPageFault,
+            _ => Exception::Unknown,
+        }
+    }
 }
 
 impl Scause {
-    /// Returns the trap cause represented by this register.
-    ///
-    /// # Note
-    ///
-    /// This method returns a **raw trap cause**, which means that values are represented as `usize`.
-    /// To get a target-specific trap cause, use [`Trap::try_into`] with your target-specific S-Mode trap cause types.
+    /// Returns the contents of the register as raw bits
     #[inline]
-    pub fn cause(&self) -> Trap<usize, usize> {
+    pub fn bits(&self) -> usize {
+        self.bits
+    }
+
+    /// Returns the code field
+    pub fn code(&self) -> usize {
+        let bit = 1 << (size_of::<usize>() * 8 - 1);
+        self.bits & !bit
+    }
+
+    /// Trap Cause
+    #[inline]
+    pub fn cause(&self) -> Trap {
         if self.is_interrupt() {
-            Trap::Interrupt(self.code())
+            Trap::Interrupt(Interrupt::from(self.code()))
         } else {
-            Trap::Exception(self.code())
+            Trap::Exception(Exception::from(self.code()))
         }
     }
 
     /// Is trap cause an interrupt.
     #[inline]
     pub fn is_interrupt(&self) -> bool {
-        self.interrupt()
+        self.bits.get_bit(size_of::<usize>() * 8 - 1)
     }
 
     /// Is trap cause an exception.
     #[inline]
     pub fn is_exception(&self) -> bool {
-        !self.interrupt()
+        !self.is_interrupt()
     }
 }
 
-/// Set supervisor cause register to corresponding cause.
-#[inline]
-pub unsafe fn set<I: CoreInterruptNumber, E: ExceptionNumber>(cause: Trap<I, E>) {
-    let bits = match cause {
-        Trap::Interrupt(i) => {
-            i.number() | (1 << (usize::BITS as usize - 1)) // interrupt bit is 1
-        }
-        Trap::Exception(e) => e.number(),
-    };
-    _write(bits);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_scause() {
-        let new_code = 0;
-        (1usize..=usize::BITS as usize)
-            .map(|r| ((1u128 << r) - 1) as usize)
-            .for_each(|raw| {
-                let exp_interrupt = (raw >> (usize::BITS - 1)) != 0;
-                let exp_code = raw & ((1usize << (usize::BITS - 1)) - 1);
-                let exp_cause = if exp_interrupt {
-                    Trap::Interrupt(exp_code)
-                } else {
-                    Trap::Exception(exp_code)
-                };
-
-                let mut scause = Scause::from_bits(raw);
-
-                assert_eq!(scause.interrupt(), exp_interrupt);
-                assert_eq!(scause.is_interrupt(), exp_interrupt);
-                assert_eq!(scause.is_exception(), !exp_interrupt);
-
-                assert_eq!(scause.code(), exp_code);
-                assert_eq!(scause.cause(), exp_cause);
-
-                scause.set_interrupt(!exp_interrupt);
-
-                assert_eq!(scause.is_interrupt(), !exp_interrupt);
-                assert_eq!(scause.is_exception(), exp_interrupt);
-
-                scause.set_code(new_code);
-                let new_cause = if scause.interrupt() {
-                    Trap::Interrupt(new_code)
-                } else {
-                    Trap::Exception(new_code)
-                };
-
-                assert_eq!(scause.code(), new_code);
-                assert_eq!(scause.cause(), new_cause);
-
-                scause.set_code(exp_code);
-                let exp_cause = if scause.interrupt() {
-                    Trap::Interrupt(exp_code)
-                } else {
-                    Trap::Exception(exp_code)
-                };
-
-                assert_eq!(scause.code(), exp_code);
-                assert_eq!(scause.cause(), exp_cause);
-            });
-    }
-}
+read_csr_as!(Scause, 0x142, __read_scause);

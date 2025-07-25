@@ -278,7 +278,7 @@ pub enum SysErrNo {
 
     // 后续错误码用不上
     #[num_enum(default)]
-    Default = -255,
+    Default = 255,
 }
 
 impl SysErrNo {

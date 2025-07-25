@@ -1,5 +1,5 @@
 use crate::mm::{translated_byte_buffer, translated_ref, UserBuffer};
-use crate::task::{current_task, current_user_token};
+use crate::task::{current_process, current_user_token};
 
 #[repr(C)]
 pub struct IoVec {
@@ -14,7 +14,7 @@ pub fn sys_ioctl() -> isize {
 pub fn sys_writev(fd: usize, iov: *const IoVec, iovcnt: usize) -> isize {
     let mut total_write_size: isize = 0;
     let token = current_user_token();
-    let process = current_task();
+    let process = current_process();
     let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;

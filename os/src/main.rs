@@ -39,71 +39,56 @@ mod board;
 
 #[macro_use]
 pub mod config;
+pub mod boot; // used to set up the initial environment
 pub mod drivers;
 pub mod fs;
+pub mod hal;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
 pub mod signal;
 pub mod sync;
 pub mod syscall;
-pub mod system;
 pub mod task;
 pub mod timer;
-pub mod trap;
-pub mod users;
 pub mod utils;
 
+#[cfg(target_arch = "loongarch64")]
 use crate::{
-    syscall::syscall,
-    task::{current_task, suspend_current_and_run_next},
+    hal::arch::info::{kernel_layout, print_machine_info},
+    hal::trap::{enable_timer_interrupt, init},
+    task::add_initproc,
 };
-use config::FLAG;
+pub mod system;
+pub mod users;
 
-use core::arch::{asm, global_asm, naked_asm};
-use polyhal::percpu::get_local_thread_pointer;
-use polyhal::{percpu, println};
-use polyhal_boot::define_entry;
-use polyhal_trap::trap::TrapType::{self, *};
-use polyhal_trap::trapframe::{TrapFrame, TrapFrameArgs};
+use crate::hal::{clear_bss, utils::console::CONSOLE};
+use config::FLAG;
+use core::arch::global_asm;
 
 #[no_mangle]
-pub fn main(hartid: usize) -> ! {
+pub fn main(cpu: usize) -> ! {
+    clear_bss();
     println!("{}", FLAG);
     println!("[kernel] Hello, world!");
-    println!("cpu: {}", hartid);
+    println!("cpu: {}", cpu);
     logging::init();
     log::error!("Logging init success");
-    check_percpu(hartid);
 
     mm::init();
-    fs::init();
-    fs::list_apps();
+    #[cfg(target_arch = "riscv64")]
+    mm::remap_test();
+    hal::trap::init();
+    #[cfg(target_arch = "loongarch64")]
+    print_machine_info();
+    hal::trap::enable_timer_interrupt();
+    #[cfg(target_arch = "riscv64")]
+    timer::set_next_trigger();
 
-    task::init_kernel_page();
+    fs::list_apps();
     task::add_initproc();
+    fs::init();
+
     task::run_tasks();
     panic!("Unreachable section for kernel!");
 }
-
-#[percpu]
-static mut TEST_PERCPU: usize = 0;
-
-fn check_percpu(hartid: usize) {
-    log::debug!(
-        "hart {} percpu base: {:#x}",
-        hartid,
-        get_local_thread_pointer()
-    );
-    assert_eq!(*TEST_PERCPU, 0);
-    *TEST_PERCPU.ref_mut() = hartid;
-    assert_eq!(*TEST_PERCPU, hartid);
-}
-
-fn secondary(hartid: usize) {
-    check_percpu(hartid);
-    println!("Secondary Hart ID: {}", hartid);
-    loop {}
-}
-
-define_entry!(main, secondary);

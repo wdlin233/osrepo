@@ -3,7 +3,7 @@ use spin::{Lazy, Mutex};
 
 use crate::{
     config::PAGE_SIZE,
-    task::{current_task},
+    task::{current_process, current_task},
     utils::{SysErrNo, SyscallRet},
 };
 
@@ -34,7 +34,7 @@ pub struct Shm {
 impl Shm {
     pub fn new(num: usize) -> Self {
         Self {
-            pages: { (0..num).map(|_| frame_alloc().unwrap()).collect() },
+            pages: { (0..num).map(|_| Arc::new(frame_alloc().unwrap())).collect() },
         }
     }
 }
@@ -81,7 +81,7 @@ pub fn shm_find(key: usize) -> bool {
 pub fn shm_attach(key: usize, addr: usize, map_perm: MapPermission) -> isize {
     let manager = SHM_MANAGER.lock();
     if let Some(shm) = manager.map.get(&key) {
-        let process = current_task().unwrap();
+        let process = current_process();
         let inner = process.inner_exclusive_access();
         let size = shm.pages.len() * PAGE_SIZE;
         inner

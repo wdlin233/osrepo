@@ -152,18 +152,16 @@ impl Ext4File {
     pub fn check_inode_exist(&mut self, path: &str, types: InodeTypes) -> bool {
         let c_path = CString::new(path).expect("CString::new failed");
         let c_path = c_path.into_raw();
-        let mtype = types.clone();
-        debug!("(ext4_lw, check_inode_exist) check path: {}, types: {:?}", path, mtype);
+        // let mtype = types.clone();
         let r = unsafe { ext4_inode_exist(c_path, types as i32) }; //eg: types: EXT4_DE_REG_FILE
-        debug!("(ext4_lw, check_inode_exist) get r ok");
         unsafe {
             drop(CString::from_raw(c_path));
         }
         if r == EOK as i32 {
-            //debug!("{:?} {} Exist", mtype, path);
+            // debug!("{:?} {} Exist", mtype, path);
             true //Exist
         } else {
-            //debug!("{:?} {} No Exist. ext4_inode_exist rc = {}", mtype, path, r);
+            // debug!("{:?} {} No Exist. ext4_inode_exist rc = {}", mtype, path, r);
             false
         }
     }

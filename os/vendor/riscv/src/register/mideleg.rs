@@ -1,52 +1,76 @@
 //! mideleg register
 
-read_write_csr! {
-    /// `mideleg` register
-    Mideleg: 0x303,
-    mask: 0x222,
+use bit_field::BitField;
+
+/// mideleg register
+#[derive(Clone, Copy, Debug)]
+pub struct Mideleg {
+    bits: usize,
 }
 
-read_write_csr_field! {
-    Mideleg,
+impl Mideleg {
+    /// Returns the contents of the register as raw bits
+    #[inline]
+    pub fn bits(&self) -> usize {
+        self.bits
+    }
+
+    /// User Software Interrupt Delegate
+    #[inline]
+    pub fn usoft(&self) -> bool {
+        self.bits.get_bit(0)
+    }
+
     /// Supervisor Software Interrupt Delegate
-    ssoft: 1,
-}
+    #[inline]
+    pub fn ssoft(&self) -> bool {
+        self.bits.get_bit(1)
+    }
 
-read_write_csr_field! {
-    Mideleg,
+    /// User Timer Interrupt Delegate
+    #[inline]
+    pub fn utimer(&self) -> bool {
+        self.bits.get_bit(4)
+    }
+
     /// Supervisor Timer Interrupt Delegate
-    stimer: 5,
-}
+    #[inline]
+    pub fn stimer(&self) -> bool {
+        self.bits.get_bit(5)
+    }
 
-read_write_csr_field! {
-    Mideleg,
+    /// User External Interrupt Delegate
+    #[inline]
+    pub fn uext(&self) -> bool {
+        self.bits.get_bit(8)
+    }
+
     /// Supervisor External Interrupt Delegate
-    sext: 9,
+    #[inline]
+    pub fn sext(&self) -> bool {
+        self.bits.get_bit(9)
+    }
 }
 
-set!(0x303);
-clear!(0x303);
+read_csr_as!(Mideleg, 0x303, __read_mideleg);
+set!(0x303, __set_mideleg);
+clear!(0x303, __clear_mideleg);
 
+set_clear_csr!(
+    /// User Software Interrupt Delegate
+    , set_usoft, clear_usoft, 1 << 0);
 set_clear_csr!(
     /// Supervisor Software Interrupt Delegate
     , set_ssoft, clear_ssoft, 1 << 1);
 set_clear_csr!(
+    /// User Timer Interrupt Delegate
+    , set_utimer, clear_utimer, 1 << 4);
+set_clear_csr!(
     /// Supervisor Timer Interrupt Delegate
     , set_stimer, clear_stimer, 1 << 5);
 set_clear_csr!(
+    /// User External Interrupt Delegate
+    , set_uext, clear_uext, 1 << 8);
+set_clear_csr!(
     /// Supervisor External Interrupt Delegate
     , set_sext, clear_sext, 1 << 9);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mideleg() {
-        let mut m = Mideleg::from_bits(0);
-
-        test_csr_field!(m, ssoft);
-        test_csr_field!(m, stimer);
-        test_csr_field!(m, sext);
-    }
-}

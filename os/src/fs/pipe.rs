@@ -8,7 +8,9 @@ use alloc::{
 
 use crate::{
     fs::{Kstat, StMode},
+    hal::trap,
     sync::UPSafeCell,
+    task::current_process,
 };
 
 use super::File;
@@ -216,11 +218,11 @@ impl File for Pipe {
     fn read(&self, mut buf: UserBuffer) -> SyscallRet {
         //debug!("in pipe read");
         assert!(self.readable());
-        let _buf_len = buf.len();
+        let buf_len = buf.len();
         let mut read_size = 0usize;
         let mut loop_read;
         loop {
-            let process = current_task().unwrap();
+            let process = current_process();
             let inner = process.inner_exclusive_access();
             let check_sig = inner.sig_pending.difference(inner.sig_mask);
             if !check_sig.is_empty() && check_sig != SignalFlags::SIGCHLD {
@@ -268,7 +270,7 @@ impl File for Pipe {
         let mut write_size = 0usize;
         let mut loop_write;
         loop {
-            let process = current_task().unwrap();
+            let process = current_process();
             let inner = process.inner_exclusive_access();
             let check_sig = inner.sig_pending.difference(inner.sig_mask);
             if !check_sig.is_empty() && check_sig != SignalFlags::SIGCHLD {
@@ -291,7 +293,7 @@ impl File for Pipe {
         if ring_buffer.all_read_ends_closed() {
             //发送断开的管道错误信号
             // log::warn!("send SIGPIPE signal!");
-            let tid = current_task().unwrap().gettid();
+            let tid = current_task().unwrap().tid();
             send_signal_to_thread(tid, SignalFlags::SIGPIPE);
             return Err(SysErrNo::EPIPE);
         }

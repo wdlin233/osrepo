@@ -1,78 +1,100 @@
 //! mip register
 
-read_write_csr! {
-    /// `mip` register
-    Mip: 0x344,
-    mask: 0xaaa,
+use bit_field::BitField;
+
+/// mip register
+#[derive(Clone, Copy, Debug)]
+pub struct Mip {
+    bits: usize,
 }
 
-read_write_csr_field! {
-    Mip,
+impl Mip {
+    /// Returns the contents of the register as raw bits
+    #[inline]
+    pub fn bits(&self) -> usize {
+        self.bits
+    }
+
+    /// User Software Interrupt Pending
+    #[inline]
+    pub fn usoft(&self) -> bool {
+        self.bits.get_bit(0)
+    }
+
     /// Supervisor Software Interrupt Pending
-    ssoft: 1,
-}
+    #[inline]
+    pub fn ssoft(&self) -> bool {
+        self.bits.get_bit(1)
+    }
 
-read_only_csr_field! {
-    Mip,
     /// Machine Software Interrupt Pending
-    msoft: 3,
-}
+    #[inline]
+    pub fn msoft(&self) -> bool {
+        self.bits.get_bit(3)
+    }
 
-read_write_csr_field! {
-    Mip,
+    /// User Timer Interrupt Pending
+    #[inline]
+    pub fn utimer(&self) -> bool {
+        self.bits.get_bit(4)
+    }
+
     /// Supervisor Timer Interrupt Pending
-    stimer: 5,
-}
+    #[inline]
+    pub fn stimer(&self) -> bool {
+        self.bits.get_bit(5)
+    }
 
-read_only_csr_field! {
-    Mip,
     /// Machine Timer Interrupt Pending
-    mtimer: 7,
-}
+    #[inline]
+    pub fn mtimer(&self) -> bool {
+        self.bits.get_bit(7)
+    }
 
-read_write_csr_field! {
-    Mip,
+    /// User External Interrupt Pending
+    #[inline]
+    pub fn uext(&self) -> bool {
+        self.bits.get_bit(8)
+    }
+
     /// Supervisor External Interrupt Pending
-    sext: 9,
-}
+    #[inline]
+    pub fn sext(&self) -> bool {
+        self.bits.get_bit(9)
+    }
 
-read_only_csr_field! {
-    Mip,
     /// Machine External Interrupt Pending
-    mext: 11,
+    #[inline]
+    pub fn mext(&self) -> bool {
+        self.bits.get_bit(11)
+    }
 }
 
-set!(0x344);
-clear!(0x344);
+read_csr_as!(Mip, 0x344, __read_mip);
+set!(0x344, __set_mip);
+clear!(0x344, __clear_mip);
 
+set_clear_csr!(
+    /// User Software Interrupt Pending
+    , set_usoft, clear_usoft, 1 << 0);
 set_clear_csr!(
     /// Supervisor Software Interrupt Pending
     , set_ssoft, clear_ssoft, 1 << 1);
 set_clear_csr!(
+    /// Machine Software Interrupt Pending
+    , set_msoft, clear_msoft, 1 << 3);
+set_clear_csr!(
+    /// User Timer Interrupt Pending
+    , set_utimer, clear_utimer, 1 << 4);
+set_clear_csr!(
     /// Supervisor Timer Interrupt Pending
     , set_stimer, clear_stimer, 1 << 5);
 set_clear_csr!(
+    /// Machine Timer Interrupt Pending
+    , set_mtimer, clear_mtimer, 1 << 7);
+set_clear_csr!(
+    /// User External Interrupt Pending
+    , set_uext, clear_uext, 1 << 8);
+set_clear_csr!(
     /// Supervisor External Interrupt Pending
     , set_sext, clear_sext, 1 << 9);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mip() {
-        let mut m = Mip::from_bits(0);
-
-        test_csr_field!(m, ssoft);
-        test_csr_field!(m, stimer);
-        test_csr_field!(m, sext);
-
-        assert!(!m.msoft());
-        assert!(!m.mtimer());
-        assert!(!m.mext());
-
-        assert!(Mip::from_bits(1 << 3).msoft());
-        assert!(Mip::from_bits(1 << 7).mtimer());
-        assert!(Mip::from_bits(1 << 11).mext());
-    }
-}

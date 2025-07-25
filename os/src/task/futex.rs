@@ -1,18 +1,18 @@
 use crate::{
+    mm::PhysAddr,
     utils::{SysErrNo, SyscallRet},
 };
 
 use super::{
-    block_current_and_run_next, current_task, wakeup_futex_task, ProcessControlBlock,
+    block_current_and_run_next, current_process, current_task, wakeup_futex_task, TaskControlBlock,
 };
 use alloc::{
     collections::{BTreeMap, VecDeque},
     sync::{Arc, Weak},
 };
-use polyhal::PhysAddr;
 use spin::{Lazy, Mutex};
 
-type WaitQueue = VecDeque<Weak<ProcessControlBlock>>;
+type WaitQueue = VecDeque<Weak<TaskControlBlock>>;
 
 /// 如果是PRIVATE_FUTEX,pid为进程的pid,否则pid为0(用户进程pid从1开始,0未被使用)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -46,7 +46,7 @@ pub fn futex_wait(key: FutexKey) -> isize {
     drop(task);
     drop(waitq);
     block_current_and_run_next();
-    let process = current_task().unwrap();
+    let process = current_process();
     let inner = process.inner_exclusive_access();
     // woke by signal
     if !inner.sig_pending.difference(inner.sig_mask).is_empty() {

@@ -8,13 +8,16 @@ use core::{
 };
 
 use crate::config::CLOCK_FREQ;
-use crate::sync::UPSafeCell;
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
-use crate::task::{wakeup_futex_task, ProcessControlBlock};
+use crate::sync::UPSafeCell;
+use crate::task::TaskControlBlock;
 use alloc::collections::BinaryHeap;
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Arc;
 use lazy_static::*;
-use polyhal::Time;
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::time::{get_timer_freq, Time};
+#[cfg(target_arch = "riscv64")]
+use riscv::register::time;
 
 /// The number of microseconds per second
 pub const NSEC_PER_SEC: usize = 1_000_000_000;
@@ -34,7 +37,7 @@ const MICRO_PER_SEC: usize = 1_000_000;
 /// SaZiKK impl TimeSpec ToT
 pub struct TimeSpec {
     /// The tv_sec member represents the elapsed time, in whole seconds.
-    pub tv_sec:  usize,
+    pub tv_sec: usize,
     /// The tv_usec member captures rest of the elapsed time, represented as the number of microseconds.
     pub tv_nsec: usize,
 }
@@ -53,7 +56,7 @@ impl Add for TimeSpec {
         sec += nsec / NSEC_PER_SEC;
         nsec %= NSEC_PER_SEC;
         Self {
-            tv_sec:  sec,
+            tv_sec: sec,
             tv_nsec: nsec,
         }
     }
@@ -98,37 +101,37 @@ impl Default for TimeSpec {
 impl TimeSpec {
     pub fn new() -> Self {
         Self {
-            tv_sec:  0,
+            tv_sec: 0,
             tv_nsec: 0,
         }
     }
     pub fn from_tick(tick: usize) -> Self {
         Self {
-            tv_sec:  tick / CLOCK_FREQ,
+            tv_sec: tick / CLOCK_FREQ,
             tv_nsec: (tick % CLOCK_FREQ) * NSEC_PER_SEC / CLOCK_FREQ,
         }
     }
     pub fn from_s(s: usize) -> Self {
         Self {
-            tv_sec:  s,
+            tv_sec: s,
             tv_nsec: 0,
         }
     }
     pub fn from_ms(ms: usize) -> Self {
         Self {
-            tv_sec:  ms / MSEC_PER_SEC,
+            tv_sec: ms / MSEC_PER_SEC,
             tv_nsec: (ms % MSEC_PER_SEC) * NSEC_PER_MSEC,
         }
     }
     pub fn from_us(us: usize) -> Self {
         Self {
-            tv_sec:  us / USEC_PER_SEC,
+            tv_sec: us / USEC_PER_SEC,
             tv_nsec: (us % USEC_PER_SEC) * NSEC_PER_USEC,
         }
     }
     pub fn from_ns(ns: usize) -> Self {
         Self {
-            tv_sec:  ns / NSEC_PER_SEC,
+            tv_sec: ns / NSEC_PER_SEC,
             tv_nsec: ns % NSEC_PER_SEC,
         }
     }
@@ -145,23 +148,33 @@ impl TimeSpec {
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-    Time::now().raw()
+    #[cfg(target_arch = "riscv64")]
+    return time::read();
+    #[cfg(target_arch = "loongarch64")]
+    return Time::read();
 }
 
 /// Get the current time in milliseconds
 pub fn get_time_ms() -> usize {
-    Time::now().to_msec()
+    #[cfg(target_arch = "riscv64")]
+    return time::read() * MSEC_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")]
+    return Time::read() / (get_timer_freq() / MSEC_PER_SEC);
 }
 
 /// get current time in microseconds
 pub fn get_time_us() -> usize {
-    Time::now().to_usec()
+    #[cfg(target_arch = "riscv64")]
+    return time::read() * MICRO_PER_SEC / CLOCK_FREQ;
+    #[cfg(target_arch = "loongarch64")]
+    return Time::read() * MICRO_PER_SEC / get_timer_freq();
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum TimerType {
-    Futex,
-    Stopped,
+#[cfg(target_arch = "riscv64")]
+/// Set the next timer interrupt
+pub fn set_next_trigger() {
+    use crate::hal::utils::set_timer;
+    set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
 /// condvar for timer
@@ -169,9 +182,7 @@ pub struct TimerCondVar {
     /// The time when the timer expires, in milliseconds
     pub expire_ms: usize,
     /// The task to be woken up when the timer expires
-    pub task: Weak<ProcessControlBlock>,
-    /// The type of the timer
-    pub timer_type: TimerType,
+    pub task: Arc<TaskControlBlock>,
 }
 
 impl PartialEq for TimerCondVar {
@@ -201,34 +212,25 @@ lazy_static! {
 }
 
 /// Add a timer
-pub fn add_futex_timer(expire_ms: usize, task: Arc<ProcessControlBlock>) {
-    // trace!(
-    //     "kernel:pid[{}] add_timer",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
+pub fn add_timer(expire_ms: usize, task: Arc<TaskControlBlock>) {
+    debug!("in add timer");
     let mut timers = TIMERS.exclusive_access();
-    timers.push(TimerCondVar { expire_ms, task: Arc::downgrade(&task), timer_type: TimerType::Futex });
-}
-
-pub fn add_stopped_timer(expire_ms: usize, task: Arc<ProcessControlBlock>) {
-    let mut timers = TIMERS.exclusive_access();
-    timers.push(TimerCondVar { expire_ms, task: Arc::downgrade(&task), timer_type: TimerType::Stopped });
+    timers.push(TimerCondVar { expire_ms, task });
 }
 
 /// Remove a timer
-pub fn remove_timer(_task: Arc<ProcessControlBlock>) {
+pub fn remove_timer(task: Arc<TaskControlBlock>) {
     //trace!("kernel:pid[{}] remove_timer", current_task().unwrap().process.upgrade().unwrap().getpid());
     //trace!("kernel: remove_timer");
-    unimplemented!("remove_timer is not implemented yet");
-    // let mut timers = TIMERS.exclusive_access();
-    // let mut temp = BinaryHeap::<TimerCondVar>::new();
-    // for condvar in timers.drain() {
-    //     if Arc::as_ptr(&task) != Arc::as_ptr(&condvar.task) {
-    //         temp.push(condvar);
-    //     }
-    // }
-    // timers.clear();
-    // timers.append(&mut temp);
+    let mut timers = TIMERS.exclusive_access();
+    let mut temp = BinaryHeap::<TimerCondVar>::new();
+    for condvar in timers.drain() {
+        if Arc::as_ptr(&task) != Arc::as_ptr(&condvar.task) {
+            temp.push(condvar);
+        }
+    }
+    timers.clear();
+    timers.append(&mut temp);
     //trace!("kernel: remove_timer END");
 }
 
@@ -239,18 +241,23 @@ pub fn check_timer() {
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
     let current_ms = get_time_ms();
-    let mut timers = TIMERS.exclusive_access();
+    let mut timers: core::cell::RefMut<'_, BinaryHeap<TimerCondVar>> = TIMERS.exclusive_access();
     while let Some(timer) = timers.peek() {
+        debug!("in check timer, peek ok");
         if timer.expire_ms <= current_ms {
-            if let Some(task) = timer.task.upgrade() {
-                debug!("kernel: check_timer: wake up task pid {} tid {}", task.getpid(), task.gettid());
-                if timer.timer_type == TimerType::Futex {
-                    // Wake up futex waiters
-                    wakeup_futex_task(Arc::clone(&task));
-                } else if timer.timer_type == TimerType::Stopped {
-                    // Wake up stopped task
-                    unimplemented!("Stopped timer is not implemented yet");
-                }
+            debug!(
+                "expire is : {}, current is : {}",
+                timer.expire_ms, current_ms
+            );
+            #[cfg(target_arch = "riscv64")]
+            {
+                use crate::task::wakeup_task;
+                wakeup_task(Arc::clone(&timer.task));
+            }
+            #[cfg(target_arch = "loongarch64")]
+            {
+                use crate::task::add_task;
+                add_task(Arc::clone(&timer.task));
             }
             timers.pop();
         } else {

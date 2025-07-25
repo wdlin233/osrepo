@@ -5,66 +5,70 @@
 //! map area and memory set, is implemented here.
 //!
 //! Every task or process has a memory_set to control its virtual memory.
-//mod address;
+mod address;
 mod frame_allocator; // frame allocator
 mod group;
 mod map_area;
 mod memory_set;
 mod page_fault_handler;
 mod page_table;
-mod heap_allocator;
-mod addr_range;
 mod shm;
 
-pub use frame_allocator::{frame_alloc, frame_dealloc, frames_alloc, FrameTracker};
-pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile, MapType};
-pub use memory_set::{MemorySet, MemorySetInner};
-pub use page_table::{
-    translated_byte_buffer, translated_ref,
-    translated_refmut, translated_str, UserBuffer, UserBufferIterator,
+#[cfg(target_arch = "riscv64")]
+mod heap_allocator;
+#[cfg(target_arch = "loongarch64")]
+pub mod system_allocator; // heap allocator
+
+pub use address::VPNRange;
+pub use address::{
+    copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
+    StepByOne, VirtAddr, VirtPageNum,
 };
-pub use addr_range::{insert_bad_address, is_bad_address, remove_bad_address, BAD_ADDRESS, VAddrRange};
+pub use frame_allocator::{frame_alloc, frame_alloc_contiguous, frame_dealloc, FrameTracker};
+#[cfg(target_arch = "riscv64")]
+pub use map_area::MapType;
+pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
+#[cfg(target_arch = "riscv64")]
+pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
+pub use memory_set::{MemorySet, MemorySetInner};
+use page_table::PTEFlags;
+pub use page_table::{
+    flush_tlb, put_data, safe_translated_byte_buffer, translated_byte_buffer, translated_ref,
+    translated_refmut, translated_str, PageTable, PageTableEntry, UserBuffer, UserBufferIterator,
+};
 pub use shm::*;
 
-use polyhal::common::PageAlloc;
-use polyhal::instruction::{ebreak, shutdown};
-use polyhal::mem::{get_fdt, get_mem_areas};
-use polyhal::println;
+#[cfg(target_arch = "loongarch64")]
+use crate::config::VIRT_BIAS;
 
-pub struct PageAllocImpl;
-
-impl PageAlloc for PageAllocImpl {
-    #[inline]
-    fn alloc(&self) -> polyhal::PhysAddr {
-        frame_allocator::frame_alloc_persist().expect("No memory left to allocate")
-    }
-
-    #[inline]
-    fn dealloc(&self, paddr: polyhal::PhysAddr) {
-        frame_allocator::frame_dealloc(paddr);
-    }
-}
+#[cfg(target_arch = "loongarch64")]
+use crate::mm::system_allocator::init_heap;
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
+    #[cfg(target_arch = "riscv64")]
     heap_allocator::init_heap();
+    #[cfg(target_arch = "loongarch64")]
+    system_allocator::init_heap();
     info!("Heap allocator initialized");
-    polyhal::common::init(&PageAllocImpl);
-    // polyhal::init_interrupt(); done in polyhal::CPU::rust_main()
-    get_mem_areas().for_each(|(start, size)| {
-        println!("init memory region {:#x} - {:#x}", start, start + size);
-        frame_allocator::add_frame_range(*start, start + size);
-    });
-    debug!("Memory regions initialized");
-    if let Ok(fdt) = get_fdt() {
-        fdt.all_nodes().for_each(|x| {
-            if let Some(mut compatibles) = x.compatible() {
-                log::debug!("Node Compatiable: {:?}", compatibles.next());
-            }
-        });
-    }
 
-    // test
-    //ebreak();
-    //shutdown();
+    frame_allocator::init_frame_allocator();
+    info!("Frame allocator initialized");
+
+    #[cfg(target_arch = "riscv64")]
+    KERNEL_SPACE.exclusive_access().activate();
+}
+
+#[macro_export]
+macro_rules! virt_to_phys {
+    ($va:expr) => {
+        $va - crate::config::VIRT_BIAS
+    };
+}
+/// Translate a physical address to a virtual address.
+#[macro_export]
+macro_rules! phys_to_virt {
+    ($pa:expr) => {
+        $pa + crate::config::VIRT_BIAS
+    };
 }

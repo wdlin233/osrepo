@@ -1,7 +1,18 @@
-use polyhal::{pagetable::PAGE_SIZE, VirtAddr};
+//! memory related syscall
 
-use crate::{fs::OpenFlags, mm::{insert_bad_address, is_bad_address, remove_bad_address, shm_attach, shm_create, shm_drop, shm_find, MapPermission, ShmFlags}, syscall::{MmapFlags, MmapProt}, task::current_task, utils::{page_round_up, SysErrNo}};
-use crate::fs::vfs::File;
+use log::debug;
+
+use super::{MmapFlags, MmapProt};
+use crate::{
+    config::PAGE_SIZE,
+    fs::{File, OpenFlags},
+    mm::{
+        insert_bad_address, is_bad_address, remove_bad_address, shm_attach, shm_create, shm_drop,
+        shm_find, translated_refmut, MapPermission, ShmFlags, VirtAddr,
+    },
+    task::{current_process, current_task},
+    utils::{page_round_up, SysErrNo, SyscallRet},
+};
 
 // get mempolicy
 //由于目前只有单核，所以这个暂时只需要返回0
@@ -36,6 +47,7 @@ pub fn sys_getmempolicy(
     0
 }
 
+//shmget
 pub fn sys_shmget(key: i32, size: usize, shmflag: i32) -> isize {
     const IPC_PRIVATE: i32 = 0;
     // 忽略权限位
@@ -117,7 +129,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     if flags.contains(MmapFlags::MAP_FIXED) && addr == 0 {
         return SysErrNo::EPERM as isize;
     }
-    let process = current_task().unwrap();
+    let process = current_process();
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if fd == usize::MAX {
@@ -141,7 +153,16 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
         Ok(n) => n,
         Err(_) => return SysErrNo::EBADF as isize, //?
     };
+    #[cfg(target_arch = "riscv64")]
     if (permission.contains(MapPermission::R) && !file.readable())
+        || (permission.contains(MapPermission::W) && !file.writable())
+        || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
+    {
+        //如果需要读/写/执行方式映射，必须要求文件可读
+        return SysErrNo::EACCES as isize;
+    }
+    #[cfg(target_arch = "loongarch64")]
+    if (permission.contains(MapPermission::NR) && file.readable())
         || (permission.contains(MapPermission::W) && !file.writable())
         || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
     {
@@ -161,7 +182,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
 /// YOUR JOB: Implement munmap.
 pub fn sys_munmap(addr: usize, len: usize) -> isize {
     debug!("[sys_munmap] addr={:#x}, len={:#x}", addr, len);
-    let process = current_task().unwrap();
+    let process = current_process();
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if is_bad_address(addr) {
@@ -173,7 +194,7 @@ pub fn sys_munmap(addr: usize, len: usize) -> isize {
 // change data segment size
 pub fn sys_brk(path: usize) -> isize {
     debug!("in sys brk, the path is : {}", path);
-    let process = current_task().unwrap();
+    let process = current_process();
     let fromer_addr: usize = process.change_program_brk(0);
     debug!("in sys brk, the fromer addr is : {}", fromer_addr);
     if path == 0 {
@@ -196,7 +217,6 @@ pub fn sys_brk(path: usize) -> isize {
     // }
 }
 
-
 pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
     if addr == 0 {
         return SysErrNo::ENOMEM as isize;
@@ -213,7 +233,7 @@ pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
         addr, len, map_perm
     );
 
-    let process = current_task().unwrap();
+    let process = current_process();
     let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.get_mut();
     let start_vpn = VirtAddr::from(addr).floor();

@@ -28,17 +28,14 @@ pub use disk::*;
 // }
 
 mod virtio;
-use polyhal::consts::VIRT_ADDR_START;
-use polyhal::PhysAddr;
 use virtio_drivers::transport::mmio::VirtIOHeader;
 use virtio_drivers::transport::mmio::MmioTransport;
 use virtio_drivers::transport::pci::PciTransport;
 use virtio::*;
-
 #[cfg(target_arch = "riscv64")]
-pub const VIRTIO0: PhysAddr = polyhal::pa!(0x1000_1000);
+pub const VIRTIO0: usize = 0x1000_1000; // rvv64 virtio base address
 #[cfg(target_arch = "loongarch64")]
-const VIRTIO0: PhysAddr = polyhal::pa!(0x2000_0000);
+const VIRTIO0: usize = 0x2000_0000 | 0x9000000000000000;
 
 #[cfg(target_arch = "riscv64")]
 pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, MmioTransport>;
@@ -48,16 +45,15 @@ pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, PciTransport>;
 impl BlockDeviceImpl {
     pub fn new_device() -> Self {
         #[cfg(target_arch = "riscv64")]
-        unsafe {
-            info!("(BlockDeviceImpl) new_device: VIRTIO0 = {:#x}", VIRTIO0.raw()); 
+        unsafe { 
             VirtIoBlkDev::<VirtIoHalImpl, MmioTransport>::new(
-                &mut *((VIRTIO0.raw() | VIRT_ADDR_START) as *mut VirtIOHeader)
+                &mut *(VIRTIO0 as *mut VirtIOHeader)
             ) 
         }
         #[cfg(target_arch = "loongarch64")]
         unsafe { 
             VirtIoBlkDev::<VirtIoHalImpl, PciTransport>::new(
-                &mut *((VIRTIO0.raw() | VIRT_ADDR_START) as *mut u8)
+                &mut *(VIRTIO0 as *mut u8)
             ) 
         }
     }

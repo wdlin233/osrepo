@@ -6,7 +6,7 @@
 /// 因此11-11-11-14,最高位是次高位的扩展
 ///
 use super::{translated_byte_buffer, PageTableEntry};
-use crate::config::KERNEL_ADDR_OFFSET;
+use crate::phys_to_virt;
 use crate::{
     config::{PAGE_SIZE, PAGE_SIZE_BITS},
     task::current_user_token,
@@ -224,6 +224,7 @@ impl VirtPageNum {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
@@ -245,24 +246,22 @@ impl PhysAddr {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
 impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
-        let kernel_va = KernelAddr::from(pa).0;
-        unsafe { core::slice::from_raw_parts_mut(kernel_va as *mut PageTableEntry, 512) }
+        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
     /// Get the reference of page(array of bytes)
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        let kernel_va = KernelAddr::from(pa).0;
-        unsafe { core::slice::from_raw_parts_mut(kernel_va as *mut u8, 4096) }
+        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
-    /// Get mutable reference of physical address as type T
-    pub fn as_mut<T>(&self) -> &'static mut T {
+    /// Get the mutable reference of physical address
+    pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
-        let kernel_va = KernelAddr::from(pa);
-        kernel_va.get_mut()
+        pa.get_mut()
     }
 }
 
@@ -288,15 +287,13 @@ impl PhysPageNum {
 impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        let kernel_va = KernelAddr::from(pa).0;
-        use crate::config::PAGE_SIZE; // 4096
-        unsafe { core::slice::from_raw_parts_mut(kernel_va as *mut u8, PAGE_SIZE) }
-    }
-    pub fn bytes_array(&self) -> &'static [u8] {
-        let pa: PhysAddr = (*self).into();
-        let kernel_va = KernelAddr::from(pa).0;
-        use crate::config::PAGE_SIZE; // 4096
-        unsafe { core::slice::from_raw_parts(kernel_va as *const u8, PAGE_SIZE) }
+        //let kernel_va = KernelAddr::from(pa).0;
+        debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
+        //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
+        //debug!("Kernel virtual address: {:#x}", kernel_va);
+        // No kernel address translation.
+        use crate::config::PAGE_SIZE;
+        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, PAGE_SIZE) }
     }
 }
 
@@ -419,47 +416,4 @@ pub fn is_bad_address(va: usize) -> bool {
 
 pub fn remove_bad_address(va: usize) {
     BAD_ADDRESS.lock().remove(&va);
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct KernelAddr(pub usize);
-
-impl KernelAddr {
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        unsafe { (self.0 as *mut T).as_mut().unwrap() }
-    }
-    pub fn get_ref<T>(&self) -> &'static T {
-        unsafe { (self.0 as *const T).as_ref().unwrap() }
-    }
-}
-
-impl From<usize> for KernelAddr {
-    fn from(v: usize) -> Self {
-        Self(v)
-    }
-}
-
-impl From<PhysAddr> for KernelAddr {
-    fn from(v: PhysAddr) -> Self {
-        Self(v.0 + KERNEL_ADDR_OFFSET)
-    }
-}
-
-impl From<KernelAddr> for PhysAddr {
-    fn from(v: KernelAddr) -> Self {
-        Self(v.0 - KERNEL_ADDR_OFFSET)
-    }
-}
-
-impl From<KernelAddr> for VirtAddr {
-    fn from(v: KernelAddr) -> Self {
-        Self(v.0)
-    }
-}
-
-impl From<KernelAddr> for PhysPageNum {
-    fn from(value: KernelAddr) -> Self {
-        PhysAddr::from(value).floor()
-    }
 }
