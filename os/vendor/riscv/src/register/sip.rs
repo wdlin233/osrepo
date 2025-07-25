@@ -1,7 +1,5 @@
 //! sip register
 
-use bit_field::BitField;
-
 /// sip register
 #[derive(Clone, Copy, Debug)]
 pub struct Sip {
@@ -15,41 +13,29 @@ impl Sip {
         self.bits
     }
 
-    /// User Software Interrupt Pending
-    #[inline]
-    pub fn usoft(&self) -> bool {
-        self.bits.get_bit(0)
-    }
-
     /// Supervisor Software Interrupt Pending
     #[inline]
     pub fn ssoft(&self) -> bool {
-        self.bits.get_bit(1)
-    }
-
-    /// User Timer Interrupt Pending
-    #[inline]
-    pub fn utimer(&self) -> bool {
-        self.bits.get_bit(4)
+        self.bits & (1 << 1) != 0
     }
 
     /// Supervisor Timer Interrupt Pending
     #[inline]
     pub fn stimer(&self) -> bool {
-        self.bits.get_bit(5)
-    }
-
-    /// User External Interrupt Pending
-    #[inline]
-    pub fn uext(&self) -> bool {
-        self.bits.get_bit(8)
+        self.bits & (1 << 5) != 0
     }
 
     /// Supervisor External Interrupt Pending
     #[inline]
     pub fn sext(&self) -> bool {
-        self.bits.get_bit(9)
+        self.bits & (1 << 9) != 0
     }
 }
 
-read_csr_as!(Sip, 0x144, __read_sip);
+read_csr_as!(Sip, 0x144);
+set!(0x344);
+clear!(0x104);
+
+set_clear_csr!(
+    /// Supervisor Software Interrupt Pending
+    , set_ssoft, clear_ssoft, 1 << 1);

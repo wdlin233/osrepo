@@ -2,10 +2,12 @@
 use crate::config::KERNEL_HEAP_SIZE;
 use buddy_system_allocator::LockedHeap;
 
+const HEAP_ORDER: usize = 12; // 2^12 = 4096 bytes, which is the size of a page
+
 #[global_allocator]
 #[cfg(target_arch = "riscv64")]
 /// heap allocator instance
-static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
+static HEAP_ALLOCATOR: LockedHeap<HEAP_ORDER> = LockedHeap::empty();
 
 #[alloc_error_handler]
 /// panic when heap allocation error occurs

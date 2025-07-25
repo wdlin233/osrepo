@@ -1,7 +1,7 @@
 #![cfg(not(miri))] // FIXME: takes too long
 
 use hashbrown::HashSet;
-use rand::{distr::Alphanumeric, rngs::SmallRng, Rng, SeedableRng};
+use rand::{distributions::Alphanumeric, rngs::SmallRng, Rng, SeedableRng};
 use std::iter;
 
 #[test]
@@ -27,7 +27,7 @@ fn test_hashset_insert_remove() {
             assert_eq!(m.insert(x.clone()), true);
         }
         for (i, x) in tx.iter().enumerate() {
-            println!("removing {i} {x:?}");
+            println!("removing {} {:?}", i, x);
             assert_eq!(m.remove(x), true);
         }
     }
