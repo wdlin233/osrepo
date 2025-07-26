@@ -119,6 +119,7 @@ impl MapArea {
     pub fn map(&mut self, page_table: &mut PageTable) {
         debug!("in map area map");
         for vpn in self.vpn_range {
+            ///debug!("to map one");
             self.map_one(page_table, vpn);
         }
     }

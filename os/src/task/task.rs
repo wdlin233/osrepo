@@ -190,6 +190,7 @@ impl TaskControlBlock {
         };
         if alloc_user_res {
             new_task.alloc_user_res();
+            //new_task.alloc_user_trap();
         }
         #[cfg(target_arch = "riscv64")]
         {

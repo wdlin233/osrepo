@@ -495,12 +495,21 @@ impl MemorySetInner {
         let perm = MapPermission::R | MapPermission::W | MapPermission::U;
         #[cfg(target_arch = "loongarch64")]
         let perm = MapPermission::W | MapPermission::PLVL | MapPermission::PLVH; // PLV3, user mode
-        memory_set.insert_framed_area(
+
+        // memory_set.insert_framed_area(
+        //     user_heap_bottom.into(),
+        //     user_heap_top.into(),
+        //     perm,
+        //     MapAreaType::Brk,
+        // );
+        memory_set.push_lazily(MapArea::new(
             user_heap_bottom.into(),
             user_heap_top.into(),
+            #[cfg(target_arch = "riscv64")]
+            MapType::Framed,
             perm,
             MapAreaType::Brk,
-        );
+        ));
         // 返回 address空间,用户栈顶,入口地址
         (
             memory_set,
@@ -611,6 +620,9 @@ impl MemorySetInner {
                 memory_set.push_with_given_frames(new_area, frames);
                 continue;
             }
+            // if area.area_type == MapAreaType::Stack {
+            //     continue;
+            // }
             if area.area_type == MapAreaType::Mmap
                 && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
             {
@@ -618,6 +630,7 @@ impl MemorySetInner {
             }
             // Mmap和brk是lazy allocation
             if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+                //if area.area_type == MapAreaType::Mmap {
                 //已经分配且独占/被写过的部分以及读共享部分按cow处理
                 //其余是未分配部分，直接clone即可
                 if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {

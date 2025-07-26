@@ -328,6 +328,7 @@ where
 {
     pub fn new(start: T, end: T) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
+        debug!("in vpn range new");
         Self { l: start, r: end }
     }
     pub fn get_start(&self) -> T {

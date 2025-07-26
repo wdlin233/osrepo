@@ -9,6 +9,7 @@ use super::TaskControlBlock;
 use super::{pid_alloc, PidHandle};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
+use crate::mm::MapPermission;
 
 use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
 use crate::fs::File;
@@ -388,11 +389,25 @@ impl ProcessControlBlock {
             MemorySet::from_elf(elf_data, heap_id);
         let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
+        // debug!("to activate");
+        // memory_set.activate();
+        // debug!("activate ok");
+        //let user_heap_top = user_heap_bottom;
+        // memory_set.insert_framed_area(
+        //     user_heap_bottom.into(),
+        //     user_heap_top.into(),
+        //     MapPermission::R | MapPermission::W | MapPermission::U,
+        //     MapAreaType::Brk,
+        // );
+        inner.memory_set = Arc::new(memory_set);
+
+        //inner.memory_set.activate();
+
         if inner.clear_child_tid != 0 {
             *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
-        inner.memory_set = Arc::new(memory_set);
+
         inner.heap_id = heap_id;
         inner.heap_bottom = user_heap_bottom;
         inner.heap_top = user_heap_bottom;
@@ -402,6 +417,7 @@ impl ProcessControlBlock {
         //trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
         task.alloc_user_res();
+        //task.alloc_user_trap();
         let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
 
