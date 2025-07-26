@@ -4,7 +4,7 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE,
+    MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE, VIRT_ADDR_OFFSET,
 };
 use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
@@ -24,7 +24,6 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::error;
-#[cfg(target_arch = "loongarch64")]
 use core::iter::Map;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
@@ -105,10 +104,6 @@ impl MemorySet {
     #[inline(always)]
     pub fn push(&self, map_area: MapArea, data: Option<&[u8]>) {
         self.inner.get_unchecked_mut().push(map_area, data);
-    }
-    #[inline(always)]
-    pub fn map_trampoline(&self) {
-        self.inner.get_unchecked_mut().map_trampoline();
     }
     #[inline(always)]
     pub fn new_kernel() -> Self {
@@ -264,13 +259,10 @@ impl MemorySetInner {
         permission: MapPermission,
         area_type: MapAreaType,
     ) {
-        #[cfg(target_arch = "riscv64")]
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, permission, area_type),
             None,
         );
-        #[cfg(target_arch = "loongarch64")]
-        self.push(MapArea::new(start_va, end_va, permission, area_type), None);
     }
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -305,7 +297,6 @@ impl MemorySetInner {
                 MapArea::new(
                     va.into(),
                     (va + size).into(),
-                    #[cfg(target_arch = "riscv64")]
                     MapType::Framed,
                     map_perm,
                     MapAreaType::Shm,
@@ -334,27 +325,11 @@ impl MemorySetInner {
     pub fn push_lazily(&mut self, map_area: MapArea) {
         self.areas.push(map_area);
     }
-    #[cfg(target_arch = "riscv64")]
-    /// Mention that trampoline is not collected by areas.
-    fn map_trampoline(&mut self) {
-        // self.page_table.map(
-        //     VirtAddr::from(TRAMPOLINE).into(),
-        //     PhysAddr::from(strampoline as usize).into(),
-        //     PTEFlags::R | PTEFlags::X,
-        //     false,
-        // );
-        unimplemented!("map_trampoline is not implemented for loongarch64");
-    }
 
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
-        use core::iter::Map;
-
-        use crate::mm::map_area::MapAreaType;
-
+        debug!("Creating new kernel memory set");
         let mut memory_set = Self::new_bare();
-        // map trampoline
-        memory_set.map_trampoline();
         // map kernel sections
         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
         info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
@@ -363,13 +338,41 @@ impl MemorySetInner {
             ".bss [{:#x}, {:#x})",
             sbss_with_stack as usize, ebss as usize
         );
+        info!(
+            "sigreturn_trampoline : [{:#x}, {:#x})",
+            sigreturn_trampoline as usize,
+            sigreturn_trampoline as usize + PAGE_SIZE
+        );
+        info!("ekernel(physical memory) : [{:#x}, {:#x})", ekernel as usize, MEMORY_END);
+        let s_sig_trap = sigreturn_trampoline as usize;
+        let e_sig_trap = sigreturn_trampoline as usize + PAGE_SIZE;
         info!("mapping .text section");
         memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
+                (s_sig_trap).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::X,
+                MapAreaType::Elf,
+            ),
+            None,
+        );
+        memory_set.push(
+            MapArea::new(
+                (e_sig_trap).into(),
                 (etext as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::X,
+                MapAreaType::Elf,
+            ),
+            None,
+        );
+        memory_set.push(
+            MapArea::new(
+                (s_sig_trap).into(),
+                (e_sig_trap).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::X | MapPermission::U,
                 MapAreaType::Elf,
             ),
             None,
@@ -411,7 +414,7 @@ impl MemorySetInner {
         memory_set.push(
             MapArea::new(
                 (ekernel as usize).into(),
-                MEMORY_END.into(),
+            MEMORY_END.into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::W,
                 MapAreaType::Physical,
@@ -419,13 +422,14 @@ impl MemorySetInner {
             None,
         );
         info!("mapping memory-mapped registers");
-        for pair in MMIO {
-            use crate::mm::map_area::MapAreaType;
-
+        for (addr, size) in MMIO {
+            let start = *addr + VIRT_ADDR_OFFSET;
+            let end = start + *size;
+            info!("mapping MMIO: {:#x} - {:#x}", start, end);
             memory_set.push(
                 MapArea::new(
-                    (*pair).0.into(),
-                    ((*pair).0 + (*pair).1).into(),
+                    start.into(),
+                    end.into(),
                     MapType::Identical,
                     MapPermission::R | MapPermission::W,
                     MapAreaType::MMIO,
@@ -433,6 +437,7 @@ impl MemorySetInner {
                 None,
             );
         }
+        info!("creating kernel memory set done");
         memory_set
     }
 
@@ -441,9 +446,6 @@ impl MemorySetInner {
     pub fn from_elf(elf_data: &[u8], _heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
         let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
-        #[cfg(target_arch = "riscv64")]
-        // map trampoline
-        memory_set.map_trampoline();
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
@@ -480,126 +482,6 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::SECURE, 0 as usize));
         auxv.push(Aux::new(AuxType::NOTELF, 0x112d as usize));
 
-        // let mut head_va = 0;
-        // let mut has_found_header_va = false;
-
-        // debug!("elf program header count: {}", ph_count);
-        // for i in 0..ph_count {
-        //     let ph = elf.program_header(i).unwrap();
-        //     if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-        //         let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-        //         let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-        //         debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
-        //         if !has_found_header_va {
-        //             head_va = start_va.0;
-        //             has_found_header_va = true;
-        //         }
-        //         #[cfg(target_arch = "riscv64")]
-        //         let mut map_perm = MapPermission::U;
-        //         #[cfg(target_arch = "loongarch64")]
-        //         let mut map_perm = MapPermission::default();
-
-        //         let ph_flags = ph.flags();
-        //         #[cfg(target_arch = "riscv64")]
-        //         {
-        //             if ph_flags.is_read() {
-        //                 map_perm |= MapPermission::R;
-        //             }
-        //             if ph_flags.is_write() {
-        //                 map_perm |= MapPermission::W;
-        //             }
-        //             if ph_flags.is_execute() {
-        //                 map_perm |= MapPermission::X;
-        //             }
-        //         }
-        //         #[cfg(target_arch = "loongarch64")]
-        //         {
-        //             if !ph_flags.is_read() {
-        //                 map_perm |= MapPermission::NR;
-        //             }
-        //             if ph_flags.is_write() {
-        //                 map_perm |= MapPermission::W;
-        //             }
-        //             if !ph_flags.is_execute() {
-        //                 map_perm |= MapPermission::NX;
-        //             }
-        //         }
-        //         debug!(
-        //             "start_va: {:?}, end_va: {:?}, map_perm: {:?}",
-        //             start_va, end_va, map_perm
-        //         );
-        //         #[cfg(target_arch = "riscv64")]
-        //         let map_area = MapArea::new(
-        //             start_va,
-        //             end_va,
-        //             MapType::Framed,
-        //             map_perm,
-        //             MapAreaType::Elf,
-        //         );
-        //         #[cfg(target_arch = "loongarch64")]
-        //         let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
-
-        // A optimization for mapping data, keep aligned
-        // if start_va.page_offset() == 0 {
-        //     debug!("page offset == 0");
-        //     memory_set.push(
-        //         map_area,
-        //         Some(
-        //             &elf.input
-        //                 [ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-        //         ),
-        //     );
-        // } else {
-        //     debug!("page offset != 0");
-        //     //error!("start_va page offset is not zero, start_va: {:?}", start_va);
-        //     let data_len = start_va.page_offset() + ph.file_size() as usize;
-        //     let mut data: Vec<u8> = Vec::with_capacity(data_len);
-        //     data.resize(data_len, 0);
-        //     data[start_va.page_offset()..].copy_from_slice(
-        //         &elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize],
-        //     );
-        //     debug!("to mem set push");
-        //     memory_set.push(map_area, Some(data.as_slice()));
-        // }
-        //}
-        //}
-
-        //     let data_offset = start_va.0 - start_va.floor().0 * PAGE_SIZE;
-        //     max_end_vpn = map_area.vpn_range.get_end();
-        //     debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
-        //     memory_set.push_with_offset(
-        //         map_area,
-        //         data_offset,
-        //         Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
-        //     );
-        // auxv.push(Aux {
-        //     aux_type: AuxType::PHDR,
-        //     value: head_va + elf.header.pt2.ph_offset() as usize,
-        // });
-        // // map user stack with U flags
-        // let max_end_va: VirtAddr = max_end_vpn.into();
-        // let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
-
-        // // guard page
-        // user_heap_bottom += PAGE_SIZE;
-        // info!(
-        //     "user heap bottom: {:#x}, {}",
-        //     user_heap_bottom, user_heap_bottom
-        // );
-        // let user_heap_top: usize = user_heap_bottom;
-        // memory_set.insert_framed_area(
-        //     user_heap_bottom.into(),
-        //     user_heap_top.into(),
-        //     MapPermission::R | MapPermission::W | MapPermission::U,
-        //     MapAreaType::Brk,
-        // );
-        // // 返回 address空间,用户栈顶,入口地址
-        // (
-        //     memory_set,
-        //     user_heap_bottom,
-        //     elf.header.pt2.entry_point() as usize,
-        //     auxv,
-        // )
         // Get ph_head addr for auxv
         let (max_end_vpn, head_va) = memory_set.map_elf(&elf, VirtAddr(0));
         auxv.push(Aux {
@@ -683,7 +565,6 @@ impl MemorySetInner {
                         map_perm |= MapPermission::NX;
                     }
                 }
-                #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(
                     start_va,
                     end_va,
@@ -691,9 +572,7 @@ impl MemorySetInner {
                     map_perm,
                     MapAreaType::Elf,
                 );
-                #[cfg(target_arch = "loongarch64")]
-                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
-
+                
                 max_end_vpn = map_area.vpn_range.get_end();
                 debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
                 // A optimization for mapping data, keep aligned
@@ -725,9 +604,6 @@ impl MemorySetInner {
     /// Create a new address space by copy code&data from a exited process's address space.
     pub fn from_existed_user(user_space: &Self) -> Self {
         let mut memory_set = Self::new_bare();
-        #[cfg(target_arch = "riscv64")]
-        // map trampoline
-        memory_set.map_trampoline();
         // copy data sections/trap_context/user_stack
         for area in user_space.areas.iter() {
             let new_area = MapArea::from_another(area);
@@ -750,10 +626,12 @@ impl MemorySetInner {
         }
         memory_set
     }
-    #[cfg(target_arch = "riscv64")]
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
+        use riscv::register::satp;
+        let cur = satp::read();
         let satp = self.page_table.token();
+        warn!("current satp = {:#x} to {:#x}", cur.ppn(), satp);
         unsafe {
             satp::write(satp);
             asm!("sfence.vma");
@@ -957,21 +835,10 @@ impl MemorySetInner {
                     }
                 }
             } else {
-                #[cfg(target_arch = "riscv64")]
                 self.push_lazily(MapArea::new_mmap(
                     VirtAddr::from(addr),
                     VirtAddr::from(addr + len),
                     MapType::Framed,
-                    map_perm,
-                    MapAreaType::Mmap,
-                    file.clone(),
-                    off,
-                    flags,
-                ));
-                #[cfg(target_arch = "loongarch64")]
-                self.push_lazily(MapArea::new_mmap(
-                    VirtAddr::from(addr),
-                    VirtAddr::from(addr + len),
                     map_perm,
                     MapAreaType::Mmap,
                     file.clone(),
@@ -995,21 +862,10 @@ impl MemorySetInner {
             MapAreaType::Mmap
         };
         //self.insert_framed_area(VirtAddr::from(addr), VirtAddr::from(addr + len), map_perm, area_type);
-        #[cfg(target_arch = "riscv64")]
         self.push_lazily(MapArea::new_mmap(
             VirtAddr::from(addr),
             VirtAddr::from(addr + len),
             MapType::Framed,
-            map_perm,
-            area_type,
-            file,
-            off,
-            flags,
-        ));
-        #[cfg(target_arch = "loongarch64")]
-        self.push_lazily(MapArea::new_mmap(
-            VirtAddr::from(addr),
-            VirtAddr::from(addr + len),
             map_perm,
             area_type,
             file,

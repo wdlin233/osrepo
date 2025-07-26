@@ -86,7 +86,7 @@ impl From<usize> for PhysPageNum {
         #[cfg(target_arch = "riscv64")]
         {
             let tmp = (v as isize >> PPN_WIDTH_SV39) as isize;
-            assert!(tmp == 0 || tmp == -1);
+            assert!(tmp == 0 || tmp == 255);
         }
         return Self(v);
     }

@@ -18,7 +18,7 @@ mod heap_allocator;
 pub use address::VPNRange;
 pub use address::{
     copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
-    StepByOne, VirtAddr, VirtPageNum,
+    StepByOne, VirtAddr, VirtPageNum, KernelAddr,
 };
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 pub use map_area::MapType;
@@ -41,9 +41,7 @@ pub fn init() {
     info!("Heap allocator initialized");
 
     frame_allocator::init_frame_allocator();
-    info!("Frame allocator initialized");
-
-    #[cfg(target_arch = "riscv64")]
+    
     KERNEL_SPACE.exclusive_access().activate();
 }
 

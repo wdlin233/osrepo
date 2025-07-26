@@ -44,7 +44,7 @@ impl MapArea {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         debug!(
-            "MapArea::new start floor = {}, end ceil = {}",
+            "MapArea::new start floor = {:#x}, end ceil = {:#x}",
             start_va.floor().0,
             end_va.ceil().0
         );
@@ -77,7 +77,9 @@ impl MapArea {
         #[cfg(target_arch = "riscv64")]
         match self.map_type {
             MapType::Identical => {
-                ppn = PhysPageNum(vpn.0);
+                use crate::config::VIRT_PGNUM_OFFSET;
+
+                ppn = PhysPageNum(vpn.0 - VIRT_PGNUM_OFFSET);
             }
             MapType::Framed => {
                 let frame = frame_alloc().unwrap();
@@ -144,7 +146,6 @@ impl MapArea {
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
-        #[cfg(target_arch = "riscv64")]
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();

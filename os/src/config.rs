@@ -84,6 +84,7 @@ pub use crate::board::{CLOCK_FREQ, MMIO};
 pub const VIRT_ADDR_OFFSET: usize = 0xffff_ffc0_0000_0000; // virtual address bias for loongarch64
 #[cfg(target_arch= "loongarch64")]
 pub const VIRT_ADDR_OFFSET: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
+pub const VIRT_PGNUM_OFFSET: usize = VIRT_ADDR_OFFSET >> PAGE_SIZE_BITS;
 pub const UART: usize = 0x1FE001E0 + VIRT_ADDR_OFFSET;
 
 #[cfg(target_arch = "riscv64")]

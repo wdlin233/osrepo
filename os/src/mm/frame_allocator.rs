@@ -1,7 +1,8 @@
 //! Implementation of [`FrameAllocator`] which
 //! controls all the frames in the operating system.
 use super::{PhysAddr, PhysPageNum};
-use crate::config::MEMORY_END;
+use crate::config::{MEMORY_END, VIRT_ADDR_OFFSET};
+use crate::mm::KernelAddr;
 use crate::println;
 use crate::sync::UPSafeCell;
 use crate::virt_to_phys;
@@ -56,7 +57,7 @@ impl StackFrameAllocator {
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
-        info!("FrameAllocator initialized: {:#x} - {:#x}", l.0, r.0);
+        info!("FrameAllocator initialized(phys): {:#x} - {:#x}", l.0, r.0);
     }
 }
 impl FrameAllocator for StackFrameAllocator {
@@ -101,8 +102,8 @@ pub fn init_frame_allocator() {
         fn ekernel();
     }
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
+        PhysAddr::from(KernelAddr::from(ekernel as usize)).ceil(),
+        PhysAddr::from(KernelAddr::from(MEMORY_END)).floor(),
     );
 }
 

@@ -2,7 +2,7 @@
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
-use crate::mm::MemorySet;
+use crate::mm::{KernelAddr, MemorySet};
 use crate::timer::get_time;
 use crate::{print, println};
 use alloc::string::String;
@@ -238,6 +238,7 @@ impl PageTable {
     /// Create a new page table
     pub fn new() -> Self {
         let frame = frame_alloc().unwrap();
+        warn!("(PageTable, new) New page table created with root_ppn: {:#x}", frame.ppn.0);
         PageTable {
             root_ppn: frame.ppn,
             frames: vec![frame],
@@ -560,10 +561,10 @@ pub fn safe_translated_byte_buffer(
 pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
-    page_table
+    KernelAddr::from(page_table
         .translate_va(VirtAddr::from(va))
-        .unwrap()
-        .get_mut()
+        .unwrap())
+    .get_mut()
 }
 
 // 读取迭代器实现
