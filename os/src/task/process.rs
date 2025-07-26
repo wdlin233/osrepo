@@ -14,6 +14,7 @@ use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
+use crate::mm::VPNRange;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{
@@ -275,16 +276,17 @@ impl ProcessControlBlock {
             inner.heap_top = shrink;
         } else {
             let append = inner.heap_top + grow as usize;
-            debug!("in pcb brk, append is : {}", append);
+            //debug!("in pcb brk, append is : {}", append);
             let append_vpn: VirtPageNum = (append / PAGE_SIZE + 1).into();
-            debug!("in pcb brk, append vpn is : {}", append_vpn.0);
+            //debug!("in pcb brk, append vpn is : {}", append_vpn.0);
             let hp_top_vpn: VirtPageNum = ((inner.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
             if append_vpn >= hp_top_vpn {
                 debug!("user heap overflow at : {}", append);
                 return 2;
             }
             debug!("in pcb brk, to append to");
-            area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
+            //area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
+            area.vpn_range = VPNRange::new((inner.heap_bottom / PAGE_SIZE).into(), append_vpn);
             #[cfg(target_arch = "loongarch64")]
             flush_tlb();
             inner.heap_top = append;

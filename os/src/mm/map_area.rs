@@ -45,7 +45,7 @@ impl MapArea {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         debug!(
-            "MapArea::new start floor = {}, end ceil = {}",
+            "MapArea::new start floor = {:#x}, end ceil = {:#x}",
             start_va.floor().0,
             end_va.ceil().0
         );
@@ -83,7 +83,7 @@ impl MapArea {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
-                debug!("in map one, to alloc frame");
+                //debug!("in map one, to alloc frame");
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, Arc::new(frame));

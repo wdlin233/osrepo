@@ -1,14 +1,24 @@
-use alloc::{format, string::ToString};
+use alloc::{format, string::ToString, sync::Arc};
 
 use crate::{
-    fs::{make_socket, make_socketpair, FileClass, FileDescriptor, OpenFlags},
+    fs::{
+        make_socket, make_socketpair, File, FileClass, FileDescriptor, OpenFlags, TcpSocket,
+        UdpSocket,
+    },
     mm::translated_refmut,
     task::current_process,
     utils::{SysErrNo, SyscallRet},
 };
 use log::debug;
 
-pub fn sys_socket(_domain: u32, _type: u32, _protocol: u32) -> isize {
+pub fn sys_socket(domain: u32, _type: u32, _protocol: u32) -> isize {
+    const AF_INET: u32 = 2;
+    const SOCK_DGRAM: u32 = 2;
+    const SOCK_STREAM: u32 = 1;
+
+    if domain != AF_INET {
+        return SysErrNo::EAFNOSUPPORT as isize;
+    }
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let new_fd = inner.fd_table.alloc_fd().unwrap();
@@ -21,10 +31,15 @@ pub fn sys_socket(_domain: u32, _type: u32, _protocol: u32) -> isize {
     if non_block {
         flags |= OpenFlags::O_NONBLOCK;
     }
-    inner.fd_table.set(
-        new_fd,
-        FileDescriptor::new(flags, FileClass::Abs(make_socket())),
-    );
+    let sock: Arc<dyn File> = match _type & 0xF {
+        SOCK_DGRAM => UdpSocket::new(),
+        SOCK_STREAM => TcpSocket::new(),
+        _ => return SysErrNo::EPROTONOSUPPORT as isize,
+    };
+
+    inner
+        .fd_table
+        .set(new_fd, FileDescriptor::new(flags, FileClass::Abs(sock)));
     inner
         .fs_info
         .insert(format!("socket{}", new_fd).to_string(), new_fd);
