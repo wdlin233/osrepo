@@ -1,8 +1,9 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use crate::config::VIRT_PGNUM_OFFSET;
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
-use crate::mm::{KernelAddr, MemorySet};
+use crate::mm::{KernelAddr, MemorySet, KERNEL_SPACE};
 use crate::timer::get_time;
 use crate::{print, println};
 use alloc::string::String;
@@ -239,6 +240,18 @@ impl PageTable {
     pub fn new() -> Self {
         let frame = frame_alloc().unwrap();
         warn!("(PageTable, new) New page table created with root_ppn: {:#x}", frame.ppn.0);
+        PageTable {
+            root_ppn: frame.ppn,
+            frames: vec![frame],
+        }
+    }
+    pub fn new_from_kernel() -> Self {
+        let frame = frame_alloc().unwrap();
+        let inner = KERNEL_SPACE.exclusive_access();
+        let kernel_root_ppn = inner.get_ref().page_table.root_ppn;
+        let idx = VirtPageNum::from(VIRT_PGNUM_OFFSET).indexes()[0];
+        frame.ppn.get_pte_array()[idx..]
+            .copy_from_slice(&kernel_root_ppn.get_pte_array()[idx..]);
         PageTable {
             root_ppn: frame.ppn,
             frames: vec![frame],

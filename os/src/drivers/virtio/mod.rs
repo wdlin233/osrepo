@@ -13,8 +13,8 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::ptr::NonNull;
-#[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
+use crate::config::VIRT_ADDR_OFFSET;
 
 /// 实现 Trait BlockDevice时对内部操作加锁
 // pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());
@@ -37,11 +37,11 @@ unsafe impl Hal for VirtIoHalImpl {
         let pa: PhysAddr = ppn_base.into();
         #[cfg(target_arch = "riscv64")]
         unsafe {
-            (pa.0, NonNull::new_unchecked((pa.0 | 0x80200000) as *mut u8))
+            (pa.0, NonNull::new_unchecked((pa.0 + VIRT_ADDR_OFFSET) as *mut u8))
         }
         #[cfg(target_arch = "loongarch64")]
         unsafe {
-            (pa.0, NonNull::new_unchecked((pa.0 | 0x9000000000000000) as *mut u8))
+            (pa.0, NonNull::new_unchecked((pa.0 + VIRT_ADDR_OFFSET) as *mut u8))
         }
     }
 
@@ -58,24 +58,13 @@ unsafe impl Hal for VirtIoHalImpl {
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
         //info!("translating paddr {:#x} to virt", paddr);
         #[cfg(target_arch = "riscv64")]  
-        return NonNull::new_unchecked((PhysAddr::from(paddr).0 | 0x80200000) as *mut u8);
+        return NonNull::new_unchecked((paddr | VIRT_ADDR_OFFSET) as *mut u8);
         #[cfg(target_arch = "loongarch64")]
-        return NonNull::new((paddr | 0x9000000000000000) as *mut u8).unwrap();
+        return NonNull::new((paddr | VIRT_ADDR_OFFSET) as *mut u8).unwrap();
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> usize {
-        //info!("Executing share for virtio_blk");
-        #[cfg(target_arch = "riscv64")]
-        return KERNEL_SPACE
-            .exclusive_access()
-            .inner
-            .exclusive_access()
-            .page_table
-            .translate_va(VirtAddr::from(buffer.as_ptr() as *const usize as usize))
-            .unwrap()
-            .0;
-        #[cfg(target_arch = "loongarch64")]
-        return buffer.as_ptr() as *mut u8 as usize - 0x9000000000000000;
+        return buffer.as_ptr() as *mut u8 as usize - VIRT_ADDR_OFFSET;
     }
 
     unsafe fn unshare(_paddr: usize, _buffer: NonNull<[u8]>, _direction: BufferDirection) {
