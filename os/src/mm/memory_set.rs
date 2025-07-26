@@ -496,20 +496,20 @@ impl MemorySetInner {
         #[cfg(target_arch = "loongarch64")]
         let perm = MapPermission::W | MapPermission::PLVL | MapPermission::PLVH; // PLV3, user mode
 
-        // memory_set.insert_framed_area(
-        //     user_heap_bottom.into(),
-        //     user_heap_top.into(),
-        //     perm,
-        //     MapAreaType::Brk,
-        // );
-        memory_set.push_lazily(MapArea::new(
+        memory_set.insert_framed_area(
             user_heap_bottom.into(),
             user_heap_top.into(),
-            #[cfg(target_arch = "riscv64")]
-            MapType::Framed,
             perm,
             MapAreaType::Brk,
-        ));
+        );
+        // memory_set.push_lazily(MapArea::new(
+        //     user_heap_bottom.into(),
+        //     user_heap_top.into(),
+        //     #[cfg(target_arch = "riscv64")]
+        //     MapType::Framed,
+        //     perm,
+        //     MapAreaType::Brk,
+        // ));
         // 返回 address空间,用户栈顶,入口地址
         (
             memory_set,

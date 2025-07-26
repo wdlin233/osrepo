@@ -417,7 +417,8 @@ impl ProcessControlBlock {
         //trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
         task.alloc_user_res();
-        //task.alloc_user_trap();
+        #[cfg(target_arch = "riscv64")]
+        task.set_user_trap();
         let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
 
@@ -624,44 +625,45 @@ impl ProcessControlBlock {
             debug!(
                 "(ProcessControlBlock, fork) creat thread, need tcb, not need pcb, to implement"
             );
-            pid = self.pid;
-            //ppid = self.ppid;
-            //timer = Arc::clone(&parent_inner.timer);
             sig_mask = SignalFlags::empty();
-            let child = Arc::new(Self {
-                ppid: pid,
-                pid,
-                user,
-                inner: unsafe {
-                    UPSafeCell::new(ProcessControlBlockInner {
-                        heap_id: parent.heap_id,
-                        is_zombie: false,
-                        clear_child_tid,
-                        memory_set: memory_set,
-                        fs_info,
-                        parent: Some(Arc::downgrade(self)),
-                        children: Vec::new(),
-                        exit_code: 0,
-                        fd_table: new_fd_table,
-                        signals: SignalFlags::empty(),
-                        tasks: Vec::new(),
-                        task_res_allocator: RecycleAllocator::new(0),
-                        mutex_list: Vec::new(),
-                        semaphore_list: Vec::new(),
-                        condvar_list: Vec::new(),
-                        priority: 16,
-                        stride: Stride::default(),
-                        tms: Tms::new(),
-                        sig_mask,
-                        sig_pending,
-                        sig_table,
-                        heap_bottom: parent.heap_bottom,
-                        heap_top: parent.heap_top,
-                        robust_list: RobustList::default(),
-                    })
-                },
-            });
-            child
+
+            // let child = Arc::new(Self {
+            //     ppid: pid,
+            //     pid,
+            //     user,
+            //     inner: unsafe {
+            //         UPSafeCell::new(ProcessControlBlockInner {
+            //             heap_id: parent.heap_id,
+            //             is_zombie: false,
+            //             clear_child_tid,
+            //             memory_set: memory_set,
+            //             fs_info,
+            //             parent: Some(Arc::downgrade(self)),
+            //             children: Vec::new(),
+            //             exit_code: 0,
+            //             fd_table: new_fd_table,
+            //             signals: SignalFlags::empty(),
+            //             tasks: Vec::new(),
+            //             task_res_allocator: RecycleAllocator::new(0),
+            //             mutex_list: Vec::new(),
+            //             semaphore_list: Vec::new(),
+            //             condvar_list: Vec::new(),
+            //             priority: 16,
+            //             stride: Stride::default(),
+            //             tms: Tms::new(),
+            //             sig_mask,
+            //             sig_pending,
+            //             sig_table,
+            //             heap_bottom: parent.heap_bottom,
+            //             heap_top: parent.heap_top,
+            //             robust_list: RobustList::default(),
+            //         })
+            //     },
+            // });
+            // child
+            let task = Arc::new(TaskControlBlock::new(Arc::clone(self), true, parent_tid));
+            parent.tasks.push(Some(Arc::clone(&task)));
+            self.clone()
         } else {
             info!("(ProcessControlBlock, fork) forking...");
             pid = pid_alloc().0;
