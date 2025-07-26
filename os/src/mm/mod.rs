@@ -13,23 +13,17 @@ mod memory_set;
 mod page_fault_handler;
 mod page_table;
 mod shm;
-
-#[cfg(target_arch = "riscv64")]
 mod heap_allocator;
-#[cfg(target_arch = "loongarch64")]
-pub mod system_allocator; // heap allocator
 
 pub use address::VPNRange;
 pub use address::{
     copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr, VirtPageNum,
 };
-pub use frame_allocator::{frame_alloc, frame_alloc_contiguous, frame_dealloc, FrameTracker};
-#[cfg(target_arch = "riscv64")]
+pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 pub use map_area::MapType;
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
-#[cfg(target_arch = "riscv64")]
-pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
+pub use memory_set::{kernel_token, KERNEL_SPACE};
 pub use memory_set::{MemorySet, MemorySetInner};
 use page_table::PTEFlags;
 pub use page_table::{
@@ -38,18 +32,12 @@ pub use page_table::{
 };
 pub use shm::*;
 
-#[cfg(target_arch = "loongarch64")]
 use crate::config::VIRT_ADDR_OFFSET;
 
-#[cfg(target_arch = "loongarch64")]
-use crate::mm::system_allocator::init_heap;
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
-    #[cfg(target_arch = "riscv64")]
     heap_allocator::init_heap();
-    #[cfg(target_arch = "loongarch64")]
-    system_allocator::init_heap();
     info!("Heap allocator initialized");
 
     frame_allocator::init_frame_allocator();

@@ -18,7 +18,6 @@ use alloc::vec::Vec;
 pub struct MapArea {
     pub vpn_range: VPNRange,
     pub data_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
-    #[cfg(target_arch = "riscv64")]
     pub map_type: MapType,
     pub map_perm: MapPermission,
     pub area_type: MapAreaType,
@@ -37,7 +36,7 @@ impl MapArea {
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_type: MapType,
         map_perm: MapPermission,
         area_type: MapAreaType,
     ) -> Self {
@@ -52,7 +51,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type,
             map_perm,
             area_type,
@@ -65,7 +63,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type: another.map_type,
             map_perm: another.map_perm,
             area_type: another.area_type,
@@ -173,7 +170,7 @@ impl MapArea {
     pub fn new_mmap(
         start_va: VirtAddr,
         end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_type: MapType,
         map_perm: MapPermission,
         area_type: MapAreaType,
         file: Option<Arc<OSInode>>,
@@ -197,7 +194,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type: map_type,
             map_perm: map_perm,
             area_type: area_type,
@@ -216,10 +212,8 @@ impl MapArea {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
-/// Only framed type in LA64
 pub enum MapType {
     Identical,
     Framed,

@@ -8,7 +8,6 @@ use crate::config::{
 };
 use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
-#[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::MapType;
 use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
 use crate::mm::page_fault_handler::{
@@ -50,15 +49,12 @@ extern "C" {
     fn sigreturn_trampoline();
 }
 
-#[cfg(target_arch = "riscv64")]
-// 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
 lazy_static! {
     /// The kernel's initial memory mapping(kernel address space)
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
 }
 
-#[cfg(target_arch = "riscv64")]
 /// the kernel token
 pub fn kernel_token() -> usize {
     KERNEL_SPACE.exclusive_access().token()
@@ -110,12 +106,10 @@ impl MemorySet {
     pub fn push(&self, map_area: MapArea, data: Option<&[u8]>) {
         self.inner.get_unchecked_mut().push(map_area, data);
     }
-    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn map_trampoline(&self) {
         self.inner.get_unchecked_mut().map_trampoline();
     }
-    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn new_kernel() -> Self {
         Self::new(MemorySetInner::new_kernel())
@@ -132,7 +126,6 @@ impl MemorySet {
             user_space.inner.get_unchecked_mut(),
         ))
     }
-    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     pub fn activate(&self) {
         self.inner.get_unchecked_ref().activate();
@@ -353,7 +346,6 @@ impl MemorySetInner {
         unimplemented!("map_trampoline is not implemented for loongarch64");
     }
 
-    #[cfg(target_arch = "riscv64")]
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
         use core::iter::Map;

@@ -90,8 +90,7 @@ pub fn main(cpu: usize) -> ! {
     log::error!("Logging init success");
 
     mm::init();
-    #[cfg(target_arch = "riscv64")]
-    mm::remap_test();
+    info!("Memory management initialized");
     hal::trap::init();
     #[cfg(target_arch = "loongarch64")]
     print_machine_info();
