@@ -69,24 +69,7 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
 }
 /// mutex lock syscall
 pub fn sys_mutex_lock(mutex_id: usize) -> isize {
-    // trace!(
-    //     "kernel:pid[{}] tid[{}] sys_mutex_lock",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid(),
-    //     current_task()
-    //         .unwrap()
-    //         .inner_exclusive_access()
-    //         .res
-    //         .as_ref()
-    //         .unwrap()
-    //         .tid
-    // );
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task().unwrap().inner_exclusive_access().tid;
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex: Arc<dyn Mutex + 'static> =
@@ -114,13 +97,7 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     //         .unwrap()
     //         .tid
     // );
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task().unwrap().inner_exclusive_access().tid;
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
@@ -179,13 +156,7 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
     //         .unwrap()
     //         .tid
     // );
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task().unwrap().inner_exclusive_access().tid;
     dealloc(tid, sem_id, 1);
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
@@ -208,13 +179,7 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     //         .unwrap()
     //         .tid
     // );
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task().unwrap().inner_exclusive_access().tid;
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());

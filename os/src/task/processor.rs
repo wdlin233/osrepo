@@ -69,11 +69,6 @@ pub fn run_tasks() {
         let mut processor = PROCESSOR.exclusive_access();
         if let Some(task) = fetch_task() {
             //debug!("in processor run task, fetch task ok");
-            debug!(
-                "run_tasks: fetch task ok, pid: {}, tid: {}",
-                task.process.upgrade().unwrap().getpid(),
-                task.inner_exclusive_access().res.as_ref().unwrap().tid
-            );
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
             #[cfg(target_arch = "riscv64")]
@@ -164,13 +159,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 #[cfg(target_arch = "riscv64")]
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .trap_cx_user_va()
+    current_task().unwrap().trap_cx_user_va()
 }
 
 #[cfg(target_arch = "riscv64")]

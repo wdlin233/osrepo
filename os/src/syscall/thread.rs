@@ -19,20 +19,12 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let task = current_task().unwrap();
     let process = task.process.upgrade().unwrap();
     // create a new thread
-    let new_task = Arc::new(TaskControlBlock::new(
-        Arc::clone(&process),
-        task.inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .ustack_base,
-        true,
-    ));
+    let new_task = Arc::new(TaskControlBlock::new(Arc::clone(&process), true, 0));
     // add new task to scheduler
     add_task(Arc::clone(&new_task));
     let new_task_inner = new_task.inner_exclusive_access();
-    let new_task_res = new_task_inner.res.as_ref().unwrap();
-    let new_task_tid = new_task_res.tid;
+    let new_task_tid = new_task_inner.tid;
+    let ustack_top = new_task_inner.ustack_top(true);
     let mut process_inner = process.inner_exclusive_access();
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
@@ -46,7 +38,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
         use crate::mm::kernel_token;
         *new_task_trap_cx = TrapContext::app_init_context(
             entry,
-            new_task_res.ustack_top(true),
+            ustack_top,
             kernel_token(),
             new_task.kstack.get_top(),
             trap_handler as usize,
@@ -73,13 +65,7 @@ pub fn sys_gettid() -> isize {
     //         .unwrap()
     //         .tid
     // );
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid as isize
+    current_task().unwrap().inner_exclusive_access().tid as isize
 }
 
 /// wait for a thread to exit syscall
@@ -104,7 +90,7 @@ pub fn sys_waittid(tid: usize) -> i32 {
     let task_inner = task.inner_exclusive_access();
     let mut process_inner = process.inner_exclusive_access();
     // a thread cannot wait for itself
-    if task_inner.res.as_ref().unwrap().tid == tid {
+    if task_inner.tid == tid {
         return -1;
     }
     let mut exit_code: Option<i32> = None;

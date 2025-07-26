@@ -399,6 +399,7 @@ pub fn trap_return() -> ! {
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
+    debug!("in trap return, get trap va");
     let user_satp = current_user_token();
 
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;

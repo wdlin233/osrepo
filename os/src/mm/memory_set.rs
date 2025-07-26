@@ -117,10 +117,8 @@ impl MemorySet {
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
-    pub fn from_existed_user(user_space: &MemorySet) -> Self {
-        Self::new(MemorySetInner::from_existed_user(
-            user_space.inner.get_unchecked_mut(),
-        ))
+    pub fn from_existed_user(user_space: &Arc<MemorySet>) -> Self {
+        Self::new(MemorySetInner::from_existed_user(user_space))
     }
     #[inline(always)]
     pub fn activate(&self) {
@@ -318,11 +316,7 @@ impl MemorySetInner {
     /// Assuming that there are no conflicts in the virtual address
     /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        // debug!(
-        //     "in mem set inner push, the map area is, start : {}, end :{}",
-        //     map_area.vpn_range.get_start().0,
-        //     map_area.vpn_range.get_end().0
-        // );
+        debug!("in mem set push");
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
@@ -609,26 +603,66 @@ impl MemorySetInner {
         (max_end_vpn, head_va.into())
     }
     /// Create a new address space by copy code&data from a exited process's address space.
-    pub fn from_existed_user(user_space: &Self) -> Self {
+    pub fn from_existed_user(user_space: &Arc<MemorySet>) -> Self {
         let mut memory_set = Self::new_bare();
         // copy data sections/trap_context/user_stack
-        for area in user_space.areas.iter() {
-            let new_area = MapArea::from_another(area);
+        for area in user_space.get_mut().areas.iter() {
+            let mut new_area = MapArea::from_another(area);
             // 映射相同的Frame
             if area.area_type == MapAreaType::Shm {
                 let frames = area.data_frames.values().cloned().collect();
                 memory_set.push_with_given_frames(new_area, frames);
                 continue;
             }
-
+            if area.area_type == MapAreaType::Mmap
+                && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+            {
+                GROUP_SHARE.lock().add_area(new_area.groupid);
+            }
+            // Mmap和brk是lazy allocation
+            if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+                //已经分配且独占/被写过的部分以及读共享部分按cow处理
+                //其余是未分配部分，直接clone即可
+                if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {
+                    let frames = area.data_frames.values().cloned().collect();
+                    memory_set.push_with_given_frames(new_area, frames);
+                    continue;
+                }
+                new_area.data_frames = area.data_frames.clone();
+                for (vpn, _) in area.data_frames.iter() {
+                    let vpn = *vpn;
+                    let pte = user_space.get_mut().page_table.translate(vpn).unwrap();
+                    let mut pte_flags = pte.flags();
+                    let src_ppn = pte.ppn();
+                    //清空可写位，设置COW位
+                    let need_cow = pte_flags.contains(PTEFlags::W) | pte.is_cow();
+                    pte_flags &= !PTEFlags::W;
+                    user_space.get_mut().page_table.set_flags(vpn, pte_flags);
+                    if need_cow {
+                        user_space.get_mut().page_table.set_cow(vpn);
+                    }
+                    // 设置新的pagetable
+                    memory_set.page_table.map(vpn, src_ppn, pte_flags, need_cow);
+                }
+                memory_set.push_lazily(new_area);
+                continue;
+            }
             memory_set.push(new_area, None);
-            // copy data from another space
+            debug!("area type is : {:?}", area.area_type);
             for vpn in area.vpn_range {
-                let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                let src = user_space.translate(vpn);
+                let dst = memory_set.translate(vpn);
+                if src.is_none() || dst.is_none() {
+                    warn!("vpn={:?}", vpn);
+                }
+                let src_ppn = src.unwrap().ppn();
+                let dst_ppn = dst.unwrap().ppn();
+                // 打印权限
+                //debug!("vpn={:?} ", vpn);
                 dst_ppn
                     .get_bytes_array()
                     .copy_from_slice(src_ppn.get_bytes_array());
+                //debug!("copy ok");
             }
         }
         memory_set
