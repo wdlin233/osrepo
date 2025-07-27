@@ -615,6 +615,11 @@ impl MemorySetInner {
         for area in user_space.get_mut().areas.iter() {
             let mut new_area = MapArea::from_another(area);
             // 映射相同的Frame
+            if area.area_type == MapAreaType::Mmap
+                && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+            {
+                GROUP_SHARE.lock().add_area(new_area.groupid);
+            }
             if area.area_type == MapAreaType::Shm {
                 let frames = area.data_frames.values().cloned().collect();
                 memory_set.push_with_given_frames(new_area, frames);
@@ -983,6 +988,7 @@ impl MemorySetInner {
             if area.mmap_flags.contains(MmapFlags::MAP_SHARED)
                 && area.map_perm.contains(MapPermission::W)
             {
+                debug!("need overwrite");
                 let file = area.mmap_file.file.clone().unwrap();
                 let found_res = root_inode().find(&file.inode.path(), OpenFlags::O_RDWR, 0);
                 if found_res.clone().err() != Some(SysErrNo::ENOENT) {
@@ -1058,6 +1064,7 @@ impl MemorySetInner {
             for vpn in VPNRange::new(start_vpn, end_vpn) {
                 area.unmap_one(&mut self.page_table, vpn);
             }
+            debug!("unmap ok");
             let area_end_vpn = area.vpn_range.get_end();
             // debug!(
             //     "[MemorySet] end_vpn:{:#x},area_end_vpn:{:#x}",

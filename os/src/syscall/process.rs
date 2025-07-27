@@ -2,7 +2,7 @@ use super::sys_gettid;
 use crate::alloc::string::ToString;
 use crate::mm::MemorySet;
 use crate::task::exit_current_group_and_run_next;
-use crate::timer::{add_timer, get_time_ms, TimeSpec};
+use crate::timer::{add_timer, calculate_left_timespec, get_time_ms, get_time_spec, TimeSpec};
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
@@ -11,7 +11,7 @@ use crate::{
         shm_create, shm_drop, shm_find, translated_ref, translated_refmut, translated_str,
         MapPermission, PhysAddr, ShmFlags, VirtAddr,
     },
-    signal::SignalFlags,
+    signal::{check_if_any_sig_for_current_task, SignalFlags},
     syscall::{process, sys_result::SysInfo, FutexCmd, FutexOpt, MmapFlags, MmapProt},
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
@@ -546,5 +546,76 @@ pub fn sys_set_robust_list(head: usize, len: usize) -> isize {
 }
 
 pub fn sys_sched_getaffinity(_pid: usize, _cpusetsize: usize, _mask: usize) -> isize {
+    0
+}
+
+//clock nano sleep
+pub fn sys_clock_nano_sleep(
+    clockid: usize,
+    flags: u32,
+    time_ptr: *const TimeSpec,
+    remain: *mut TimeSpec,
+) -> isize {
+    const TIME_ABSTIME: u32 = 1;
+    // let task = current_task().unwrap();
+    // let task_inner = task.inner_lock();
+    // drop(task_inner);
+    // drop(task);
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    drop(inner);
+    drop(process);
+
+    if clockid != 0 && clockid != 1 {
+        return SysErrNo::EOPNOTSUPP as isize;
+    }
+
+    if (time_ptr as isize) <= 0 || is_bad_address(time_ptr as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (remain as isize) < 0 || is_bad_address(remain as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    // let t = get_data(memory_set.token(), time_ptr);
+    //let t = data_flow!({ *time_ptr });
+    let t = *translated_ref(token, time_ptr);
+
+    if (t.tv_sec as isize) < 0 || (t.tv_nsec as isize) < 0 || t.tv_nsec >= 1_000_000_000usize {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    let waittime = t.tv_sec * 1_000_000_000usize + t.tv_nsec;
+
+    let begin = get_time_ms() * 1_000_000usize;
+    let endtime = if flags == TIME_ABSTIME {
+        //绝对时间
+        t
+    } else {
+        //相对时间
+        get_time_spec() + t
+    };
+
+    debug!(
+        "[sys_clock_nanosleep] ready to sleep for {} sec, {} nsec",
+        t.tv_sec, t.tv_nsec
+    );
+
+    while get_time_ms() * 1_000_000usize - begin < waittime {
+        if let Some(_) = check_if_any_sig_for_current_task() {
+            //被信号唤醒
+            debug!("interupt by signal");
+            if remain as usize != 0 {
+                // put_data(memory_set, remain, calculate_left_timespec(endtime));
+                //data_flow!({ *remain = calculate_left_timespec(endtime) })
+                *translated_refmut(token, remain) = calculate_left_timespec(endtime);
+            }
+            //handle_signal(signo);
+            return SysErrNo::EINTR as isize;
+        }
+        suspend_current_and_run_next();
+    }
     0
 }

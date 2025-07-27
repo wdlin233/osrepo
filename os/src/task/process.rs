@@ -28,7 +28,7 @@ use crate::task::heap_bottom_from_id;
 use crate::task::id::tid_dealloc;
 use crate::timer::get_time;
 use crate::users::{current_user, User};
-use crate::utils::{get_abs_path, is_abs_path};
+use crate::utils::{get_abs_path, is_abs_path, SysErrNo};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -217,23 +217,23 @@ impl ProcessControlBlockInner {
         self.tasks[tid].as_ref().unwrap().clone()
     }
     ///get abs path
-    pub fn get_abs_path(&self, dirfd: isize, path: &str) -> String {
+    pub fn get_abs_path(&self, dirfd: isize, path: &str) -> Result<String, SysErrNo> {
         if is_abs_path(path) {
-            get_abs_path("/", path)
+            Ok(get_abs_path("/", path))
         } else if dirfd != -100 {
             let dirfd = dirfd as usize;
             if let Some(file) = self.fd_table.try_get(dirfd) {
-                let base_path = file.file().unwrap().inode.path();
+                let base_path = file.file()?.inode.path();
                 if path.is_empty() {
-                    base_path
+                    Ok(base_path)
                 } else {
-                    get_abs_path(&base_path, path)
+                    Ok(get_abs_path(&base_path, path))
                 }
             } else {
-                String::from("")
+                Err(SysErrNo::EINVAL)
             }
         } else {
-            get_abs_path(self.fs_info.cwd(), path)
+            Ok(get_abs_path(self.fs_info.cwd(), path))
         }
     }
 }

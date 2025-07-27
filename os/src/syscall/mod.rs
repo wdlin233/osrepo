@@ -82,6 +82,8 @@ pub const SYSCALL_SETROBUSTLIST: usize = 99;
 pub const SYSCALL_SLEEP: usize = 101;
 /// clock_get_time syscall
 pub const SYSCALL_CLOCKGETTIME: usize = 113;
+/// clock_nano_sleep
+pub const SYSCALL_CLOCKNANOSLEEP: usize = 115;
 /// log syscall
 pub const SYSCALL_LOG: usize = 116;
 /// schegetaffinity syscall
@@ -246,6 +248,12 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_CLOCKNANOSLEEP => sys_clock_nano_sleep(
+            args[0],
+            args[1] as u32,
+            args[2] as *const TimeSpec,
+            args[3] as *mut TimeSpec,
+        ),
         SYSCALL_STATFS => sys_statfs(args[0] as *const u8, args[1] as *mut Statfs),
         SYSCALL_SOCKETPAIR => sys_socketpair(
             args[0] as u32,
