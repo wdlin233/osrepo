@@ -14,7 +14,7 @@ use crate::mm::page_fault_handler::{
     cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
 };
 use crate::mm::page_table::flush_tlb;
-use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
+use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, KernelAddr, UserBuffer};
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
 use crate::task::{current_process, Aux, AuxType};
@@ -46,7 +46,7 @@ extern "C" {
     fn sbss_with_stack();
     fn ebss();
     fn ekernel();
-    fn sigreturn_trampoline();
+    fn strampoline();
 }
 
 lazy_static! {
@@ -209,6 +209,10 @@ impl MemorySet {
     ) -> usize {
         self.get_mut().shm(addr, size, map_perm, pages)
     }
+    #[inline(always)]
+    pub fn map_trampoline(&self) {
+        self.inner.get_unchecked_mut().map_trampoline();
+    }
 }
 
 /// address space
@@ -224,12 +228,6 @@ impl MemorySetInner {
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
-            areas: Vec::new(),
-        }
-    }
-    pub fn new_from_kernel() -> Self {
-        Self {
-            page_table: PageTable::new_from_kernel(),
             areas: Vec::new(),
         }
     }
@@ -332,6 +330,7 @@ impl MemorySetInner {
         debug!("Creating new kernel memory set");
         let mut memory_set = Self::new_bare();
         // map kernel sections
+        memory_set.map_trampoline();
         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
         info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
         info!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
@@ -339,41 +338,14 @@ impl MemorySetInner {
             ".bss [{:#x}, {:#x})",
             sbss_with_stack as usize, ebss as usize
         );
-        info!(
-            "sigreturn_trampoline : [{:#x}, {:#x})",
-            sigreturn_trampoline as usize,
-            sigreturn_trampoline as usize + PAGE_SIZE
-        );
         info!("ekernel(physical memory) : [{:#x}, {:#x})", ekernel as usize, MEMORY_END);
-        let s_sig_trap = sigreturn_trampoline as usize;
-        let e_sig_trap = sigreturn_trampoline as usize + PAGE_SIZE;
         info!("mapping .text section");
         memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
-                (s_sig_trap).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (e_sig_trap).into(),
                 (etext as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::X,
-                MapAreaType::Elf,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (s_sig_trap).into(),
-                (e_sig_trap).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X | MapPermission::U,
                 MapAreaType::Elf,
             ),
             None,
@@ -445,8 +417,11 @@ impl MemorySetInner {
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
     pub fn from_elf(elf_data: &[u8], _heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
-        let mut memory_set = Self::new_from_kernel();
+        let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
+        info!("mapping trampoline");
+        memory_set.map_trampoline();
+        info!("mapping trap context");
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
@@ -514,7 +489,7 @@ impl MemorySetInner {
         (
             memory_set,
             user_heap_bottom,
-            elf.header.pt2.entry_point() as usize,
+            entry_point,
             auxv,
         )
     }
@@ -606,6 +581,7 @@ impl MemorySetInner {
     pub fn from_existed_user(user_space: &Arc<MemorySet>) -> Self {
         let mut memory_set = Self::new_bare();
         // copy data sections/trap_context/user_stack
+        memory_set.map_trampoline();
         for area in user_space.get_mut().areas.iter() {
             let mut new_area = MapArea::from_another(area);
             // 映射相同的Frame
@@ -786,6 +762,16 @@ impl MemorySetInner {
             return true;
         }
         false
+    }
+    fn map_trampoline(&mut self) {
+        warn!("mapping trampoline at {:#x}", TRAMPOLINE);
+        warn!("satp, ppn {:#x}", self.page_table.token());
+        self.page_table.map(
+            VirtAddr::from(TRAMPOLINE).into(),
+            PhysAddr::from(KernelAddr::from(strampoline as usize)).into(),
+            PTEFlags::R | PTEFlags::X,
+            false,
+        );
     }
     // #[inline(always)] for multiThread, use lazy_page_fault simply
     // pub fn lazy_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {

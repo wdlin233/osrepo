@@ -297,8 +297,11 @@ impl ProcessControlBlock {
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
         let heap_id = 0;
         let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data, heap_id);
-        //info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
-        //    elf_data.len(), ustack_base, entry_point);
+        info!(
+            "kernel: create process from elf data, size = {}, entry point = {:#x}",
+            elf_data.len(),
+            entry_point
+        );
         // allocate a pid
         debug!("in pcb new, from elf ok");
         let user = current_user().unwrap();
@@ -502,7 +505,8 @@ impl ProcessControlBlock {
         let args_len = args.len();
         //debug!("the args len is :{}", args_len);
         //设置argc
-        *translated_refmut(new_token, (user_sp - size) as *mut usize) = args.len().into();
+        user_sp -= size;
+        *translated_refmut(new_token, user_sp as *mut usize) = args.len().into();
         //对齐地址
         user_sp -= user_sp % size;
 

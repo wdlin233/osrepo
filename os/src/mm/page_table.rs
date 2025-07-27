@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 #[cfg(target_arch = "loongarch64")]
 use bit_field::BitField;
 use bitflags::*;
+use riscv::register::satp;
 use core::error;
 use core::fmt::{self};
 #[cfg(target_arch = "loongarch64")]
@@ -248,18 +249,6 @@ impl PageTable {
     pub fn new() -> Self {
         let frame = frame_alloc().unwrap();
         warn!("(PageTable, new) New page table created with root_ppn: {:#x}", frame.ppn.0);
-        PageTable {
-            root_ppn: frame.ppn,
-            frames: vec![frame],
-        }
-    }
-    pub fn new_from_kernel() -> Self {
-        let frame = frame_alloc().unwrap();
-        let inner = KERNEL_SPACE.exclusive_access();
-        let kernel_root_ppn = inner.get_ref().page_table.root_ppn;
-        let idx = VirtPageNum::from(VIRT_PGNUM_OFFSET).indexes()[0];
-        frame.ppn.get_pte_array()[idx..]
-            .copy_from_slice(&kernel_root_ppn.get_pte_array()[idx..]);
         PageTable {
             root_ppn: frame.ppn,
             frames: vec![frame],

@@ -133,6 +133,7 @@ fn set_user_trap_entry() {
     #[cfg(target_arch = "riscv64")]
     unsafe {
         stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
+        warn!("stvec addr: {:#x}", stvec::read().address());
     }
 
     #[cfg(target_arch = "loongarch64")]
@@ -432,7 +433,8 @@ pub fn trap_return() {
 #[no_mangle]
 pub fn trap_from_kernel() -> ! {
     //use riscv::register::sepc;
-    //trace!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+    //warn!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+    warn!("stval = {:#x}", stval::read());
     panic!("a trap {:?} from kernel!", scause::read().cause());
 }
 
