@@ -53,7 +53,7 @@ impl TrapContext {
         //info!("set sp to {:#x}", sp);
         #[cfg(target_arch = "riscv64")]
         {
-            self.x[2] = sp - 8; // riscv64 uses x2 as stack pointer
+            self.x[2] = sp; // riscv64 uses x2 as stack pointer
         }
         #[cfg(target_arch = "loongarch64")]
         {

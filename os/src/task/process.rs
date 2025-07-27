@@ -286,8 +286,8 @@ impl ProcessControlBlock {
                 return 2;
             }
             debug!("in pcb brk, to append to");
-            //area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
-            area.vpn_range = VPNRange::new((inner.heap_bottom / PAGE_SIZE).into(), append_vpn);
+            area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
+            //area.vpn_range = VPNRange::new((inner.heap_bottom / PAGE_SIZE).into(), append_vpn);
             #[cfg(target_arch = "loongarch64")]
             flush_tlb();
             inner.heap_top = append;
@@ -389,16 +389,6 @@ impl ProcessControlBlock {
             MemorySet::from_elf(elf_data, heap_id);
         let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
-        // debug!("to activate");
-        // memory_set.activate();
-        // debug!("activate ok");
-        //let user_heap_top = user_heap_bottom;
-        // memory_set.insert_framed_area(
-        //     user_heap_bottom.into(),
-        //     user_heap_top.into(),
-        //     MapPermission::R | MapPermission::W | MapPermission::U,
-        //     MapAreaType::Brk,
-        // );
         inner.memory_set = Arc::new(memory_set);
 
         //inner.memory_set.activate();
@@ -407,6 +397,13 @@ impl ProcessControlBlock {
             *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
             //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
         }
+        inner.sig_table = Arc::new(SigTable::new());
+        let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));
+        inner.fd_table = fd_table;
+        inner.fd_table.close_on_exec();
+        inner.sig_mask = SignalFlags::empty();
+        inner.sig_pending = SignalFlags::empty();
+        inner.tms = Tms::new();
 
         inner.heap_id = heap_id;
         inner.heap_bottom = user_heap_bottom;
@@ -417,8 +414,8 @@ impl ProcessControlBlock {
         //trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
         task.alloc_user_res();
-        #[cfg(target_arch = "riscv64")]
-        task.set_user_trap();
+        // #[cfg(target_arch = "riscv64")]
+        // task.set_user_trap();
         let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
 
@@ -521,7 +518,8 @@ impl ProcessControlBlock {
         let args_len = args.len();
         //debug!("the args len is :{}", args_len);
         //设置argc
-        *translated_refmut(new_token, (user_sp - size) as *mut usize) = args.len().into();
+        user_sp -= size;
+        *translated_refmut(new_token, user_sp as *mut usize) = args.len().into();
         //对齐地址
         user_sp -= user_sp % size;
 
@@ -542,7 +540,7 @@ impl ProcessControlBlock {
             trap_cx.x[10] = args_len; // a0, the same with previous stack frame
             trap_cx.x[11] = argv_base; // a1
             trap_cx.x[12] = env_base;
-            trap_cx.x[13] = aux_base;
+            //trap_cx.x[13] = aux_base;
         }
         #[cfg(target_arch = "loongarch64")]
         {
