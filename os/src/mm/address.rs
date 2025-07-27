@@ -329,25 +329,14 @@ impl VirtPageNum {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
-        unsafe { (self.0 as *const T).as_ref().unwrap() }
+        unsafe { (phys_to_virt!(self.0) as *const T).as_ref().unwrap() }
     }
     /// Get the mutable reference of physical address
     pub fn get_mut<T>(&self) -> &'static mut T {
-        unsafe { (self.0 as *mut T).as_mut().unwrap() }
-    }
-}
-
-#[cfg(target_arch = "loongarch64")]
-impl PhysAddr {
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        unsafe { ((phys_to_virt!(self.0)) as *mut T).as_mut().unwrap() }
-    }
-    pub fn get_ref<T>(&self) -> &'static T {
-        unsafe { ((phys_to_virt!(self.0)) as *const T).as_ref().unwrap() }
+        unsafe { (phys_to_virt!(self.0) as *mut T).as_mut().unwrap() }
     }
 }
 

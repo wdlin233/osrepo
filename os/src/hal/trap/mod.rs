@@ -133,7 +133,6 @@ fn set_user_trap_entry() {
     #[cfg(target_arch = "riscv64")]
     unsafe {
         stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
-        warn!("stvec addr: {:#x}", stvec::read().address());
     }
 
     #[cfg(target_arch = "loongarch64")]

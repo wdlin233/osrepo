@@ -419,15 +419,6 @@ impl ProcessControlBlock {
         let mut user_sp = task_inner.ustack_top(true) as usize;
         info!("in pcb exec, initial user_sp = {}", user_sp);
 
-        //      00000000000100b0 <main>:
-        //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
-        //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
-        //          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
-        //          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
-        //          100b8: aa 87        	mv	a5, a0          ; a5 = argc
-        //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
-        //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
-
         //usize大小
         let size = core::mem::size_of::<usize>();
 
