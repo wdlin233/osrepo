@@ -2,8 +2,8 @@
 
 use super::ProcessControlBlock;
 use crate::config::{
-    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
-    USER_TRAP_CONTEXT_TOP,
+    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE,
+    USER_STACK_TOP, USER_TRAP_CONTEXT_TOP,
 };
 use crate::hal::trap::TrapContext;
 #[cfg(target_arch = "riscv64")]
@@ -98,6 +98,13 @@ pub struct PidHandle(pub usize);
 //         PID_ALLOCATOR.exclusive_access().dealloc(self.0);
 //     }
 // }
+
+impl Drop for HeapidHandle {
+    fn drop(&mut self) {
+        HEAP_ID_ALLOCATOR.exclusive_access().dealloc(self.0);
+    }
+}
+
 pub fn pid_dealloc(id: usize) {
     PID_ALLOCATOR.exclusive_access().dealloc(id);
 }
@@ -106,7 +113,15 @@ pub fn pid_dealloc(id: usize) {
 pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
-
+// pub fn heap_id_alloc() -> HeapidHandle {
+//     HeapidHandle(HEAP_ID_ALLOCATOR.exclusive_access().alloc())
+// }
+pub fn heap_id_alloc() -> usize {
+    HEAP_ID_ALLOCATOR.exclusive_access().alloc()
+}
+pub fn heap_id_dealloc(id: usize) {
+    HEAP_ID_ALLOCATOR.exclusive_access().dealloc(id);
+}
 pub struct TidHandle(pub usize);
 
 /// Allocate a new PID
@@ -238,4 +253,8 @@ pub fn trap_cx_bottom_from_tid(tid: usize) -> usize {
 /// Return the bottom addr (high addr) of the user stack for a task
 pub fn ustack_bottom_from_tid(tid: usize) -> usize {
     USER_STACK_TOP - tid * (PAGE_SIZE + USER_STACK_SIZE)
+}
+
+pub fn heap_bottom_from_id(id: usize) -> usize {
+    USER_HEAP_BOTTOM + id * (USER_HEAP_SIZE + PAGE_SIZE)
 }

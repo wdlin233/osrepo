@@ -25,7 +25,7 @@ use crate::mm::page_table::flush_tlb;
 use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
 use crate::sync::UPSafeCell;
 use crate::syscall::MmapFlags;
-use crate::task::{current_process, Aux, AuxType};
+use crate::task::{current_process, heap_bottom_from_id, Aux, AuxType};
 use crate::utils::SysErrNo;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -483,7 +483,7 @@ impl MemorySetInner {
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
         //let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
-        let mut user_heap_bottom: usize = max_end_va.0;
+        let mut user_heap_bottom: usize = heap_bottom_from_id(0);
         // guard page
         user_heap_bottom += PAGE_SIZE;
         info!(
@@ -629,7 +629,8 @@ impl MemorySetInner {
             //     GROUP_SHARE.lock().add_area(new_area.groupid);
             // }
             // // Mmap和brk是lazy allocation
-            // if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+            //if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
+            // if area.area_type == MapAreaType::Brk {
             //     //if area.area_type == MapAreaType::Mmap {
             //     //已经分配且独占/被写过的部分以及读共享部分按cow处理
             //     //其余是未分配部分，直接clone即可
@@ -892,16 +893,19 @@ impl MemorySetInner {
                 }
             } else {
                 #[cfg(target_arch = "riscv64")]
-                self.push_lazily(MapArea::new_mmap(
-                    VirtAddr::from(addr),
-                    VirtAddr::from(addr + len),
-                    MapType::Framed,
-                    map_perm,
-                    MapAreaType::Mmap,
-                    file.clone(),
-                    off,
-                    flags,
-                ));
+                self.push(
+                    MapArea::new_mmap(
+                        VirtAddr::from(addr),
+                        VirtAddr::from(addr + len),
+                        MapType::Framed,
+                        map_perm,
+                        MapAreaType::Mmap,
+                        file.clone(),
+                        off,
+                        flags,
+                    ),
+                    None,
+                );
                 #[cfg(target_arch = "loongarch64")]
                 self.push_lazily(MapArea::new_mmap(
                     VirtAddr::from(addr),
@@ -930,16 +934,19 @@ impl MemorySetInner {
         };
         //self.insert_framed_area(VirtAddr::from(addr), VirtAddr::from(addr + len), map_perm, area_type);
         #[cfg(target_arch = "riscv64")]
-        self.push_lazily(MapArea::new_mmap(
-            VirtAddr::from(addr),
-            VirtAddr::from(addr + len),
-            MapType::Framed,
-            map_perm,
-            area_type,
-            file,
-            off,
-            flags,
-        ));
+        self.push(
+            MapArea::new_mmap(
+                VirtAddr::from(addr),
+                VirtAddr::from(addr + len),
+                MapType::Framed,
+                map_perm,
+                area_type,
+                file,
+                off,
+                flags,
+            ),
+            None,
+        );
         #[cfg(target_arch = "loongarch64")]
         self.push_lazily(MapArea::new_mmap(
             VirtAddr::from(addr),

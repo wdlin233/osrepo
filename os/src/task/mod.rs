@@ -26,6 +26,7 @@ mod task;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
+use crate::task::id::heap_id_dealloc;
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
@@ -39,7 +40,7 @@ use crate::signal::{send_signal_to_thread_group, SignalFlags};
 pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
 pub use futex::*;
-pub use id::{pid_alloc, KernelStack, PidHandle, IDLE_PID};
+pub use id::{heap_bottom_from_id, pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
     wakeup_futex_task, wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
@@ -189,6 +190,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.tasks.clear();
         //debug!("all clear ok");
         //debug!("after clear, the parent fd table len is :{}",)
+        heap_id_dealloc(process_inner.heap_id);
         #[cfg(target_arch = "loongarch64")]
         // 使得原来的TLB表项无效掉，否则下一个进程与当前退出的进程号相同会导致
         // 无法正确进行地址转换
@@ -219,7 +221,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 }
             }
         }
-        debug!("(exit_current_and_run_next) wakeup parent pid={}", pid);
+        debug!("(exit_current_and_run_next) current pid={}", pid);
         //wakeup_parent(parent.upgrade().unwrap().getpid());
     }
     drop(process);

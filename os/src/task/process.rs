@@ -2,7 +2,7 @@
 
 use super::add_task;
 use super::aux::{Aux, AuxType};
-use super::id::{tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
+use super::id::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
@@ -24,6 +24,7 @@ use crate::mm::{
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::task::heap_bottom_from_id;
 use crate::task::id::tid_dealloc;
 use crate::timer::get_time;
 use crate::users::{current_user, User};
@@ -298,7 +299,7 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let heap_id = 0;
+        let heap_id = heap_id_alloc();
         let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data, heap_id);
         //info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
         //    elf_data.len(), ustack_base, entry_point);
@@ -384,19 +385,20 @@ impl ProcessControlBlock {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        let heap_id = 0;
+        let heap_id = heap_id_alloc();
         let (memory_set, user_heap_bottom, entry_point, mut aux) =
             MemorySet::from_elf(elf_data, heap_id);
         let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
         inner.memory_set = Arc::new(memory_set);
-
+        inner.heap_id = heap_id;
         //inner.memory_set.activate();
-
-        if inner.clear_child_tid != 0 {
-            *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
-            //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
-        }
+        debug!("pcb exec, get memory set ok");
+        // if inner.clear_child_tid != 0 {
+        //     *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
+        //     //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
+        // }
+        //debug!("clear child tid ok");
         inner.sig_table = Arc::new(SigTable::new());
         let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));
         inner.fd_table = fd_table;
@@ -540,7 +542,7 @@ impl ProcessControlBlock {
             trap_cx.x[10] = args_len; // a0, the same with previous stack frame
             trap_cx.x[11] = argv_base; // a1
             trap_cx.x[12] = env_base;
-            //trap_cx.x[13] = aux_base;
+            trap_cx.x[13] = aux_base;
         }
         #[cfg(target_arch = "loongarch64")]
         {
@@ -665,6 +667,8 @@ impl ProcessControlBlock {
         } else {
             info!("(ProcessControlBlock, fork) forking...");
             pid = pid_alloc().0;
+            let heap_id = heap_id_alloc();
+            let heap_bottom = heap_bottom_from_id(heap_id);
             //ppid = self.pid;
             //timer = Arc::new(Timer::new());
             sig_mask = parent.sig_mask.clone();
@@ -696,9 +700,9 @@ impl ProcessControlBlock {
                         sig_mask,
                         sig_pending,
                         sig_table,
-                        heap_id: parent.heap_id,
-                        heap_bottom: parent.heap_bottom,
-                        heap_top: parent.heap_top,
+                        heap_id,
+                        heap_bottom: heap_bottom,
+                        heap_top: heap_bottom,
                         robust_list: RobustList::default(),
                     })
                 },
