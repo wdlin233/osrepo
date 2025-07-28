@@ -1,7 +1,7 @@
 /* extioi registers */
 use core::arch::asm;
 
-pub const VIRT_ADDR_OFFSET: usize = 0x9000_0000_0000_0000;
+pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000;
 pub const LOONGARCH_IOCSR_EXTIOI_EN_BASE: usize = 0x1600; //扩展 IO 中断[63:0]的中断使能配置
 pub const LOONGARCH_IOCSR_EXTIOI_ISR_BASE: usize = 0x1800; //路由至处理器核 0 的扩展 IO 中断[63:0]的中断状态
 pub const LOONGARCH_IOCSR_EXTIOI_MAP_BASE: usize = 0x14c0; //EXT_IOI[31:0]的引脚路由方式

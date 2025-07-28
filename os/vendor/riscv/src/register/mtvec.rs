@@ -15,19 +15,16 @@ pub enum TrapMode {
 
 impl Mtvec {
     /// Returns the contents of the register as raw bits
-    #[inline]
     pub fn bits(&self) -> usize {
         self.bits
     }
 
     /// Returns the trap-vector base-address
-    #[inline]
     pub fn address(&self) -> usize {
         self.bits - (self.bits & 0b11)
     }
 
     /// Returns the trap-vector mode
-    #[inline]
     pub fn trap_mode(&self) -> Option<TrapMode> {
         let mode = self.bits & 0b11;
         match mode {
@@ -38,9 +35,9 @@ impl Mtvec {
     }
 }
 
-read_csr_as!(Mtvec, 0x305);
+read_csr_as!(Mtvec, 0x305, __read_mtvec);
 
-write_csr!(0x305);
+write_csr!(0x305, __write_mtvec);
 
 /// Writes the CSR
 #[inline]

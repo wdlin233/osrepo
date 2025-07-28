@@ -110,13 +110,6 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
-            info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
-            info!("__switch: current ra is : {:#x}, current sp is :{:#x}, next ra is :{:#x}, next sp is : {:#x}",
-                unsafe { (*idle_task_cx_ptr).get_ra() },
-                unsafe { (*idle_task_cx_ptr).get_sp() },
-                unsafe { (*next_task_cx_ptr).get_ra() },
-                unsafe { (*next_task_cx_ptr).get_sp() }
-            );
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

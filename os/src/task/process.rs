@@ -2,18 +2,20 @@
 
 use super::add_task;
 use super::aux::{Aux, AuxType};
-use super::id::{tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
+use super::id::{heap_id_alloc, tid_alloc, HeapidHandle, RecycleAllocator, TidHandle};
 use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
 use super::{pid_alloc, PidHandle};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
+use crate::mm::MapPermission;
 
 use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
+use crate::mm::VPNRange;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{
@@ -22,10 +24,11 @@ use crate::mm::{
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::task::heap_bottom_from_id;
 use crate::task::id::tid_dealloc;
 use crate::timer::get_time;
 use crate::users::{current_user, User};
-use crate::utils::{get_abs_path, is_abs_path};
+use crate::utils::{get_abs_path, is_abs_path, SysErrNo};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -214,23 +217,23 @@ impl ProcessControlBlockInner {
         self.tasks[tid].as_ref().unwrap().clone()
     }
     ///get abs path
-    pub fn get_abs_path(&self, dirfd: isize, path: &str) -> String {
+    pub fn get_abs_path(&self, dirfd: isize, path: &str) -> Result<String, SysErrNo> {
         if is_abs_path(path) {
-            get_abs_path("/", path)
+            Ok(get_abs_path("/", path))
         } else if dirfd != -100 {
             let dirfd = dirfd as usize;
             if let Some(file) = self.fd_table.try_get(dirfd) {
-                let base_path = file.file().unwrap().inode.path();
+                let base_path = file.file()?.inode.path();
                 if path.is_empty() {
-                    base_path
+                    Ok(base_path)
                 } else {
-                    get_abs_path(&base_path, path)
+                    Ok(get_abs_path(&base_path, path))
                 }
             } else {
-                String::from("")
+                Err(SysErrNo::EINVAL)
             }
         } else {
-            get_abs_path(self.fs_info.cwd(), path)
+            Ok(get_abs_path(self.fs_info.cwd(), path))
         }
     }
 }
@@ -275,9 +278,9 @@ impl ProcessControlBlock {
             inner.heap_top = shrink;
         } else {
             let append = inner.heap_top + grow as usize;
-            debug!("in pcb brk, append is : {}", append);
+            //debug!("in pcb brk, append is : {}", append);
             let append_vpn: VirtPageNum = (append / PAGE_SIZE + 1).into();
-            debug!("in pcb brk, append vpn is : {}", append_vpn.0);
+            //debug!("in pcb brk, append vpn is : {}", append_vpn.0);
             let hp_top_vpn: VirtPageNum = ((inner.heap_bottom + USER_HEAP_SIZE) / PAGE_SIZE).into();
             if append_vpn >= hp_top_vpn {
                 debug!("user heap overflow at : {}", append);
@@ -285,6 +288,7 @@ impl ProcessControlBlock {
             }
             debug!("in pcb brk, to append to");
             area.append_to(&mut inner.memory_set.get_mut().page_table, append_vpn);
+            //area.vpn_range = VPNRange::new((inner.heap_bottom / PAGE_SIZE).into(), append_vpn);
             #[cfg(target_arch = "loongarch64")]
             flush_tlb();
             inner.heap_top = append;
@@ -295,13 +299,10 @@ impl ProcessControlBlock {
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
-        let heap_id = 0;
+        let heap_id = heap_id_alloc();
         let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data, heap_id);
-        info!(
-            "kernel: create process from elf data, size = {}, entry point = {:#x}",
-            elf_data.len(),
-            entry_point
-        );
+        //info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
+        //    elf_data.len(), ustack_base, entry_point);
         // allocate a pid
         debug!("in pcb new, from elf ok");
         let user = current_user().unwrap();
@@ -384,16 +385,28 @@ impl ProcessControlBlock {
         //trace!("kernel: exec");
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        let heap_id = 0;
+        let heap_id = heap_id_alloc();
         let (memory_set, user_heap_bottom, entry_point, mut aux) =
             MemorySet::from_elf(elf_data, heap_id);
         let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
-        if inner.clear_child_tid != 0 {
-            *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
-            //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
-        }
         inner.memory_set = Arc::new(memory_set);
+        inner.heap_id = heap_id;
+        //inner.memory_set.activate();
+        debug!("pcb exec, get memory set ok");
+        // if inner.clear_child_tid != 0 {
+        //     *translated_refmut(new_token, inner.clear_child_tid as *mut u32) = 0;
+        //     //data_flow!({ *(task_inner.clear_child_tid as *mut u32) = 0 });
+        // }
+        //debug!("clear child tid ok");
+        inner.sig_table = Arc::new(SigTable::new());
+        let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));
+        inner.fd_table = fd_table;
+        inner.fd_table.close_on_exec();
+        inner.sig_mask = SignalFlags::empty();
+        inner.sig_pending = SignalFlags::empty();
+        inner.tms = Tms::new();
+
         inner.heap_id = heap_id;
         inner.heap_bottom = user_heap_bottom;
         inner.heap_top = user_heap_bottom;
@@ -403,6 +416,8 @@ impl ProcessControlBlock {
         //trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
         task.alloc_user_res();
+        // #[cfg(target_arch = "riscv64")]
+        // task.set_user_trap();
         let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
 
@@ -418,6 +433,15 @@ impl ProcessControlBlock {
         // push arguments on user stack
         let mut user_sp = task_inner.ustack_top(true) as usize;
         info!("in pcb exec, initial user_sp = {}", user_sp);
+
+        //      00000000000100b0 <main>:
+        //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
+        //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
+        //          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
+        //          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
+        //          100b8: aa 87        	mv	a5, a0          ; a5 = argc
+        //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
+        //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
 
         //usize大小
         let size = core::mem::size_of::<usize>();
@@ -601,47 +625,50 @@ impl ProcessControlBlock {
             debug!(
                 "(ProcessControlBlock, fork) creat thread, need tcb, not need pcb, to implement"
             );
-            pid = self.pid;
-            //ppid = self.ppid;
-            //timer = Arc::clone(&parent_inner.timer);
             sig_mask = SignalFlags::empty();
-            let child = Arc::new(Self {
-                ppid: pid,
-                pid,
-                user,
-                inner: unsafe {
-                    UPSafeCell::new(ProcessControlBlockInner {
-                        heap_id: parent.heap_id,
-                        is_zombie: false,
-                        clear_child_tid,
-                        memory_set: memory_set,
-                        fs_info,
-                        parent: Some(Arc::downgrade(self)),
-                        children: Vec::new(),
-                        exit_code: 0,
-                        fd_table: new_fd_table,
-                        signals: SignalFlags::empty(),
-                        tasks: Vec::new(),
-                        task_res_allocator: RecycleAllocator::new(0),
-                        mutex_list: Vec::new(),
-                        semaphore_list: Vec::new(),
-                        condvar_list: Vec::new(),
-                        priority: 16,
-                        stride: Stride::default(),
-                        tms: Tms::new(),
-                        sig_mask,
-                        sig_pending,
-                        sig_table,
-                        heap_bottom: parent.heap_bottom,
-                        heap_top: parent.heap_top,
-                        robust_list: RobustList::default(),
-                    })
-                },
-            });
-            child
+
+            // let child = Arc::new(Self {
+            //     ppid: pid,
+            //     pid,
+            //     user,
+            //     inner: unsafe {
+            //         UPSafeCell::new(ProcessControlBlockInner {
+            //             heap_id: parent.heap_id,
+            //             is_zombie: false,
+            //             clear_child_tid,
+            //             memory_set: memory_set,
+            //             fs_info,
+            //             parent: Some(Arc::downgrade(self)),
+            //             children: Vec::new(),
+            //             exit_code: 0,
+            //             fd_table: new_fd_table,
+            //             signals: SignalFlags::empty(),
+            //             tasks: Vec::new(),
+            //             task_res_allocator: RecycleAllocator::new(0),
+            //             mutex_list: Vec::new(),
+            //             semaphore_list: Vec::new(),
+            //             condvar_list: Vec::new(),
+            //             priority: 16,
+            //             stride: Stride::default(),
+            //             tms: Tms::new(),
+            //             sig_mask,
+            //             sig_pending,
+            //             sig_table,
+            //             heap_bottom: parent.heap_bottom,
+            //             heap_top: parent.heap_top,
+            //             robust_list: RobustList::default(),
+            //         })
+            //     },
+            // });
+            // child
+            let task = Arc::new(TaskControlBlock::new(Arc::clone(self), true, parent_tid));
+            parent.tasks.push(Some(Arc::clone(&task)));
+            self.clone()
         } else {
             info!("(ProcessControlBlock, fork) forking...");
             pid = pid_alloc().0;
+            let heap_id = heap_id_alloc();
+            let heap_bottom = heap_bottom_from_id(heap_id);
             //ppid = self.pid;
             //timer = Arc::new(Timer::new());
             sig_mask = parent.sig_mask.clone();
@@ -673,9 +700,9 @@ impl ProcessControlBlock {
                         sig_mask,
                         sig_pending,
                         sig_table,
-                        heap_id: parent.heap_id,
-                        heap_bottom: parent.heap_bottom,
-                        heap_top: parent.heap_top,
+                        heap_id,
+                        heap_bottom: heap_bottom,
+                        heap_top: heap_bottom,
                         robust_list: RobustList::default(),
                     })
                 },

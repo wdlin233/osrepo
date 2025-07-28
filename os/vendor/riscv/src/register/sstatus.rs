@@ -1,7 +1,8 @@
 //! sstatus register
 
-pub use super::misa::XLEN;
 pub use super::mstatus::FS;
+use bit_field::BitField;
+use core::mem::size_of;
 
 /// Supervisor Status Register
 #[derive(Clone, Copy, Debug)]
@@ -17,22 +18,40 @@ pub enum SPP {
 }
 
 impl Sstatus {
+    /// Returns the contents of the register as raw bits
+    #[inline]
+    pub fn bits(&self) -> usize {
+        self.bits
+    }
+
+    /// User Interrupt Enable
+    #[inline]
+    pub fn uie(&self) -> bool {
+        self.bits.get_bit(0)
+    }
+
     /// Supervisor Interrupt Enable
     #[inline]
     pub fn sie(&self) -> bool {
-        self.bits & (1 << 1) != 0
+        self.bits.get_bit(1)
+    }
+
+    /// User Previous Interrupt Enable
+    #[inline]
+    pub fn upie(&self) -> bool {
+        self.bits.get_bit(4)
     }
 
     /// Supervisor Previous Interrupt Enable
     #[inline]
     pub fn spie(&self) -> bool {
-        self.bits & (1 << 5) != 0
+        self.bits.get_bit(5)
     }
 
     /// Supervisor Previous Privilege Mode
     #[inline]
     pub fn spp(&self) -> SPP {
-        match self.bits & (1 << 8) != 0 {
+        match self.bits.get_bit(8) {
             true => SPP::Supervisor,
             false => SPP::User,
         }
@@ -41,8 +60,7 @@ impl Sstatus {
     /// The status of the floating-point unit
     #[inline]
     pub fn fs(&self) -> FS {
-        let fs = (self.bits >> 13) & 0x3; // bits 13-14
-        match fs {
+        match self.bits.get_bits(13..15) {
             0 => FS::Off,
             1 => FS::Initial,
             2 => FS::Clean,
@@ -55,8 +73,7 @@ impl Sstatus {
     /// and associated state
     #[inline]
     pub fn xs(&self) -> FS {
-        let xs = (self.bits >> 15) & 0x3; // bits 15-16
-        match xs {
+        match self.bits.get_bits(15..17) {
             0 => FS::Off,
             1 => FS::Initial,
             2 => FS::Clean,
@@ -68,40 +85,42 @@ impl Sstatus {
     /// Permit Supervisor User Memory access
     #[inline]
     pub fn sum(&self) -> bool {
-        self.bits & (1 << 18) != 0
+        self.bits.get_bit(18)
     }
 
     /// Make eXecutable Readable
     #[inline]
     pub fn mxr(&self) -> bool {
-        self.bits & (1 << 19) != 0
-    }
-
-    /// Effective xlen in U-mode (i.e., `UXLEN`).
-    ///
-    /// In RISCV-32, UXL does not exist, and `UXLEN` is always [`XLEN::XLEN32`].
-    #[inline]
-    pub fn uxl(&self) -> XLEN {
-        match () {
-            #[cfg(riscv32)]
-            () => XLEN::XLEN32,
-            #[cfg(not(riscv32))]
-            () => XLEN::from((self.bits >> 32) as u8 & 0x3),
-        }
+        self.bits.get_bit(19)
     }
 
     /// Whether either the FS field or XS field
     /// signals the presence of some dirty state
     #[inline]
     pub fn sd(&self) -> bool {
-        self.bits & (1 << (usize::BITS as usize - 1)) != 0
+        self.bits.get_bit(size_of::<usize>() * 8 - 1)
+    }
+
+    #[inline]
+    pub fn set_spie(&mut self, val: bool) {
+        self.bits.set_bit(5, val);
+    }
+
+    #[inline]
+    pub fn set_sie(&mut self, val: bool) {
+        self.bits.set_bit(1, val);
+    }
+
+    #[inline]
+    pub fn set_spp(&mut self, val: SPP) {
+        self.bits.set_bit(8, val == SPP::Supervisor);
     }
 }
 
-read_csr_as!(Sstatus, 0x100);
-write_csr!(0x100);
-set!(0x100);
-clear!(0x100);
+read_csr_as!(Sstatus, 0x100, __read_sstatus);
+write_csr!(0x100, __write_sstatus);
+set!(0x100, __set_sstatus);
+clear!(0x100, __clear_sstatus);
 
 set_clear_csr!(
     /// User Interrupt Enable
@@ -116,14 +135,15 @@ set_csr!(
     /// Supervisor Previous Interrupt Enable
     , set_spie, 1 << 5);
 set_clear_csr!(
-    /// Permit Supervisor User Memory access
-    , set_sum, clear_sum, 1 << 18);
-set_clear_csr!(
     /// Make eXecutable Readable
     , set_mxr, clear_mxr, 1 << 19);
+set_clear_csr!(
+    /// Permit Supervisor User Memory access
+    , set_sum, clear_sum, 1 << 18);
 
 /// Supervisor Previous Privilege Mode
 #[inline]
+#[cfg(riscv)]
 pub unsafe fn set_spp(spp: SPP) {
     match spp {
         SPP::Supervisor => _set(1 << 8),
@@ -133,9 +153,9 @@ pub unsafe fn set_spp(spp: SPP) {
 
 /// The status of the floating-point unit
 #[inline]
+#[cfg(riscv)]
 pub unsafe fn set_fs(fs: FS) {
     let mut value = _read();
-    value &= !(0x3 << 13); // clear previous value
-    value |= (fs as usize) << 13;
+    value.set_bits(13..15, fs as usize);
     _write(value);
 }

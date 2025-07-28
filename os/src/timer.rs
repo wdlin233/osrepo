@@ -146,6 +146,20 @@ impl TimeSpec {
     }
 }
 
+pub fn calculate_left_timespec(endtime: TimeSpec) -> TimeSpec {
+    let nowtime = get_time_spec();
+    let mut endsec = endtime.tv_sec;
+    let mut nsec: isize = endtime.tv_nsec as isize - nowtime.tv_nsec as isize;
+    if nsec < 0 {
+        endsec -= 1;
+        nsec = 1_000_000_000isize + nsec;
+    }
+    TimeSpec {
+        tv_sec: endsec - nowtime.tv_sec,
+        tv_nsec: nsec as usize,
+    }
+}
+
 /// Get the current time in ticks
 pub fn get_time() -> usize {
     #[cfg(target_arch = "riscv64")]
@@ -175,6 +189,14 @@ pub fn get_time_us() -> usize {
 pub fn set_next_trigger() {
     use crate::hal::utils::set_timer;
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
+}
+
+pub fn get_time_spec() -> TimeSpec {
+    let time = get_time_ms();
+    TimeSpec {
+        tv_sec: time / 1000,
+        tv_nsec: (time % 1000) * 1000000,
+    }
 }
 
 /// condvar for timer

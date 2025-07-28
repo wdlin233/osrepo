@@ -217,7 +217,10 @@ pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: us
         return res as isize;
     }
     debug!("[sys_read_linkat] got path : {}", inner.fs_info.get_cwd());
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     let mut linkbuf = vec![0u8; bufsize];
     let file = open(&abs_path, OpenFlags::empty(), NONE_MODE)
         .unwrap()
@@ -417,7 +420,10 @@ pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     let token = inner.get_user_token();
     let path = translated_str(token, path);
     let flags = OpenFlags::from_bits(flags).unwrap();
-    let mut abs_path = inner.get_abs_path(dirfd, &path);
+    let mut abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     if abs_path == "" {
         return -1;
     }
@@ -711,7 +717,10 @@ pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
 
     let token = inner.get_user_token();
     let path = translated_str(token, path);
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     if abs_path == "" {
         return -1;
     }
@@ -801,7 +810,10 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
     if dirfd != -100 && dirfd as usize >= inner.fd_table.len() {
         return -1;
     }
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     if let Ok(_) = open(&abs_path, OpenFlags::O_RDWR, NONE_MODE) {
         return SysErrNo::EEXIST as isize;
     }
@@ -896,7 +908,10 @@ pub fn sys_statx(
     let path = translated_str(token, pathname);
 
     // 获取绝对路径
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     if abs_path.is_empty() {
         return SysErrNo::ENOENT as isize;
     }
@@ -1121,7 +1136,10 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     debug!("the trans str is : {}", translated_str(token, path));
     let path = trim_start_slash(translated_str(token, path));
     debug!("in fstat, the path is : {}", path);
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     debug!("in fstat, abs path is : {}", abs_path);
     if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
         open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
@@ -1277,7 +1295,10 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
         }
     }
 
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
         open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
     }
@@ -1381,7 +1402,10 @@ pub fn sys_utimensat(dirfd: isize, path: *const u8, times: *const TimeVal, _flag
         };
     }
 
-    let abs_path = inner.get_abs_path(dirfd, &path);
+    let abs_path = match inner.get_abs_path(dirfd, &path) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     info!("in sys utimensat , the abs path is : {}", abs_path);
     let osfile = match open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE) {
         Ok(of) => of.file().unwrap(),
@@ -1464,12 +1488,18 @@ pub fn sys_renameat2(
         translated_str(token, newpath),
     );
 
-    let old_abs_path = inner.get_abs_path(olddirfd, &oldpath);
+    let old_abs_path = match inner.get_abs_path(olddirfd, &oldpath) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     let osfile = open(&old_abs_path, OpenFlags::O_RDWR, NONE_MODE)
         .unwrap()
         .file()
         .unwrap();
-    let new_abs_path = inner.get_abs_path(newdirfd, &newpath);
+    let new_abs_path = match inner.get_abs_path(newdirfd, &newpath) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
     match osfile.inode.rename(&old_abs_path, &new_abs_path) {
         Ok(n) => n as isize,
         Err(e) => e as isize,

@@ -1,5 +1,10 @@
 //! satp register
 
+#[cfg(riscv)]
+use addr::Frame;
+#[cfg(riscv)]
+use bit_field::BitField;
+
 /// satp register
 #[derive(Clone, Copy, Debug)]
 pub struct Satp {
@@ -15,9 +20,9 @@ impl Satp {
 
     /// Current address-translation scheme
     #[inline]
-    #[cfg(target_pointer_width = "32")]
+    #[cfg(riscv32)]
     pub fn mode(&self) -> Mode {
-        match self.bits & (1 << 31) != 0 {
+        match self.bits.get_bit(31) {
             false => Mode::Bare,
             true => Mode::Sv32,
         }
@@ -25,9 +30,9 @@ impl Satp {
 
     /// Current address-translation scheme
     #[inline]
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(riscv64)]
     pub fn mode(&self) -> Mode {
-        match self.bits >> 60 {
+        match self.bits.get_bits(60..64) {
             0 => Mode::Bare,
             8 => Mode::Sv39,
             9 => Mode::Sv48,
@@ -39,78 +44,76 @@ impl Satp {
 
     /// Address space identifier
     #[inline]
-    #[cfg(target_pointer_width = "32")]
+    #[cfg(riscv32)]
     pub fn asid(&self) -> usize {
-        (self.bits >> 22) & 0x1FF // bits 22-30
+        self.bits.get_bits(22..31)
     }
 
     /// Address space identifier
     #[inline]
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(riscv64)]
     pub fn asid(&self) -> usize {
-        self.bits >> 44 & 0xFFFF // bits 44-59
+        self.bits.get_bits(44..60)
     }
 
     /// Physical page number
     #[inline]
-    #[cfg(target_pointer_width = "32")]
+    #[cfg(riscv32)]
     pub fn ppn(&self) -> usize {
-        self.bits & 0x3F_FFFF // bits 0-21
+        self.bits.get_bits(0..22)
     }
 
     /// Physical page number
     #[inline]
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(riscv64)]
     pub fn ppn(&self) -> usize {
-        self.bits & 0xFFF_FFFF_FFFF // bits 0-43
+        self.bits.get_bits(0..44)
+    }
+
+    /// Physical frame
+    #[inline]
+    #[cfg(riscv)]
+    pub fn frame(&self) -> Frame {
+        Frame::of_ppn(self.ppn())
     }
 }
 
-/// 32-bit satp mode
-#[cfg(target_pointer_width = "32")]
+#[cfg(riscv32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
-    /// No translation or protection
     Bare = 0,
-    /// Page-based 32-bit virtual addressing
     Sv32 = 1,
 }
 
-/// 64-bit satp mode
-#[cfg(target_pointer_width = "64")]
+#[cfg(riscv64)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
-    /// No translation or protection
     Bare = 0,
-    /// Page-based 39-bit virtual addressing
     Sv39 = 8,
-    /// Page-based 48-bit virtual addressing
     Sv48 = 9,
-    /// Page-based 57-bit virtual addressing
     Sv57 = 10,
-    /// Page-based 64-bit virtual addressing
     Sv64 = 11,
 }
 
-read_csr_as!(Satp, 0x180);
-write_csr_as_usize!(0x180);
+read_csr_as!(Satp, 0x180, __read_satp);
+write_csr_as_usize!(0x180, __write_satp);
 
-/// Sets the register to corresponding page table mode, physical page number and address space id.
 #[inline]
-#[cfg(target_pointer_width = "32")]
+#[cfg(riscv32)]
 pub unsafe fn set(mode: Mode, asid: usize, ppn: usize) {
-    assert_eq!(asid, asid & 0x1FF, "invalid value for asid");
-    assert_eq!(ppn, ppn & 0x3F_FFFF, "invalid value for ppn");
-    let bits = (mode as usize) << 31 | (asid << 22) | ppn;
+    let mut bits = 0usize;
+    bits.set_bits(31..32, mode as usize);
+    bits.set_bits(22..31, asid);
+    bits.set_bits(0..22, ppn);
     _write(bits);
 }
 
-/// Sets the register to corresponding page table mode, physical page number and address space id.
 #[inline]
-#[cfg(target_pointer_width = "64")]
+#[cfg(riscv64)]
 pub unsafe fn set(mode: Mode, asid: usize, ppn: usize) {
-    assert_eq!(asid, asid & 0xFFFF, "invalid value for asid");
-    assert_eq!(ppn, ppn & 0xFFF_FFFF_FFFF, "invalid value for ppn");
-    let bits = (mode as usize) << 60 | (asid << 44) | ppn;
+    let mut bits = 0usize;
+    bits.set_bits(60..64, mode as usize);
+    bits.set_bits(44..60, asid);
+    bits.set_bits(0..44, ppn);
     _write(bits);
 }

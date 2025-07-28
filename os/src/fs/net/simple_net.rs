@@ -22,6 +22,11 @@ impl SimpleSocket {
     }
 }
 
+pub fn make_socket() -> Arc<SimpleSocket> {
+    let (r, w) = make_pipe();
+    let socket = Arc::new(SimpleSocket::new(r, w));
+    socket
+}
 pub fn make_socketpair() -> (Arc<SimpleSocket>, Arc<SimpleSocket>) {
     let (r1, w1) = make_pipe();
     let (r2, w2) = make_pipe();
@@ -57,13 +62,18 @@ impl File for SimpleSocket {
 
     fn poll(&self, events: PollEvents) -> PollEvents {
         let mut revents = PollEvents::empty();
-        let read_buffer = self.read_end.inner_lock();
-        let write_buffer = self.write_end.inner_lock();
-        if events.contains(PollEvents::IN) && read_buffer.available_read() > 0 {
-            revents |= PollEvents::IN;
+        {
+            let read_buffer = self.read_end.inner_lock();
+
+            if events.contains(PollEvents::IN) && read_buffer.available_read() > 0 {
+                revents |= PollEvents::IN;
+            }
         }
-        if events.contains(PollEvents::OUT) && write_buffer.available_write() > 0 {
-            revents |= PollEvents::OUT;
+        {
+            let write_buffer = self.write_end.inner_lock();
+            if events.contains(PollEvents::OUT) && write_buffer.available_write() > 0 {
+                revents |= PollEvents::OUT;
+            }
         }
         revents
     }

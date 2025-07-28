@@ -16,10 +16,11 @@ use riscv::register::scause::{self, Exception, Trap};
 use crate::{
     config::USER_STACK_SIZE,
     task::{
+        current_process,
         current_task,
         exit_current_and_run_next,
-        ProcessControlBlock, THREAD_GROUP,
-        //    THREAD_GROUP, TID_TO_TASK
+        ProcessControlBlock,
+        THREAD_GROUP, //    THREAD_GROUP, TID_TO_TASK
     },
     //hal::trap::{MachineContext, UserContext},
     utils::{SysErrNo, SyscallRet},
@@ -34,15 +35,12 @@ pub const SIG_IGN: usize = 1;
 //     pub fn sigreturn_trampoline();
 // }
 
-// pub fn check_if_any_sig_for_current_task() -> Option<usize> {
-//     let task = current_task().unwrap();
-//     let task_inner = task.inner_lock();
+pub fn check_if_any_sig_for_current_task() -> Option<usize> {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
 
-//     task_inner
-//         .sig_pending
-//         .difference(task_inner.sig_mask)
-//         .peek_front()
-// }
+    inner.sig_pending.difference(inner.sig_mask).peek_front()
+}
 
 // pub fn handle_signal(signo: usize) {
 //     let task = current_task().unwrap();

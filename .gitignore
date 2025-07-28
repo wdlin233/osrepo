@@ -33,3 +33,4 @@ qemu.log
 kernel-rv
 kernel-la
 **/linker_*.lds
+testsuits/**

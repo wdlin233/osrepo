@@ -10,13 +10,12 @@ pub struct Mimpid {
 
 impl Mimpid {
     /// Returns the contents of the register as raw bits
-    #[inline]
     pub fn bits(&self) -> usize {
         self.bits.get()
     }
 }
 
-read_csr!(0xF13);
+read_csr!(0xF11, __read_mimpid);
 
 /// Reads the CSR
 #[inline]

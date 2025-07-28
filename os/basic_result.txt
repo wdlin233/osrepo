@@ -1,0 +1,319 @@
+(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add riscv64gc-unknown-none-elf
+riscv64gc-unknown-none-elf (installed)
+cargo install cargo-binutils
+rustup component add rust-src
+rustup component add llvm-tools-preview
+make[1]: Entering directory '/home/molinwu/osrepo/user'
+target/riscv64gc-unknown-none-elf/release/initproc target/riscv64gc-unknown-none-elf/release/test_waitpid target/riscv64gc-unknown-none-elf/release/user_shell target/riscv64gc-unknown-none-elf/release/usertest
+cargo build --release
+make[1]: Leaving directory '/home/molinwu/osrepo/user'
+sudo cp ../testcases/riscv64/busybox /mnt/image_part/
+basic
+basic_testcode.sh
+brk
+busybox
+busybox_cmd.txt
+busybox_testcode.sh
+chdir
+clone
+close
+dup
+dup2
+execve
+exit
+fork
+fstat
+getcwd
+getdents
+getpid
+getppid
+gettimeofday
+glibc
+initproc
+lost+found
+mkdir_
+mmap
+mnt
+mount
+munmap
+musl
+open
+openat
+pipe
+read
+run-all.sh
+sleep
+test_echo
+test_mount
+test_waitpid
+text.txt
+times
+umount
+uname
+unlink
+user_shell
+usertest
+wait
+waitpid
+write
+yield
+cargo build --release -p os --target riscv64gc-unknown-none-elf --offline
+qemu-system-riscv64 -M 128m -machine virt -kernel target/riscv64gc-unknown-none-elf/release/os -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -nographic -drive file=sdcard-rv.img,if=none,format=raw,id=x0 -smp 1 -D qemu.log 
+
+OpenSBI v1.5.1
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name             : riscv-virtio,qemu
+Platform Features         : medeleg
+Platform HART Count       : 1
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 10000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform PMU Device       : ---
+Platform Reboot Device    : syscon-reboot
+Platform Shutdown Device  : syscon-poweroff
+Platform Suspend Device   : ---
+Platform CPPC Device      : ---
+Firmware Base             : 0x80000000
+Firmware Size             : 327 KB
+Firmware RW Offset        : 0x40000
+Firmware RW Size          : 71 KB
+Firmware Heap Offset      : 0x49000
+Firmware Heap Size        : 35 KB (total), 2 KB (reserved), 11 KB (used), 21 KB (free)
+Firmware Scratch Size     : 4096 B (total), 416 B (used), 3680 B (free)
+Runtime SBI Version       : 2.0
+
+Domain0 Name              : root
+Domain0 Boot HART         : 0
+Domain0 HARTs             : 0*
+Domain0 Region00          : 0x0000000000100000-0x0000000000100fff M: (I,R,W) S/U: (R,W)
+Domain0 Region01          : 0x0000000010000000-0x0000000010000fff M: (I,R,W) S/U: (R,W)
+Domain0 Region02          : 0x0000000002000000-0x000000000200ffff M: (I,R,W) S/U: ()
+Domain0 Region03          : 0x0000000080040000-0x000000008005ffff M: (R,W) S/U: ()
+Domain0 Region04          : 0x0000000080000000-0x000000008003ffff M: (R,X) S/U: ()
+Domain0 Region05          : 0x000000000c400000-0x000000000c5fffff M: (I,R,W) S/U: (R,W)
+Domain0 Region06          : 0x000000000c000000-0x000000000c3fffff M: (I,R,W) S/U: (R,W)
+Domain0 Region07          : 0x0000000000000000-0xffffffffffffffff M: () S/U: (R,W,X)
+Domain0 Next Address      : 0x0000000080200000
+Domain0 Next Arg1         : 0x0000000087e00000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+Domain0 SysSuspend        : yes
+
+Boot HART ID              : 0
+Boot HART Domain          : root
+Boot HART Priv Version    : v1.12
+Boot HART Base ISA        : rv64imafdch
+Boot HART ISA Extensions  : sstc,zicntr,zihpm,zicboz,zicbom,sdtrig,svadu
+Boot HART PMP Count       : 16
+Boot HART PMP Granularity : 2 bits
+Boot HART PMP Address Bits: 54
+Boot HART MHPM Info       : 16 (0x0007fff8)
+Boot HART Debug Triggers  : 2 triggers
+Boot HART MIDELEG         : 0x0000000000001666
+Boot HART MEDELEG         : 0x0000000000f0b509
+
+
+   _____       __         __  _               
+  / ___/__  __/ /_  _____/ /_(_)_  ______ ___ 
+  \__ \/ / / / __ \/ ___/ __/ / / / / __ `__ \
+ ___/ / /_/ / /_/ (__  ) /_/ / /_/ / / / / / /
+/____/\__,_/_.___/____/\__/_/\__,_/_/ /_/ /_/                     
+
+
+[kernel] Hello, world!
+cpu: 0
+remap_test passed!
+[initproc] Init process started
+#### OS COMP TEST GROUP START basic-musl ####
+Testing brk :
+========== START test_brk ==========
+Before alloc,heap pos: 1334091776
+After alloc,heap pos: 1334091840
+Alloc again,heap pos: 1334091904
+========== END test_brk ==========
+Testing chdir :
+========== START test_chdir ==========
+chdir ret: 0
+  current working dir : /basic/test_chdir
+========== END test_chdir ==========
+Testing clone :
+========== START test_clone ==========
+clone process successfully.
+pid:7
+========== END test_clone ==========
+Testing close :
+========== START test_close ==========
+  close 3 success.
+========== END test_close ==========
+Testing dup2 :
+========== START test_dup2 ==========
+  from fd 100
+========== END test_dup2 ==========
+Testing dup :
+========== START test_dup ==========
+  new fd is 3.
+========== END test_dup ==========
+Testing execve :
+========== START test_execve ==========
+  I am test_echo.
+execve success.
+========== END main ==========
+Testing exit :
+========== START test_exit ==========
+exit OK.
+========== END test_exit ==========
+Testing fork :
+========== START test_fork ==========
+  child process.
+  parent process. wstatus:0
+========== END test_fork ==========
+Testing fstat :
+========== START test_fstat ==========
+fstat ret: 0
+fstat: dev: 127754, inode: 3246, mode: 33188, nlink: 1, size: 52, atime: 1751106470, mtime: 1751106470, ctime: 1751106470
+========== END test_fstat ==========
+Testing getcwd :
+========== START test_getcwd ==========
+getcwd: /basic successfully!
+========== END test_getcwd ==========
+Testing getdents :
+========== START test_getdents ==========
+open fd:3
+getdents fd:488
+getdents success.
+.
+
+========== END test_getdents ==========
+Testing getpid :
+========== START test_getpid ==========
+getpid success.
+pid = 19
+========== END test_getpid ==========
+Testing getppid :
+========== START test_getppid ==========
+  getppid success. ppid : 3
+========== END test_getppid ==========
+Testing gettimeofday :
+========== START test_gettimeofday ==========
+gettimeofday success.
+start:967, end:1006
+interval: 39
+========== END test_gettimeofday ==========
+Testing mkdir_ :
+========== START test_mkdir ==========
+mkdir ret: 0
+  mkdir success.
+========== END test_mkdir ==========
+Testing mmap :
+========== START test_mmap ==========
+file len: 27
+mmap content:   Hello, mmap successfully!
+========== END test_mmap ==========
+Testing mount :
+========== START test_mount ==========
+Mounting dev:/dev/vda2 to ./mnt
+mount return: 0
+mount successfully
+umount return: 0
+========== END test_mount ==========
+Testing munmap :
+========== START test_munmap ==========
+file len: 4096
+munmap return: 0
+munmap successfully!
+========== END test_munmap ==========
+Testing openat :
+========== START test_openat ==========
+open dir fd: 3
+openat fd: 4
+openat success.
+========== END test_openat ==========
+Testing open :
+========== START test_open ==========
+Hi, this is a text file.
+syscalls testing success!
+
+========== END test_open ==========
+Testing pipe :
+========== START test_pipe ==========
+cpid: 29
+cpid: 0
+  Write to pipe successfully.
+
+========== END test_pipe ==========
+Testing read :
+========== START test_read ==========
+Hi, this is a text file.
+syscalls testing success!
+
+========== END test_read ==========
+Testing sleep :
+========== START test_sleep ==========
+sleep success.
+========== END test_sleep ==========
+Testing times :
+========== START test_times ==========
+mytimes success
+{tms_utime:254, tms_stime:86446, tms_cutime:0, tms_cstime:0}
+========== END test_times ==========
+Testing umount :
+========== START test_umount ==========
+Mounting dev:/dev/vda2 to ./mnt
+mount return: 0
+umount success.
+return: 0
+========== END test_umount ==========
+Testing uname :
+========== START test_uname ==========
+Uname: Substium rcos 0.1.0 0.1.0-dev (2025.06.30) risc-v RISC-V 
+========== END test_uname ==========
+Testing unlink :
+========== START test_unlink ==========
+  unlink success!
+========== END test_unlink ==========
+Testing wait :
+========== START test_wait ==========
+This is child process
+wait child success.
+wstatus: 0
+========== END test_wait ==========
+Testing waitpid :
+========== START test_waitpid ==========
+This is child process
+waitpid successfully.
+wstatus: 3
+========== END test_waitpid ==========
+Testing write :
+========== START test_write ==========
+Hello operating system contest.
+========== END test_write ==========
+Testing yield :
+========== START test_yield ==========
+  I am child process: 42. iteration 0.
+  I am child process: 43. iteration 1.
+  I am child process:   I am child process: 42. iteration 0.
+  I am child process: 43. iteration 1.
+44. iteration 2.
+  I am child process: 42. iteration 0.
+  I am child process: 43. iteration 1.
+  I am child process: 44. iteration 2.
+  I am child process: 42. iteration 0.
+  I am child process: 43. iteration 1.
+  I am child process: 44. iteration 2.
+  I am child process: 42. iteration 0.
+  I am child process: 43. iteration 1.
+  I am child process: 44. iteration 2.
+  I am child process: 44. iteration 2.
+========== END test_yield ==========
+#### OS COMP TEST GROUP END basic-musl ####
+[initproc] Released a zombie process, pid=1, exit_code=0
+[kernel] Idle process exit with exit_code 0 ...

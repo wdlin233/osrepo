@@ -19,7 +19,7 @@ pub const MSEC_PER_SEC: usize = 1000;
 /// kernel stack size
 pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
 /// the virtual addr of trapoline
-pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
+pub const TRAMPOLINE: usize = 0x0000_0000_ffff_ffff - PAGE_SIZE + 1;
 
 pub const THREAD_MAX_NUM: usize = 3000;
 // 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响
@@ -73,23 +73,19 @@ pub const MMAP_TOP: usize = USER_TRAP_CONTEXT_TOP
     - USER_STACK_SIZE * THREAD_MAX_NUM
     - PAGE_SIZE;
 //heap bottom
-pub const USER_HEAP_BOTTOM: usize = USER_TRAP_CONTEXT_TOP + PAGE_SIZE;
+pub const USER_HEAP_BOTTOM: usize = 0x100_0000;
 ///heap size
 pub const USER_HEAP_SIZE: usize = 0x10_0000;
 
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
-#[cfg(target_arch = "riscv64")]
-pub const VIRT_ADDR_OFFSET: usize = 0xffff_ffc0_0000_0000; // virtual address bias for loongarch64
-#[cfg(target_arch= "loongarch64")]
-pub const VIRT_ADDR_OFFSET: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
-pub const VIRT_PGNUM_OFFSET: usize = VIRT_ADDR_OFFSET >> PAGE_SIZE_BITS;
-pub const UART: usize = 0x1FE001E0 + VIRT_ADDR_OFFSET;
+pub const VIRT_BIAS: usize = 0x9000_0000_0000_0000; // virtual address bias for loongarch64
+pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
 #[cfg(target_arch = "riscv64")]
 /// physical memory end address
-pub const MEMORY_END: usize = 0x8800_0000 + VIRT_ADDR_OFFSET;
+pub const MEMORY_END: usize = 0x8800_0000;
 #[cfg(target_arch = "riscv64")]
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;
@@ -104,7 +100,7 @@ pub const USER_STACK_SIZE: usize = 4096 * 8;
 pub const KERNEL_HEAP_SIZE: usize = 0x200_0000;
 
 #[cfg(target_arch = "loongarch64")]
-pub const MEMORY_END: usize = 0x000000000_1000_0000 + VIRT_ADDR_OFFSET;
+pub const MEMORY_END: usize = 0x000000000_1000_0000 + VIRT_BIAS;
 #[cfg(target_arch = "loongarch64")]
 pub const PAGE_SIZE: usize = 0x4000; //16kB
 #[cfg(target_arch = "loongarch64")]
@@ -116,4 +112,10 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE;
 #[cfg(target_arch = "loongarch64")]
 pub const KERNEL_HEAP_SIZE: usize = 0x1E0_0000; //内核的可分配堆大小3MB
 
-pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;
+/// yield wakeup task
+pub const YIELD_CHECK: usize = 90;
+#[allow(unused)]
+/// Use a fs block size of 512 bytes
+pub const BLOCK_SIZE: usize = 4096;
+/// The io block size of the disk layer
+pub const IO_BLOCK_SIZE: usize = 512;

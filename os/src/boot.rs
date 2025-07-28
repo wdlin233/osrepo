@@ -3,66 +3,29 @@ use core::arch::global_asm;
 
 #[link_section = ".bss.stack"]
 static mut BOOT_STACK: [u8; 4096 * 16] = [0; 4096 * 16];
-const BOOT_STACK_SIZE: usize = 4096 * 16 * 2;
+const BOOT_STACK_SIZE: usize = 4096 * 16;
 
 // 条件编译：RISC-V 启动代码
 #[cfg(target_arch = "riscv64")]
 global_asm!(
     r#"
-        .section .text.entry
+    .section .text.entry
     .globl _start
 _start:
-    # rust sbi put hart id on a0
-    # alloc kernel stack for each hart
-    # set sp(each hart has one kstack)
-    mv tp,a0
-    slli t0, a0, 8  # t0 = hart_id << 16(4096 * 8)
-    la sp, boot_stack_top
-    sub sp, sp, t0  # sp = stack top - hart_id * stack_size
-
-    # la sp, boot_stack_top
-    # since the base addr is 0xffff_ffc0_8020_0000
-    # we need to activate pagetable here in case of absolute addressing
-    # satp: 8 << 60 | boot_pagetable
-    la t0, boot_pagetable
-    li t1, 8 << 60
-    srli t0, t0, 12
-    or t0, t0, t1
-    csrw satp, t0
-    sfence.vma
-
-    call trampoline
+    // csrr a0, 0x20 // 读取 cpuid
+    la sp, boot_stack_top  
+    call {rust_main} 
 
     .section .bss.stack
     .globl boot_stack_lower_bound
 boot_stack_lower_bound:
     .space {boot_stack_size}
-
     .globl boot_stack_top
 boot_stack_top:
-
-.section .data
-    .align 12
-boot_pagetable:
-    # we need 2 pte here
-    # 0x0000_0000_8000_0000 -> 0x0000_0000_8000_0000
-    # 0xffff_fc00_8000_0000 -> 0x0000_0000_8000_0000
-    .quad 0
-    .quad 0
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
-    .zero 8 * 255
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
-    .zero 8 * 253
-
-    .section .text.trampoline
-    .align 12
-    .global sigreturn_trampoline
-sigreturn_trampoline:
-    li	a7,139
-    ecall
-
     "#,
-    boot_stack_size = const BOOT_STACK_SIZE, // 2 CPUs
+    boot_stack_size = const BOOT_STACK_SIZE,
+    rust_main = sym super::main,
+    //boot_stack_top = sym BOOT_STACK.as_ptr(),
 );
 
 /// The earliest entry point for the primary CPU.
@@ -105,20 +68,4 @@ unsafe extern "C" fn _start() -> ! {
         main = sym super::main,
         options(noreturn),
     )
-}
-
-#[cfg(target_arch = "riscv64")]
-/// ADD VIRT_ADDR_OFFSET and jump to main
-#[no_mangle]
-pub fn trampoline(hartid: usize) {
-    unsafe {
-        use core::arch::asm;
-        use crate::config::VIRT_ADDR_OFFSET;
-
-        asm!("add sp, sp, {}", in(reg) VIRT_ADDR_OFFSET);
-        asm!("la t0, main");
-        asm!("add t0, t0, {}", in(reg) VIRT_ADDR_OFFSET);
-        asm!("mv a0, {}", in(reg) hartid);
-        asm!("jalr zero, 0(t0)");
-    }
 }

@@ -102,14 +102,6 @@ pub fn init() {
 
         println!("trap init success");
     }
-    #[cfg(target_arch = "riscv64")]
-    unsafe {
-        use riscv::register::sstatus::{self, FS};
-
-        sstatus::set_fs(FS::Clean);
-        // 允许内核态访问用户内存
-        sstatus::set_sum();
-    }
 }
 
 /// set trap entry for traps happen in kernel(supervisor) mode
@@ -395,7 +387,6 @@ extern "C" {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
-    info!("trap_return: in kernel, return to user space");
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
@@ -432,8 +423,7 @@ pub fn trap_return() {
 #[no_mangle]
 pub fn trap_from_kernel() -> ! {
     //use riscv::register::sepc;
-    //warn!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
-    warn!("stval = {:#x}", stval::read());
+    //trace!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
     panic!("a trap {:?} from kernel!", scause::read().cause());
 }
 

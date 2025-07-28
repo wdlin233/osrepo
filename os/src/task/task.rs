@@ -113,20 +113,12 @@ impl TaskControlBlock {
             );
         }
     }
-    // #[cfg(target_arch = "riscv64")]
-    // pub fn alloc_user_trap(&self) {
-    //     let process = self.process.upgrade().unwrap();
-    //     let process_inner = process.inner_exclusive_access();
-    //     debug!("to get trap cx bottom, give tid, like up");
-    //     let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
-    //     let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-    //     process_inner.memory_set.insert_framed_area(
-    //         trap_cx_bottom.into(),
-    //         trap_cx_top.into(),
-    //         MapPermission::R | MapPermission::W,
-    //         MapAreaType::Trap,
-    //     );
-    // }
+    #[cfg(target_arch = "riscv64")]
+    pub fn set_user_trap(&self) {
+        let trap_cx_ppn = self.trap_cx_ppn(self.tid());
+        let mut inner = self.inner_exclusive_access();
+        inner.trap_cx_ppn = trap_cx_ppn;
+    }
     #[cfg(target_arch = "riscv64")]
     /// The physical page number(ppn) of the trap context for a task with tid
     pub fn trap_cx_ppn(&self, tid: usize) -> PhysPageNum {
@@ -190,6 +182,7 @@ impl TaskControlBlock {
         };
         if alloc_user_res {
             new_task.alloc_user_res();
+            //new_task.alloc_user_trap();
         }
         #[cfg(target_arch = "riscv64")]
         {
