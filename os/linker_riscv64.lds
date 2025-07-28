@@ -1,52 +1,53 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
-
-BASE_ADDRESS = 0xffffffc080200000;
+BASE_ADDRESS = 0x80200000;
 
 SECTIONS
 {
     . = BASE_ADDRESS;
-    _skernel = .;
+    skernel = .;
 
-    .text ALIGN(4K): {
-        *(.multiboot .multiboot.*)
-        stext = .;
+    stext = .;
+    .text : {
         *(.text.entry)
-        *(.text .text.*)
-        etext = .;
-    }
-
-    .rodata ALIGN(4K): {
-        srodata = .;
-        *(.rodata .rodata.*)
-        erodata = .;
-    }
-
-    .got : {
-        *(.got .got.*)
-    }
-
-    .data ALIGN(4K): {
-        _sdata = .;
         . = ALIGN(4K);
-        *(.data.boot_page_table)
+        strampoline = .;
+        *(.text.trampoline);
+        . = ALIGN(4K);
+        *(.text .text.*)
+    }
 
+    . = ALIGN(4K);
+    etext = .;
+    srodata = .;
+    .rodata : {
+        *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
+    }
+
+    . = ALIGN(4K);
+    erodata = .;
+    sdata = .;
+    .data : {
         *(.data .data.*)
         *(.sdata .sdata.*)
-        _edata = .;
     }
 
-    .bss ALIGN(4K): {
-        _load_end = .;
-        *(.bss.bstack .bss.bstack.*)
-        _sbss = .;
+    . = ALIGN(4K);
+    edata = .;
+    sbss_with_stack = .;
+    .bss : {
+        *(.bss.stack)
+        sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
-        _ebss = .;
     }
 
-    PROVIDE(_end = .);
+    . = ALIGN(4K);
+    ebss = .;
+    ekernel = .;
+
     /DISCARD/ : {
-        *(.comment) *(.gnu*) *(.note*) *(.eh_frame*) *(.debug*)
+        *(.eh_frame)
     }
 }

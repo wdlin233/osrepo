@@ -4,7 +4,7 @@ use crate::hal::trap::trap_handler;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::{prmd, CpuMode};
 #[cfg(target_arch = "riscv64")]
-use riscv::register::sstatus::{self, Sstatus, SPP};
+use riscv::register::sstatus::{self, Sstatus, SPP, set_spp};
 
 use core::fmt::{Debug, Formatter};
 
@@ -73,8 +73,9 @@ impl TrapContext {
         let mut sstatus = sstatus::read();
         // set CPU privilege to User after trapping back
         #[cfg(target_arch = "riscv64")]
-        sstatus.set_spp(SPP::User);
-
+        unsafe {
+            set_spp(SPP::User);
+        }
         // 设置为用户模式,trap使用ertn进入用户态时会被加载到crmd寄存器中
         #[cfg(target_arch = "loongarch64")]
         prmd::set_pplv(CpuMode::Ring3);

@@ -10,12 +10,13 @@ pub struct Marchid {
 
 impl Marchid {
     /// Returns the contents of the register as raw bits
+    #[inline]
     pub fn bits(&self) -> usize {
         self.bits.get()
     }
 }
 
-read_csr!(0xF11, __read_marchid);
+read_csr!(0xF12);
 
 /// Reads the CSR
 #[inline]

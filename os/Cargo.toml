@@ -18,17 +18,16 @@ spin = "0.10"
 bit_field = "0.10.1"
 #ext4_rs = { path = "libs/ext4_rs" }
 lwext4_rust= { path = "./libs/lwext4_rsut"}
-lru = "0.12"
 hashbrown = "0.12.0"
 num_enum = { version = "0.7.2", default-features = false }
+buddy_system_allocator = "0.11.0"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-riscv = { version = "*", features = ["inline-asm"] }
-buddy_system_allocator = "0.6"
+riscv = { version = "0.11.1" }
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
-loongarch64 = { version = "*", package = "loongArch64" }
-buddy_system_allocator = "0.11.0"
+loongarch64 = { version = "0.2.4", package = "loongArch64" }
+
 
 
 [profile.dev]
