@@ -47,8 +47,9 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     }
     #[cfg(target_arch = "loongarch64")]
     {
-        *new_task_trap_cx = TrapContext::app_init_context(entry, new_task_res.ustack_top(true));
-        new_task_trap_cx.x[4] = arg;
+        // *new_task_trap_cx = TrapContext::app_init_context(entry, new_task_res.ustack_top(true));
+        // new_task_trap_cx.x[4] = arg;
+        unimplemented!("loongarch64 thread create syscall");
     }
     new_task_tid as isize
 }

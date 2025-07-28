@@ -74,23 +74,24 @@ pub fn sys_shmget(key: i32, size: usize, shmflag: i32) -> isize {
 }
 
 pub fn sys_shmat(shmid: i32, shmaddr: usize, shmflag: i32) -> isize {
-    let mut permission = MapPermission::U | MapPermission::R;
-    if shmflag == 0 {
-        permission |= MapPermission::W | MapPermission::X
-    } else {
-        let shmflg = ShmFlags::from_bits(shmflag).unwrap();
-        if shmflg.contains(ShmFlags::SHM_EXEC) {
-            permission |= MapPermission::X;
-        }
-        if !shmflg.contains(ShmFlags::SHM_RDONLY) {
-            permission |= MapPermission::W;
-        }
-    }
+    // let mut permission = MapPermission::U | MapPermission::R;
+    // if shmflag == 0 {
+    //     permission |= MapPermission::W | MapPermission::X
+    // } else {
+    //     let shmflg = ShmFlags::from_bits(shmflag).unwrap();
+    //     if shmflg.contains(ShmFlags::SHM_EXEC) {
+    //         permission |= MapPermission::X;
+    //     }
+    //     if !shmflg.contains(ShmFlags::SHM_RDONLY) {
+    //         permission |= MapPermission::W;
+    //     }
+    // }
 
-    match shmid {
-        key if key < 0 => SysErrNo::EINVAL as isize,
-        _ => shm_attach(shmid as usize, shmaddr, permission),
-    }
+    // match shmid {
+    //     key if key < 0 => SysErrNo::EINVAL as isize,
+    //     _ => shm_attach(shmid as usize, shmaddr, permission),
+    // }
+    unimplemented!("shmat syscall");
 }
 
 pub fn sys_shmctl(shmid: i32, cmd: i32, _buf: usize) -> isize {

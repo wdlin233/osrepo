@@ -120,17 +120,10 @@ pub fn init_frame_allocator() {
         PhysAddr::from(MEMORY_END).floor(),
     );
     #[cfg(target_arch = "loongarch64")]
-    {
-        println!(
-            "frame range: {:#x}-{:#x}",
-            PhysAddr::from(virt_to_phys!(ekernel as usize)).ceil().0,
-            PhysAddr::from(virt_to_phys!(MEMORY_END)).floor().0
-        );
-        FRAME_ALLOCATOR.exclusive_access().init(
-            PhysAddr::from(virt_to_phys!(ekernel as usize)).ceil(),
-            PhysAddr::from(virt_to_phys!(MEMORY_END)).floor(),
-        );
-    }
+    FRAME_ALLOCATOR.exclusive_access().init(
+        PhysAddr::from(virt_to_phys!(ekernel as usize)).ceil(),
+        PhysAddr::from(virt_to_phys!(MEMORY_END)).floor(),
+    );
 }
 
 /// Allocate a physical page frame in FrameTracker style

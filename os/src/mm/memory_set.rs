@@ -358,6 +358,7 @@ impl MemorySetInner {
             ".bss [{:#x}, {:#x})",
             sbss_with_stack as usize, ebss as usize
         );
+        info!("ekernel(physical memory) : [{:#x}, {:#x})", ekernel as usize, MEMORY_END);
         info!("mapping .text section");
         memory_set.push(
             MapArea::new(

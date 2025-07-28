@@ -88,7 +88,7 @@ impl fmt::Debug for PageTableEntry {
             self.bits.get_bit(63),
             self.bits.get_bit(62),
             self.bits.get_bit(61),
-            self.bits.get_bits(14..PALEN),
+            self.bits.get_bits(14..PALEN), // PALEN is 48
             self.bits.get_bit(8),
             self.bits.get_bit(7),
             self.bits.get_bit(6),

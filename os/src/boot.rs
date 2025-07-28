@@ -41,10 +41,10 @@ unsafe extern "C" fn _start() -> ! {
         // INIT_DMW
         ori         $t0, $zero, 0x1     # CSR_DMW1_PLV0
         lu52i.d     $t0, $t0, -2048     # UC, PLV0, 0x8000 xxxx xxxx xxxx
-        csrwr       $t0, 0x180          # LOONGARCH_CSR_DMWIN0
+        csrwr       $t0, 0x180          # WRITE TO LA DMWIN0 CSR
         ori         $t0, $zero, 0x11    # CSR_DMW1_MAT | CSR_DMW1_PLV0
         lu52i.d     $t0, $t0, -1792     # CA, PLV0, 0x9000 xxxx xxxx xxxx
-        csrwr       $t0, 0x181          # LOONGARCH_CSR_DMWIN1
+        csrwr       $t0, 0x181          # WRITE TO LA DMWIN1 CSR
         // addi.d    $t0, $zero,0x11
         // csrwr     $t0, 0x181               # LOONGARCH_CSR_DMWIN1
 

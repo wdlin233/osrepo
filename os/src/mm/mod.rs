@@ -13,11 +13,7 @@ mod memory_set;
 mod page_fault_handler;
 mod page_table;
 mod shm;
-
-#[cfg(target_arch = "riscv64")]
 mod heap_allocator;
-#[cfg(target_arch = "loongarch64")]
-pub mod system_allocator; // heap allocator
 
 pub use address::VPNRange;
 pub use address::{
@@ -38,18 +34,9 @@ pub use page_table::{
 };
 pub use shm::*;
 
-#[cfg(target_arch = "loongarch64")]
-use crate::config::VIRT_BIAS;
-
-#[cfg(target_arch = "loongarch64")]
-use crate::mm::system_allocator::init_heap;
-
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
-    #[cfg(target_arch = "riscv64")]
     heap_allocator::init_heap();
-    #[cfg(target_arch = "loongarch64")]
-    system_allocator::init_heap();
     info!("Heap allocator initialized");
 
     frame_allocator::init_frame_allocator();
@@ -57,18 +44,20 @@ pub fn init() {
 
     #[cfg(target_arch = "riscv64")]
     KERNEL_SPACE.exclusive_access().activate();
+    #[cfg(target_arch = "riscv64")]
+    remap_test();
 }
 
 #[macro_export]
 macro_rules! virt_to_phys {
     ($va:expr) => {
-        $va - crate::config::VIRT_BIAS
+        $va - 0x9000_0000_0000_0000
     };
 }
 /// Translate a physical address to a virtual address.
 #[macro_export]
 macro_rules! phys_to_virt {
     ($pa:expr) => {
-        $pa + crate::config::VIRT_BIAS
+        $pa + 0x9000_0000_0000_0000
     };
 }

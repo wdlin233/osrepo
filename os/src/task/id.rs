@@ -244,7 +244,6 @@ impl KernelStack {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 /// Return the bottom addr (low addr) of the trap context for a task
 pub fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     //debug!("in trap cx bottom from tid, the tid is : {}", tid);

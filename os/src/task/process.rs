@@ -416,8 +416,7 @@ impl ProcessControlBlock {
         //trace!("kernel: exec .. alloc user resource for main thread again");
         let task = self.inner_exclusive_access().get_task(0);
         task.alloc_user_res();
-        // #[cfg(target_arch = "riscv64")]
-        // task.set_user_trap();
+        #[cfg(target_arch = "riscv64")]
         let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
 
