@@ -71,7 +71,6 @@ config:
 clean:
 	@cargo clean
 	-tmux kill-server
-	@sudo umount /mnt/image_part
 
 # Debugging
 ifeq ($(ARCH),riscv64)

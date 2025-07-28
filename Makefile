@@ -47,7 +47,6 @@ all:
 clean:
 	@cd ./os && make clean
 	@cd ./user && make clean
-	@cd ./user_la && make clean
 
 # QEMU run configuration
 QEMU_DEBUG_FLAGS = -s -S
@@ -61,7 +60,7 @@ QEMU_EXEC = qemu-system-loongarch64 -kernel ${KERNEL_BIN} -m 1G -nographic -smp 
             -device virtio-blk-pci,drive=x0 -no-reboot
 endif
 
-run: all
+run: clean all
 	${QEMU_EXEC}
 
 # GDB debugging targets
