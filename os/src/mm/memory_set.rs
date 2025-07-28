@@ -4,9 +4,13 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE,
+    DL_INTERP_OFFSET, MEMORY_END, MMAP_TOP, MMIO, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM,
+    USER_HEAP_SIZE,
 };
-use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
+use crate::fs::{
+    map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlags, NONE_MODE, SEEK_CUR,
+    SEEK_SET,
+};
 use crate::mm::group::GROUP_SHARE;
 #[cfg(target_arch = "riscv64")]
 use crate::mm::map_area::MapType;
@@ -28,6 +32,7 @@ use crate::syscall::MmapFlags;
 use crate::task::{current_process, heap_bottom_from_id, Aux, AuxType};
 use crate::utils::SysErrNo;
 use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -205,6 +210,10 @@ impl MemorySet {
         self.get_mut().page_table.translate_va(va)
     }
     #[inline(always)]
+    pub fn load_dl_interp_if_needed(&mut self, elf: &ElfFile) -> Option<usize> {
+        self.get_mut().load_dl_interp_if_needed(elf)
+    }
+    #[inline(always)]
     pub fn shm(
         &self,
         addr: usize,
@@ -290,6 +299,45 @@ impl MemorySetInner {
     fn push_with_given_frames(&mut self, mut map_area: MapArea, frames: Vec<Arc<FrameTracker>>) {
         map_area.map_given_frames(&mut self.page_table, frames);
         self.areas.push(map_area);
+    }
+    fn load_dl_interp_if_needed(&mut self, elf: &ElfFile) -> Option<usize> {
+        let elf_header = elf.header;
+        let ph_count = elf_header.pt2.ph_count();
+
+        let mut is_dl = false;
+        for i in 0..ph_count {
+            let ph = elf.program_header(i).unwrap();
+            if ph.get_type().unwrap() == xmas_elf::program::Type::Interp {
+                is_dl = true;
+                break;
+            }
+        }
+
+        if is_dl {
+            debug!("[load_dl] encounter a dl elf");
+            let section = elf.find_section_by_name(".interp").unwrap();
+            let mut interp = String::from_utf8(section.raw_data(&elf).to_vec()).unwrap();
+            interp = interp.strip_suffix("\0").unwrap_or(&interp).to_string();
+            debug!("[load_dl] interp {}", interp);
+
+            let interp = map_dynamic_link_file(&interp);
+
+            // log::info!("interp {}", interp);
+
+            let interp_inode = open(&interp, OpenFlags::O_RDONLY, NONE_MODE)
+                .unwrap()
+                .file()
+                .ok();
+            let interp_file = interp_inode.unwrap();
+            let interp_elf_data = interp_file.inode.read_all().unwrap();
+            let interp_elf = xmas_elf::ElfFile::new(&interp_elf_data).unwrap();
+            self.map_elf(&interp_elf, DL_INTERP_OFFSET.into());
+
+            Some(interp_elf.header.pt2.entry_point() as usize + DL_INTERP_OFFSET)
+        } else {
+            debug!("[load_dl] encounter a static elf");
+            None
+        }
     }
     pub fn shm(
         &mut self,
@@ -446,6 +494,7 @@ impl MemorySetInner {
         //assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
         let max_end_vpn = VirtPageNum(0);
+        let mut entry_point = elf.header.pt2.entry_point() as usize;
 
         auxv.push(Aux::new(
             AuxType::PHENT,
@@ -453,13 +502,13 @@ impl MemorySetInner {
         )); // ELF64 header 64bytes
         auxv.push(Aux::new(AuxType::PHNUM, ph_count as usize));
         auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
-        // // 设置动态链接
-        // if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf) {
-        //     auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
-        //     entry_point = interp_entry_point;
-        // } else {
-        auxv.push(Aux::new(AuxType::BASE, 0));
-        //}
+        // 设置动态链接
+        if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf) {
+            auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
+            entry_point = interp_entry_point;
+        } else {
+            auxv.push(Aux::new(AuxType::BASE, 0));
+        }
         auxv.push(Aux::new(AuxType::FLAGS, 0 as usize));
         auxv.push(Aux::new(
             AuxType::ENTRY,
@@ -511,12 +560,7 @@ impl MemorySetInner {
         //     MapAreaType::Brk,
         // ));
         // 返回 address空间,用户栈顶,入口地址
-        (
-            memory_set,
-            user_heap_bottom,
-            elf.header.pt2.entry_point() as usize,
-            auxv,
-        )
+        (memory_set, user_heap_bottom, entry_point, auxv)
     }
     fn map_elf(&mut self, elf: &ElfFile, offset: VirtAddr) -> (VirtPageNum, VirtAddr) {
         let elf_header = elf.header;

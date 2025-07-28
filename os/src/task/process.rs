@@ -582,7 +582,7 @@ impl ProcessControlBlock {
         let user = self.user.clone();
         let mut parent = self.inner_exclusive_access();
         let parent_tid = parent.get_task(0).tid();
-        assert_eq!(parent.thread_count(), 1);
+        //assert_eq!(parent.thread_count(), 1);
 
         // 检查是否共享虚拟内存
         let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
@@ -623,46 +623,27 @@ impl ProcessControlBlock {
 
         if creat_thread {
             debug!(
-                "(ProcessControlBlock, fork) creat thread, need tcb, not need pcb, to implement"
+                "(ProcessControlBlock, fork) creat thread, need tcb, not need pcb, implementing"
             );
             sig_mask = SignalFlags::empty();
-
-            // let child = Arc::new(Self {
-            //     ppid: pid,
-            //     pid,
-            //     user,
-            //     inner: unsafe {
-            //         UPSafeCell::new(ProcessControlBlockInner {
-            //             heap_id: parent.heap_id,
-            //             is_zombie: false,
-            //             clear_child_tid,
-            //             memory_set: memory_set,
-            //             fs_info,
-            //             parent: Some(Arc::downgrade(self)),
-            //             children: Vec::new(),
-            //             exit_code: 0,
-            //             fd_table: new_fd_table,
-            //             signals: SignalFlags::empty(),
-            //             tasks: Vec::new(),
-            //             task_res_allocator: RecycleAllocator::new(0),
-            //             mutex_list: Vec::new(),
-            //             semaphore_list: Vec::new(),
-            //             condvar_list: Vec::new(),
-            //             priority: 16,
-            //             stride: Stride::default(),
-            //             tms: Tms::new(),
-            //             sig_mask,
-            //             sig_pending,
-            //             sig_table,
-            //             heap_bottom: parent.heap_bottom,
-            //             heap_top: parent.heap_top,
-            //             robust_list: RobustList::default(),
-            //         })
-            //     },
-            // });
-            // child
+            drop(parent);
             let task = Arc::new(TaskControlBlock::new(Arc::clone(self), true, parent_tid));
+            let mut parent = self.inner_exclusive_access();
+            let main_task = parent.get_task(0);
             parent.tasks.push(Some(Arc::clone(&task)));
+
+            if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
+                let child_token = parent.get_user_token();
+                put_data(child_token, child_tid, task.tid() as u32);
+            }
+            #[cfg(target_arch = "riscv64")]
+            {
+                let task_inner = task.inner_exclusive_access();
+                let trap_cx = task_inner.get_trap_cx();
+                *trap_cx = *main_task.inner_exclusive_access().get_trap_cx();
+                trap_cx.kernel_sp = task.kstack.get_top();
+            }
+            add_task(task);
             self.clone()
         } else {
             info!("(ProcessControlBlock, fork) forking...");

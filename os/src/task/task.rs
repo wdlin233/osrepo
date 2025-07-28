@@ -89,30 +89,6 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
-    pub fn alloc_user_res(&self) {
-        let process = self.process.upgrade().unwrap();
-        let process_inner = process.inner_exclusive_access();
-        debug!("in alloc , give tid, tid is : {}", self.tid());
-        let ustack_bottom = ustack_bottom_from_tid(self.tid());
-        let ustack_top = ustack_bottom + USER_STACK_SIZE;
-        process_inner.memory_set.insert_framed_area(
-            ustack_bottom.into(),
-            ustack_top.into(),
-            MapPermission::default() | MapPermission::W,
-            MapAreaType::Stack,
-        );
-        #[cfg(target_arch = "riscv64")]
-        {
-            let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
-            let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-            process_inner.memory_set.insert_framed_area(
-                trap_cx_bottom.into(),
-                trap_cx_top.into(),
-                MapPermission::R | MapPermission::W,
-                MapAreaType::Trap,
-            );
-        }
-    }
     #[cfg(target_arch = "riscv64")]
     pub fn set_user_trap(&self) {
         let trap_cx_ppn = self.trap_cx_ppn(self.tid());
@@ -200,6 +176,30 @@ impl TaskControlBlock {
         new_task
     }
 
+    pub fn alloc_user_res(&self) {
+        let process = self.process.upgrade().unwrap();
+        let process_inner = process.inner_exclusive_access();
+        debug!("in alloc , give tid, tid is : {}", self.tid());
+        let ustack_bottom = ustack_bottom_from_tid(self.tid());
+        let ustack_top = ustack_bottom + USER_STACK_SIZE;
+        process_inner.memory_set.insert_framed_area(
+            ustack_bottom.into(),
+            ustack_top.into(),
+            MapPermission::default() | MapPermission::W,
+            MapAreaType::Stack,
+        );
+        #[cfg(target_arch = "riscv64")]
+        {
+            let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
+            let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+            process_inner.memory_set.insert_framed_area(
+                trap_cx_bottom.into(),
+                trap_cx_top.into(),
+                MapPermission::R | MapPermission::W,
+                MapAreaType::Trap,
+            );
+        }
+    }
     pub fn tid(&self) -> usize {
         let inner = self.inner_exclusive_access();
         let id = inner.tid;

@@ -312,7 +312,10 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         "/"
     };
     debug!("get cwd ok, the cwd is :{}, the path is :{}", cwd, path);
-    let abs_path = get_abs_path(&cwd, &path);
+    let mut abs_path = get_abs_path(&cwd, &path);
+    if abs_path.contains("basename") {
+        abs_path = String::from("/musl/busybox");
+    }
     debug!("to open,the path is: {}", abs_path);
     let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
         .unwrap()

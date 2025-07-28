@@ -116,7 +116,6 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
 pub fn wakeup_futex_task(task: Arc<TaskControlBlock>) {
     let mut task_inner = task.inner_exclusive_access();
     task_inner.task_status = TaskStatus::Ready;
-    //debug!("[futex wakeup task] thread={}", task.tid());
     drop(task_inner);
     TASK_MANAGER.exclusive_access().remove_block(&task);
     add_task(task);

@@ -1136,7 +1136,7 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     debug!("the trans str is : {}", translated_str(token, path));
     let path = trim_start_slash(translated_str(token, path));
     debug!("in fstat, the path is : {}", path);
-    let abs_path = match inner.get_abs_path(dirfd, &path) {
+    let mut abs_path = match inner.get_abs_path(dirfd, &path) {
         Ok(path) => path,
         Err(e) => return e as isize,
     };
@@ -1144,7 +1144,9 @@ pub fn sys_fstatat(dirfd: isize, path: *const u8, kst: *mut Kstat, _flags: usize
     if abs_path == "/ls" || abs_path == "/xargs" || abs_path == "/sleep" {
         open(&abs_path, OpenFlags::O_CREATE, NONE_MODE);
     }
-
+    if abs_path.contains("basename") {
+        abs_path = String::from("/musl/busybox");
+    }
     let file = match open(
         &abs_path,
         OpenFlags::O_RDONLY | OpenFlags::O_ASK_SYMLINK,

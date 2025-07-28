@@ -31,6 +31,7 @@ pub static FUTEX_QUEUE: Lazy<Mutex<BTreeMap<FutexKey, WaitQueue>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 pub fn futex_wait(key: FutexKey) -> isize {
+    debug!("in futex wait");
     let mut waitq = FUTEX_QUEUE.lock();
     let task = current_task().unwrap();
     if let Some(queue) = waitq.get_mut(&key) {
@@ -56,11 +57,7 @@ pub fn futex_wait(key: FutexKey) -> isize {
 }
 
 pub fn futex_wake_up(key: FutexKey, max_num: i32) -> usize {
-    // log::debug!(
-    //     "[sys_futex] futex wakeup thread,max_num={},key={:?}",
-    //     max_num,
-    //     key
-    // );
+    debug!("in futex wake up");
     let mut futex_queue = FUTEX_QUEUE.lock();
     let mut num = 0;
     if let Some(queue) = futex_queue.get_mut(&key) {
