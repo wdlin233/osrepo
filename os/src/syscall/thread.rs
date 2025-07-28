@@ -19,7 +19,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let task = current_task().unwrap();
     let process = task.process.upgrade().unwrap();
     // create a new thread
-    let new_task = Arc::new(TaskControlBlock::new(Arc::clone(&process), true, 0));
+    let new_task = Arc::new(TaskControlBlock::new(Arc::clone(&process), true, true, 0));
     // add new task to scheduler
     add_task(Arc::clone(&new_task));
     let new_task_inner = new_task.inner_exclusive_access();
