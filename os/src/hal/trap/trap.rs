@@ -1,6 +1,7 @@
 /// A part of loongarch kernel trap handling code.
+/// LoongArch64 eentry symbols and tlb refilling handling functions.
 #[naked]
-pub unsafe extern "C" fn kernel_trap_entry() {
+pub unsafe extern "C" fn __kernel_trap_entry() {
     core::arch::naked_asm!(
         "
     .balign 4096

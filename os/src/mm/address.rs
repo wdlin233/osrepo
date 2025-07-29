@@ -210,15 +210,9 @@ impl VirtPageNum {
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
-        #[cfg(target_arch = "riscv64")]
         for i in (0..3).rev() {
             idx[i] = vpn & 511; // 2^9-1
             vpn >>= 9;
-        }
-        #[cfg(target_arch = "loongarch64")]
-        for i in (0..3).rev() {
-            idx[i] = vpn & 2047; //2^11-1, 每页包含2048个页表项
-            vpn >>= 11;
         }
         idx
     }
@@ -270,13 +264,12 @@ impl PhysPageNum {
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = self.clone().into();
         let va = phys_to_virt!(pa.0);
-        // 每一个页有2048个项目 : 16kb/8 = 2048
-        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 2048) }
+        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 512) }
     }
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = self.clone().into();
         let va = phys_to_virt!(pa.0);
-        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 16 * 1024) }
+        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 4096) }
     }
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = self.clone().into();
@@ -287,13 +280,13 @@ impl PhysPageNum {
 impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        //let kernel_va = KernelAddr::from(pa).0;
-        debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
-        //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
-        //debug!("Kernel virtual address: {:#x}", kernel_va);
-        // No kernel address translation.
+        debug!("(PhysPageNum, bytes_array_mut) Getting bytes array for PhysAddr: {:#x}", pa.0);
+        #[cfg(target_arch = "riscv64")]
+        let va = pa.0;
+        #[cfg(target_arch = "loongarch64")]
+        let va = phys_to_virt!(pa.0);
         use crate::config::PAGE_SIZE;
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, PAGE_SIZE) }
+        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, PAGE_SIZE) }
     }
 }
 

@@ -2,7 +2,7 @@ use log::info;
 use loongarch64::{cpu, register::*};
 
 use crate::println;
-use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss, ebss, ekernel};
+use crate::hal::{stext, etext, srodata, erodata, sdata, edata, sbss_with_stack, ebss, ekernel};
 
 // 打印硬件的相关信息
 pub fn print_machine_info() {
@@ -136,7 +136,7 @@ pub fn kernel_layout() {
     );
     println!(
         ".bss            [{:#x}-{:#x})",
-        sbss as usize, ebss as usize
+        sbss_with_stack as usize, ebss as usize
     );
     println!("kernel end      [{:#x}]", ekernel as usize);
 }

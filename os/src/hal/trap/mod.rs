@@ -81,21 +81,19 @@ pub fn init() {
 
         // 设置普通异常和中断入口
         // 设置TLB重填异常地址
-        println!("kernel_trap_entry: {:#x}", trap::kernel_trap_entry as usize);
-        eentry::set_eentry(trap::kernel_trap_entry as usize);
-        // 设置重填tlb地址
-        tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize);
-        // 设置TLB的页面大小为16KiB
-        stlbps::set_ps(0xe);
-        // 设置TLB的页面大小为16KiB
-        tlbrehi::set_ps(0xe);
-        pwcl::set_ptbase(0xe);
-        pwcl::set_ptwidth(0xb); //16KiB的页大小
-        pwcl::set_dir1_base(25); //页目录表起始位置
-        pwcl::set_dir1_width(0xb); //页目录表宽度为11位
+        println!("(trap::init) __kernel_trap_entry: {:#x}", trap::__kernel_trap_entry as usize);
+        eentry::set_eentry(trap::__kernel_trap_entry as usize);
+        tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize); // 设置重填tlb地址    
+        stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
+        tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
-        pwch::set_dir3_base(36); //第三级页目录表
-        pwch::set_dir3_width(0xb); //页目录表宽度为11位
+        pwcl::set_ptbase(0xc); // 第零级页表的起始地址
+        pwcl::set_ptwidth(0x9); // 第零级页表的索引位数，4KiB的页大小，0xe->0xb, 0xc->0x9
+        pwcl::set_dir1_base(21); //页目录表起始位置 PAGE_SIZE_BITS + DIR_WIDTH = 12 + 9
+        pwcl::set_dir1_width(0x9); //页目录表宽度为9位
+
+        pwch::set_dir3_base(30); //第三级页目录表
+        pwch::set_dir3_width(0x9); //页目录表宽度为9位
 
         // make sure that the interrupt is enabled when first task returns user mode
         prmd::set_pie(true);
@@ -117,7 +115,7 @@ fn set_kernel_trap_entry() {
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(trap::kernel_trap_entry as usize);
+    eentry::set_eentry(trap::__kernel_trap_entry as usize);
 }
 /// set trap entry for traps happen in user mode
 #[inline]
