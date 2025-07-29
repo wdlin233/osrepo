@@ -87,13 +87,14 @@ pub fn init() {
         stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
         tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
+        pwcl::set_pte_width(8);
         pwcl::set_ptbase(0xc); // 第零级页表的起始地址
-        pwcl::set_ptwidth(0x9); // 第零级页表的索引位数，4KiB的页大小，0xe->0xb, 0xc->0x9
+        pwcl::set_ptwidth(9); // 第零级页表的索引位数，4KiB的页大小，0xe->0xb, 0xc->0x9
         pwcl::set_dir1_base(21); //页目录表起始位置 PAGE_SIZE_BITS + DIR_WIDTH = 12 + 9
-        pwcl::set_dir1_width(0x9); //页目录表宽度为9位
+        pwcl::set_dir1_width(9); //页目录表宽度为9位
 
         pwch::set_dir3_base(30); //第三级页目录表
-        pwch::set_dir3_width(0x9); //页目录表宽度为9位
+        pwch::set_dir3_width(9); //页目录表宽度为9位
 
         // make sure that the interrupt is enabled when first task returns user mode
         prmd::set_pie(true);

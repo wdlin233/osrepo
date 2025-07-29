@@ -85,7 +85,7 @@ pub const UART: usize = 0x9000_0000_1FE0_01E0;
 /// physical memory end address
 pub const MEMORY_END: usize = 0x8800_0000;
 #[cfg(target_arch = "loongarch64")]
-pub const MEMORY_END: usize = 0x9000_0000_1000_0000;
+pub const MEMORY_END: usize = 0x9000_0000_8800_0000;
 
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;

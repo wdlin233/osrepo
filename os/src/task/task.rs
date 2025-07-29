@@ -95,23 +95,36 @@ impl TaskControlBlock {
         debug!("in alloc , give tid, tid is : {}", self.tid());
         let ustack_bottom = ustack_bottom_from_tid(self.tid());
         let ustack_top = ustack_bottom + USER_STACK_SIZE;
+        info!(
+            "in alloc_user_res, ustack_bottom: {:#x}, ustack_top: {:#x}",
+            ustack_bottom, ustack_top
+        );
         process_inner.memory_set.insert_framed_area(
             ustack_bottom.into(),
             ustack_top.into(),
             MapPermission::default() | MapPermission::W,
             MapAreaType::Stack,
         );
-        #[cfg(target_arch = "riscv64")]
-        {
-            let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
-            let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-            process_inner.memory_set.insert_framed_area(
-                trap_cx_bottom.into(),
-                trap_cx_top.into(),
-                MapPermission::R | MapPermission::W,
-                MapAreaType::Trap,
-            );
-        }
+        info!(
+            "in alloc_user_res, ustack_bottom: {:#x}, ustack_top: {:#x}",
+            ustack_bottom, ustack_top
+        );
+        let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
+        let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+        #[cfg(target_arch = "riscv64")] 
+        process_inner.memory_set.insert_framed_area(
+            trap_cx_bottom.into(),
+            trap_cx_top.into(),
+            MapPermission::R | MapPermission::W,
+            MapAreaType::Trap,
+        );
+        #[cfg(target_arch = "loongarch64")] 
+        process_inner.memory_set.insert_framed_area(
+            trap_cx_bottom.into(),
+            trap_cx_top.into(),
+            MapPermission::W | MapPermission::NX,
+            MapAreaType::Trap,
+        );
     }
     #[cfg(target_arch = "riscv64")]
     pub fn set_user_trap(&self) {

@@ -18,7 +18,6 @@ use alloc::vec::Vec;
 pub struct MapArea {
     pub vpn_range: VPNRange,
     pub data_frames: BTreeMap<VirtPageNum, Arc<FrameTracker>>,
-    #[cfg(target_arch = "riscv64")]
     pub map_type: MapType,
     pub map_perm: MapPermission,
     pub area_type: MapAreaType,
@@ -37,7 +36,7 @@ impl MapArea {
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_type: MapType,
         map_perm: MapPermission,
         area_type: MapAreaType,
     ) -> Self {
@@ -52,7 +51,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type,
             map_perm,
             area_type,
@@ -65,7 +63,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type: another.map_type,
             map_perm: another.map_perm,
             area_type: another.area_type,
@@ -75,9 +72,7 @@ impl MapArea {
         }
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        //debug!("in map one");
         let ppn: PhysPageNum;
-        #[cfg(target_arch = "riscv64")]
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
@@ -89,12 +84,6 @@ impl MapArea {
                 self.data_frames.insert(vpn, Arc::new(frame));
             }
         }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            let frame = frame_alloc().unwrap();
-            ppn = frame.ppn;
-            self.data_frames.insert(vpn, Arc::new(frame)); //虚拟页号与物理页帧的对应关系
-        }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         let cow = if self.map_perm.contains(MapPermission::W) || self.area_type == MapAreaType::Elf
         {
@@ -102,16 +91,10 @@ impl MapArea {
         } else {
             false
         };
-        //debug!("in map area, map one, to page table map");
         page_table.map(vpn, ppn, pte_flags, cow);
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        #[cfg(target_arch = "riscv64")]
         if self.map_type == MapType::Framed {
-            self.data_frames.remove(&vpn);
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
             self.data_frames.remove(&vpn);
         }
         page_table.unmap(vpn);
@@ -150,7 +133,6 @@ impl MapArea {
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
-        #[cfg(target_arch = "riscv64")]
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
@@ -176,7 +158,7 @@ impl MapArea {
     pub fn new_mmap(
         start_va: VirtAddr,
         end_va: VirtAddr,
-        #[cfg(target_arch = "riscv64")] map_type: MapType,
+        map_type: MapType,
         map_perm: MapPermission,
         area_type: MapAreaType,
         file: Option<Arc<OSInode>>,
@@ -200,7 +182,6 @@ impl MapArea {
         Self {
             vpn_range: VPNRange::new(start_vpn, end_vpn),
             data_frames: BTreeMap::new(),
-            #[cfg(target_arch = "riscv64")]
             map_type: map_type,
             map_perm: map_perm,
             area_type: area_type,
@@ -219,10 +200,8 @@ impl MapArea {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
-/// Only framed type in LA64
 pub enum MapType {
     Identical,
     Framed,

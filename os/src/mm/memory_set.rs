@@ -8,9 +8,7 @@ use crate::config::{
 };
 use crate::fs::{root_inode, File, OSInode, OpenFlags, SEEK_CUR, SEEK_SET};
 use crate::mm::group::GROUP_SHARE;
-#[cfg(target_arch = "riscv64")]
-use crate::mm::map_area::MapType;
-use crate::mm::map_area::{MapArea, MapAreaType, MapPermission};
+use crate::mm::map_area::{MapType, MapArea, MapAreaType, MapPermission};
 use crate::mm::page_fault_handler::{
     cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
 };
@@ -260,13 +258,10 @@ impl MemorySetInner {
         permission: MapPermission,
         area_type: MapAreaType,
     ) {
-        #[cfg(target_arch = "riscv64")]
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, permission, area_type),
             None,
         );
-        #[cfg(target_arch = "loongarch64")]
-        self.push(MapArea::new(start_va, end_va, permission, area_type), None);
     }
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -301,7 +296,6 @@ impl MemorySetInner {
                 MapArea::new(
                     va.into(),
                     (va + size).into(),
-                    #[cfg(target_arch = "riscv64")]
                     MapType::Framed,
                     map_perm,
                     MapAreaType::Shm,
@@ -485,7 +479,7 @@ impl MemorySetInner {
         // guard page
         user_heap_bottom += PAGE_SIZE;
         info!(
-            "user heap bottom: {:#x}, {}",
+            "(from_elf) user heap bottom: {:#x}, {:#x}",
             user_heap_bottom, user_heap_bottom
         );
         let user_heap_top: usize = user_heap_bottom;
@@ -530,7 +524,7 @@ impl MemorySetInner {
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
+                debug!("(map_elf) start_va {:#x} end_va {:#x}", start_va.0, end_va.0);
                 if !has_found_header_va {
                     head_va = start_va.0;
                     has_found_header_va = true;
@@ -564,7 +558,6 @@ impl MemorySetInner {
                         map_perm |= MapPermission::NX;
                     }
                 }
-                #[cfg(target_arch = "riscv64")]
                 let map_area = MapArea::new(
                     start_va,
                     end_va,
@@ -572,9 +565,7 @@ impl MemorySetInner {
                     map_perm,
                     MapAreaType::Elf,
                 );
-                #[cfg(target_arch = "loongarch64")]
-                let map_area = MapArea::new(start_va, end_va, map_perm, MapAreaType::Elf);
-
+                
                 max_end_vpn = map_area.vpn_range.get_end();
                 debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
                 // A optimization for mapping data, keep aligned
@@ -895,7 +886,6 @@ impl MemorySetInner {
                     }
                 }
             } else {
-                #[cfg(target_arch = "riscv64")]
                 self.push(
                     MapArea::new_mmap(
                         VirtAddr::from(addr),
@@ -909,16 +899,6 @@ impl MemorySetInner {
                     ),
                     None,
                 );
-                #[cfg(target_arch = "loongarch64")]
-                self.push_lazily(MapArea::new_mmap(
-                    VirtAddr::from(addr),
-                    VirtAddr::from(addr + len),
-                    map_perm,
-                    MapAreaType::Mmap,
-                    file.clone(),
-                    off,
-                    flags,
-                ));
             }
             return addr;
         }
@@ -936,7 +916,6 @@ impl MemorySetInner {
             MapAreaType::Mmap
         };
         //self.insert_framed_area(VirtAddr::from(addr), VirtAddr::from(addr + len), map_perm, area_type);
-        #[cfg(target_arch = "riscv64")]
         self.push(
             MapArea::new_mmap(
                 VirtAddr::from(addr),
@@ -950,16 +929,6 @@ impl MemorySetInner {
             ),
             None,
         );
-        #[cfg(target_arch = "loongarch64")]
-        self.push_lazily(MapArea::new_mmap(
-            VirtAddr::from(addr),
-            VirtAddr::from(addr + len),
-            map_perm,
-            area_type,
-            file,
-            off,
-            flags,
-        ));
         addr
     }
 

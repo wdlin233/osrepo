@@ -20,7 +20,7 @@ pub use address::{
     copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr, VirtPageNum,
 };
-pub use frame_allocator::{frame_alloc, frame_alloc_contiguous, frame_dealloc, FrameTracker};
+pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 #[cfg(target_arch = "riscv64")]
 pub use map_area::MapType;
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
