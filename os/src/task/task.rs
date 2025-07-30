@@ -111,18 +111,10 @@ impl TaskControlBlock {
         );
         let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
         let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-        #[cfg(target_arch = "riscv64")] 
         process_inner.memory_set.insert_framed_area(
             trap_cx_bottom.into(),
             trap_cx_top.into(),
             MapPermission::R | MapPermission::W,
-            MapAreaType::Trap,
-        );
-        #[cfg(target_arch = "loongarch64")] 
-        process_inner.memory_set.insert_framed_area(
-            trap_cx_bottom.into(),
-            trap_cx_top.into(),
-            MapPermission::W | MapPermission::NX,
             MapAreaType::Trap,
         );
     }

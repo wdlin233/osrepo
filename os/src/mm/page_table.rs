@@ -2,7 +2,7 @@
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 #[cfg(target_arch = "loongarch64")]
 use crate::config::{PAGE_SIZE_BITS, PALEN};
-use crate::mm::MemorySet;
+use crate::mm::{MapPermission, MemorySet};
 use crate::timer::get_time;
 use crate::{print, println};
 use alloc::string::String;
@@ -63,11 +63,13 @@ bitflags! {
         const RPLV = 1 << 63;
     }
 }
-#[cfg(target_arch = "loongarch64")]
+
 impl PTEFlags {
-    #[allow(unused)]
     fn default() -> Self {
-        PTEFlags::V | PTEFlags::MATL | PTEFlags::P | PTEFlags::W
+        #[cfg(target_arch = "riscv64")]
+        return PTEFlags::V;
+        #[cfg(target_arch = "loongarch64")]
+        return PTEFlags::V | PTEFlags::MATL | PTEFlags::P | PTEFlags::W;
     }
 }
 
@@ -341,7 +343,7 @@ impl PageTable {
     }
     /// set the map between virtual page number and physical page number
     #[allow(unused)]
-    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags, is_cow: bool) {
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: MapPermission, is_cow: bool) {
         let pte = self.find_pte_create(vpn).unwrap();
         // info!(
         //     "map vpn {:?} to ppn {:?} with flags {:?}",
@@ -351,14 +353,14 @@ impl PageTable {
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         #[cfg(target_arch = "riscv64")]
         {
-            *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+            *pte = PageTableEntry::new(ppn, PTEFlags::from(flags) | PTEFlags::V);
             if is_cow {
                 pte.set_cow();
             }
         }
         #[cfg(target_arch = "loongarch64")]
         {
-            *pte = PageTableEntry::new(ppn, flags | PTEFlags::V | PTEFlags::MATL | PTEFlags::P);
+            *pte = PageTableEntry::new(ppn, PTEFlags::from(flags) | PTEFlags::V | PTEFlags::MATL | PTEFlags::P);
             if is_cow {
                 pte.set_cow();
             }
@@ -394,10 +396,10 @@ impl PageTable {
         #[cfg(target_arch = "loongarch64")]
         return self.root_ppn.0;
     }
-    pub fn set_map_flags(&mut self, vpn: VirtPageNum, flags: PTEFlags) {
+    pub fn set_map_flags(&mut self, vpn: VirtPageNum, flags: MapPermission) {
         self.find_pte_create(vpn)
             .unwrap()
-            .set_map_flags(flags | PTEFlags::V);
+            .set_map_flags(PTEFlags::from(flags) | PTEFlags::V);
     }
     pub fn set_cow(&mut self, vpn: VirtPageNum) {
         self.find_pte_create(vpn).unwrap().set_cow();

@@ -74,24 +74,23 @@ pub fn sys_shmget(key: i32, size: usize, shmflag: i32) -> isize {
 }
 
 pub fn sys_shmat(shmid: i32, shmaddr: usize, shmflag: i32) -> isize {
-    // let mut permission = MapPermission::U | MapPermission::R;
-    // if shmflag == 0 {
-    //     permission |= MapPermission::W | MapPermission::X
-    // } else {
-    //     let shmflg = ShmFlags::from_bits(shmflag).unwrap();
-    //     if shmflg.contains(ShmFlags::SHM_EXEC) {
-    //         permission |= MapPermission::X;
-    //     }
-    //     if !shmflg.contains(ShmFlags::SHM_RDONLY) {
-    //         permission |= MapPermission::W;
-    //     }
-    // }
+    let mut permission = MapPermission::U | MapPermission::R;
+    if shmflag == 0 {
+        permission |= MapPermission::W | MapPermission::X
+    } else {
+        let shmflg = ShmFlags::from_bits(shmflag).unwrap();
+        if shmflg.contains(ShmFlags::SHM_EXEC) {
+            permission |= MapPermission::X;
+        }
+        if !shmflg.contains(ShmFlags::SHM_RDONLY) {
+            permission |= MapPermission::W;
+        }
+    }
 
-    // match shmid {
-    //     key if key < 0 => SysErrNo::EINVAL as isize,
-    //     _ => shm_attach(shmid as usize, shmaddr, permission),
-    // }
-    unimplemented!("shmat syscall");
+    match shmid {
+        key if key < 0 => SysErrNo::EINVAL as isize,
+        _ => shm_attach(shmid as usize, shmaddr, permission),
+    }
 }
 
 pub fn sys_shmctl(shmid: i32, cmd: i32, _buf: usize) -> isize {
@@ -154,16 +153,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
         Ok(n) => n,
         Err(_) => return SysErrNo::EBADF as isize, //?
     };
-    #[cfg(target_arch = "riscv64")]
     if (permission.contains(MapPermission::R) && !file.readable())
-        || (permission.contains(MapPermission::W) && !file.writable())
-        || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
-    {
-        //如果需要读/写/执行方式映射，必须要求文件可读
-        return SysErrNo::EACCES as isize;
-    }
-    #[cfg(target_arch = "loongarch64")]
-    if (permission.contains(MapPermission::NR) && file.readable())
         || (permission.contains(MapPermission::W) && !file.writable())
         || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
     {

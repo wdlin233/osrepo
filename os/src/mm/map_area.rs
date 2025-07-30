@@ -1,6 +1,3 @@
-#[cfg(target_arch = "loongarch64")]
-use core::iter::Map;
-
 use crate::{
     config::PAGE_SIZE,
     fs::OSInode,
@@ -84,7 +81,7 @@ impl MapArea {
                 self.data_frames.insert(vpn, Arc::new(frame));
             }
         }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        let pte_flags = self.map_perm.clone();
         let cow = if self.map_perm.contains(MapPermission::W) || self.area_type == MapAreaType::Elf
         {
             true
@@ -100,9 +97,8 @@ impl MapArea {
         page_table.unmap(vpn);
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
-        debug!("in map area map");
+        debug!("(MapArea, map) mapping area");
         for vpn in self.vpn_range {
-            ///debug!("to map one");
             self.map_one(page_table, vpn);
         }
     }
@@ -152,8 +148,8 @@ impl MapArea {
             current_vpn.step();
         }
     }
-    pub fn flags(&self) -> PTEFlags {
-        PTEFlags::from_bits(self.map_perm.bits).unwrap()
+    pub fn flags(&self) -> MapPermission {
+        self.map_perm.clone()
     }
     pub fn new_mmap(
         start_va: VirtAddr,
@@ -193,7 +189,7 @@ impl MapArea {
 
     pub fn map_given_frames(&mut self, page_table: &mut PageTable, frames: Vec<Arc<FrameTracker>>) {
         for (vpn, frame) in self.vpn_range.clone().into_iter().zip(frames.into_iter()) {
-            let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+            let pte_flags = self.map_perm.clone();
             page_table.map(vpn, frame.ppn, pte_flags, false);
             self.data_frames.insert(vpn, frame);
         }
@@ -207,7 +203,6 @@ pub enum MapType {
     Framed,
 }
 
-#[cfg(target_arch = "riscv64")]
 bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
     pub struct MapPermission: u8 {
@@ -222,32 +217,52 @@ bitflags! {
     }
 }
 
-///  PTEFlags 的一个子集
-/// 主要含有几个读写标志位和存在位，对于其它控制位
-/// 在后面的映射中将会固定为同一种
-/// 特权等级（PLV），2 比特。该页表项对应的特权等级。
-/// 当 RPLV=0 时，该页表项可以被任何特权等级不低于 PLV 的程序访问；
-/// 当 RPLV=1 时，该页表项仅可以被特权等级等于 PLV 的程序访问
-/// 受限特权等级使能（RPLV），1 比特。页表项是否仅被对应特权等级的程序访问的控制位。
-#[cfg(target_arch = "loongarch64")]
-bitflags! {
-    pub struct MapPermission: usize {
-        const NX = 1 << 62;
-        const NR = 1 << 61;
-        const W = 1 << 8;
-        const PLVL = 1 << 2;
-        const PLVH = 1 << 3;
-        const RPLV = 1 << 63;
+impl Default for MapPermission {
+    fn default() -> Self {
+        return MapPermission::R | MapPermission::U;
     }
 }
 
-impl Default for MapPermission {
-    // alloc_user_res
-    fn default() -> Self {
+impl From<MapPermission> for PTEFlags {
+    fn from(perm: MapPermission) -> Self {
         #[cfg(target_arch = "riscv64")]
-        return MapPermission::R | MapPermission::U;
+        if perm.is_empty() {
+            return PTEFlags::empty();
+        } else {
+            let mut res = PTEFlags::V;
+            if perm.contains(MapPermission::R) {
+                res |= PTEFlags::R | PTEFlags::A;
+            }
+            if perm.contains(MapPermission::W) {
+                res |= PTEFlags::W | PTEFlags::D;
+            }
+            if perm.contains(MapPermission::X) {
+                res |= PTEFlags::X;
+            }
+            if perm.contains(MapPermission::U) {
+                res |= PTEFlags::U;
+            }
+            return res;
+        }
         #[cfg(target_arch = "loongarch64")]
-        return MapPermission::PLVL | MapPermission::PLVH; // as PLV3, user mode
+        if perm.is_empty() {
+            return PTEFlags::empty();
+        } else {
+            let mut res = PTEFlags::V | PTEFlags::MATL | PTEFlags::P;
+            if !perm.contains(MapPermission::R) {
+                res |= PTEFlags::NR;
+            }
+            if perm.contains(MapPermission::W) {
+                res |= PTEFlags::W | PTEFlags::D;
+            }
+            if !perm.contains(MapPermission::X) {
+                res |= PTEFlags::NX;
+            }
+            if perm.contains(MapPermission::U) {
+                res |= PTEFlags::PLVL | PTEFlags::PLVH; // as PLV3, user mode
+            }
+            return res;
+        }
     }
 }
 
@@ -288,26 +303,5 @@ impl MmapFile {
 
     pub fn new(file: Option<Arc<OSInode>>, offset: usize) -> Self {
         Self { file, offset }
-    }
-}
-
-// RV passed, compatible with LA
-impl MapPermission {
-    /// Convert from port to MapPermission
-    pub fn from_port(port: usize) -> Self {
-        #[cfg(target_arch = "riscv64")]
-        let bits = (port as u8) << 1;
-        #[cfg(target_arch = "loongarch64")]
-        let bits = port << 1;
-        MapPermission::from_bits(bits).unwrap()
-    }
-
-    /// Add user permission for MapPermission
-    /// LA, 保留现有权限，添加用户模式所需的 PLV3 组合位
-    pub fn with_user(self) -> Self {
-        #[cfg(target_arch = "riscv64")]
-        return self | MapPermission::U;
-        #[cfg(target_arch = "loongarch64")]
-        return self | MapPermission::PLVL | MapPermission::PLVH;
     }
 }
