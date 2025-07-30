@@ -71,7 +71,6 @@ pub fn run_tasks() {
             //debug!("in processor run task, fetch task ok");
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
-            #[cfg(target_arch = "riscv64")]
             task.process
                 .upgrade()
                 .unwrap()
@@ -110,6 +109,7 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
+            info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

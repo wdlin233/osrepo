@@ -238,11 +238,11 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
     unsafe {
         extern "C" {
-            fn initproc_rv_start();
-            fn initproc_rv_end();
+            fn initproc_start();
+            fn initproc_end();
         }
-        let start = initproc_rv_start as usize as *const usize as *const u8;
-        let len = initproc_rv_end as usize - initproc_rv_start as usize;
+        let start = initproc_start as usize as *const usize as *const u8;
+        let len = initproc_end as usize - initproc_start as usize;
         let data = core::slice::from_raw_parts(start, len);
         ProcessControlBlock::new(data)
     }
