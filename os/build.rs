@@ -10,7 +10,7 @@ fn gen_linker_script() -> Result<()> {
     let (output_arch, kernel_base) = if target_arch.contains("riscv64") {
         ("riscv", "0x80200000") // OpenSBI
     } else if target_arch.contains("loongarch64") {
-        ("loongarch64", "0x9000000082000000")
+        ("loongarch64", "0x82000000")
     } else {
         (target_arch.as_str(), "0")
     };

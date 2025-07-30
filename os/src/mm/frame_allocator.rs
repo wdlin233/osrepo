@@ -107,8 +107,8 @@ pub fn init_frame_allocator() {
     );
     #[cfg(target_arch = "loongarch64")]
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(virt_to_phys!(ekernel as usize)).ceil(),
-        PhysAddr::from(virt_to_phys!(MEMORY_END)).floor(),
+        PhysAddr::from(ekernel as usize).ceil(),
+        PhysAddr::from(MEMORY_END).floor(),
     );
 }
 

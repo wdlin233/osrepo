@@ -21,12 +21,10 @@ pub use address::{
     StepByOne, VirtAddr, VirtPageNum,
 };
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
-#[cfg(target_arch = "riscv64")]
-pub use map_area::MapType;
 pub use map_area::{MapArea, MapAreaType, MapPermission, MmapFile};
 #[cfg(target_arch = "riscv64")]
-pub use memory_set::{kernel_token, remap_test, KERNEL_SPACE};
-pub use memory_set::{MemorySet, MemorySetInner};
+pub use memory_set::{remap_test};
+pub use memory_set::{MemorySet, MemorySetInner, KERNEL_SPACE, kernel_token};
 use page_table::PTEFlags;
 pub use page_table::{
     flush_tlb, put_data, safe_translated_byte_buffer, translated_byte_buffer, translated_ref,
@@ -42,7 +40,6 @@ pub fn init() {
     frame_allocator::init_frame_allocator();
     info!("Frame allocator initialized");
 
-    #[cfg(target_arch = "riscv64")]
     KERNEL_SPACE.exclusive_access().activate();
     #[cfg(target_arch = "riscv64")]
     remap_test();

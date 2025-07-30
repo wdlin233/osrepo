@@ -79,13 +79,13 @@ pub const USER_HEAP_SIZE: usize = 0x10_0000;
 
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
-pub const UART: usize = 0x9000_0000_1FE0_01E0;
+pub const UART: usize = 0x1FE0_01E0;
 
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 /// physical memory end address
 pub const MEMORY_END: usize = 0x8800_0000;
-#[cfg(target_arch = "loongarch64")]
-pub const MEMORY_END: usize = 0x9000_0000_8800_0000;
+// #[cfg(target_arch = "loongarch64")]
+// pub const MEMORY_END: usize = 0x9000_0000_8800_0000;
 
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;
