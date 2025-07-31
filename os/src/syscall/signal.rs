@@ -3,7 +3,7 @@ use log::debug;
 use super::options::SignalMaskFlag;
 use crate::{
     mm::{translated_ref, translated_refmut},
-    signal::{KSigAction, SigAction, SigInfo, SignalFlags, SIG_MAX_NUM},
+    signal::{send_signal_to_thread, KSigAction, SigAction, SigInfo, SignalFlags, SIG_MAX_NUM},
     task::{current_process, exit_current_and_run_next},
     timer::TimeSpec,
     utils::SysErrNo,
@@ -75,4 +75,10 @@ pub fn sys_sigtimedwait(
 ) -> isize {
     // fake implementation
     return 0;
+}
+
+pub fn sys_tkill(tid: usize, signo: usize) -> isize {
+    let sig = SignalFlags::from_sig(signo);
+    send_signal_to_thread(tid, sig);
+    0
 }

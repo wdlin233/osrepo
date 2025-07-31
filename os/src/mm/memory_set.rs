@@ -120,9 +120,9 @@ impl MemorySet {
         Self::new(MemorySetInner::new_kernel())
     }
     #[inline(always)]
-    pub fn from_elf(elf_data: &[u8], heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8], heap_id: usize, cwd: &str) -> (Self, usize, usize, Vec<Aux>) {
         let (memory_set, user_heap_bottom, entry_point, auxv) =
-            MemorySetInner::from_elf(elf_data, heap_id);
+            MemorySetInner::from_elf(elf_data, heap_id, cwd);
         (Self::new(memory_set), user_heap_bottom, entry_point, auxv)
     }
     #[inline(always)]
@@ -210,8 +210,8 @@ impl MemorySet {
         self.get_mut().page_table.translate_va(va)
     }
     #[inline(always)]
-    pub fn load_dl_interp_if_needed(&mut self, elf: &ElfFile) -> Option<usize> {
-        self.get_mut().load_dl_interp_if_needed(elf)
+    pub fn load_dl_interp_if_needed(&mut self, elf: &ElfFile, cwd: &str) -> Option<usize> {
+        self.get_mut().load_dl_interp_if_needed(elf, cwd)
     }
     #[inline(always)]
     pub fn shm(
@@ -300,7 +300,7 @@ impl MemorySetInner {
         map_area.map_given_frames(&mut self.page_table, frames);
         self.areas.push(map_area);
     }
-    fn load_dl_interp_if_needed(&mut self, elf: &ElfFile) -> Option<usize> {
+    fn load_dl_interp_if_needed(&mut self, elf: &ElfFile, cwd: &str) -> Option<usize> {
         let elf_header = elf.header;
         let ph_count = elf_header.pt2.ph_count();
 
@@ -319,15 +319,20 @@ impl MemorySetInner {
             let mut interp = String::from_utf8(section.raw_data(&elf).to_vec()).unwrap();
             interp = interp.strip_suffix("\0").unwrap_or(&interp).to_string();
             debug!("[load_dl] interp {}", interp);
+            let pre: &str = if cwd.contains("musl") {
+                "/musl"
+            } else {
+                "/glibc"
+            };
 
-            let interp = map_dynamic_link_file(&interp);
+            let interp = map_dynamic_link_file(&interp, pre);
 
             // log::info!("interp {}", interp);
 
-            let interp_inode = open(&interp, OpenFlags::O_RDONLY, NONE_MODE)
-                .unwrap()
-                .file()
-                .ok();
+            let interp_inode = match open(&interp, OpenFlags::O_RDONLY, NONE_MODE) {
+                Ok(f) => f.file().ok(),
+                Err(e) => return None,
+            };
             let interp_file = interp_inode.unwrap();
             let interp_elf_data = interp_file.inode.read_all().unwrap();
             let interp_elf = xmas_elf::ElfFile::new(&interp_elf_data).unwrap();
@@ -481,7 +486,7 @@ impl MemorySetInner {
 
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp_base and entry point.
-    pub fn from_elf(elf_data: &[u8], _heap_id: usize) -> (Self, usize, usize, Vec<Aux>) {
+    pub fn from_elf(elf_data: &[u8], _heap_id: usize, cwd: &str) -> (Self, usize, usize, Vec<Aux>) {
         let mut memory_set = Self::new_bare();
         let mut auxv = Vec::new();
         #[cfg(target_arch = "riscv64")]
@@ -503,7 +508,7 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::PHNUM, ph_count as usize));
         auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
         // 设置动态链接
-        if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf) {
+        if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf, cwd) {
             auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
             entry_point = interp_entry_point;
         } else {
@@ -574,8 +579,9 @@ impl MemorySetInner {
         for i in 0..ph_count {
             let ph = elf.program_header(i).unwrap();
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-                let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-                let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+                let start_va: VirtAddr = (ph.virtual_addr() as usize + offset.0).into();
+                let end_va: VirtAddr =
+                    ((ph.virtual_addr() + ph.mem_size()) as usize + offset.0).into();
                 debug!("start_va {:x} end_va {:x}", start_va.0, end_va.0);
                 if !has_found_header_va {
                     head_va = start_va.0;
@@ -669,44 +675,7 @@ impl MemorySetInner {
                 memory_set.push_with_given_frames(new_area, frames);
                 continue;
             }
-            // if area.area_type == MapAreaType::Stack {
-            //     continue;
-            // }
-            // if area.area_type == MapAreaType::Mmap
-            //     && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
-            // {
-            //     GROUP_SHARE.lock().add_area(new_area.groupid);
-            // }
-            // // Mmap和brk是lazy allocation
-            //if area.area_type == MapAreaType::Mmap || area.area_type == MapAreaType::Brk {
-            // if area.area_type == MapAreaType::Brk {
-            //     //if area.area_type == MapAreaType::Mmap {
-            //     //已经分配且独占/被写过的部分以及读共享部分按cow处理
-            //     //其余是未分配部分，直接clone即可
-            //     if area.mmap_flags.contains(MmapFlags::MAP_SHARED) {
-            //         let frames = area.data_frames.values().cloned().collect();
-            //         memory_set.push_with_given_frames(new_area, frames);
-            //         continue;
-            //     }
-            //     new_area.data_frames = area.data_frames.clone();
-            //     for (vpn, _) in area.data_frames.iter() {
-            //         let vpn = *vpn;
-            //         let pte = user_space.get_mut().page_table.translate(vpn).unwrap();
-            //         let mut pte_flags = pte.flags();
-            //         let src_ppn = pte.ppn();
-            //         //清空可写位，设置COW位
-            //         let need_cow = pte_flags.contains(PTEFlags::W) | pte.is_cow();
-            //         pte_flags &= !PTEFlags::W;
-            //         user_space.get_mut().page_table.set_flags(vpn, pte_flags);
-            //         if need_cow {
-            //             user_space.get_mut().page_table.set_cow(vpn);
-            //         }
-            //         // 设置新的pagetable
-            //         memory_set.page_table.map(vpn, src_ppn, pte_flags, need_cow);
-            //     }
-            //     memory_set.push_lazily(new_area);
-            //     continue;
-            // }
+
             memory_set.push(new_area, None);
             debug!("area type is : {:?}", area.area_type);
             for vpn in area.vpn_range {
@@ -1285,7 +1254,7 @@ impl MemorySetInner {
         // }
     }
     pub fn cow_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
-        info!("cow_page_fault: vpn = {:#x}", vpn.0);
+        //info!("cow_page_fault: vpn = {:#x}", vpn.0);
         #[cfg(target_arch = "riscv64")]
         {
             if scause == Trap::Exception(Exception::LoadPageFault)

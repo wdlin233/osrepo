@@ -455,18 +455,18 @@ pub fn is_dynamic_link_file(path: &str) -> bool {
     path.ends_with(".so") || path.contains(".so.")
 }
 
-pub fn map_dynamic_link_file(path: &str) -> &str {
-    if !DYNAMIC_PATH.contains(path) {
-        let (_, file_name) = path.rsplit_once("/").unwrap();
-        // log::info!("[map_dynamic] file_name={}", file_name);
-        for prefix in DYNAMIC_PREFIX.iter() {
-            let full_path = format!("{}{}", prefix, file_name);
-            // log::info!("[map_dynamic] full_path={}", full_path);
-            if DYNAMIC_PATH.contains(full_path.as_str()) {
-                return full_path.leak();
-            }
-        }
+pub fn map_dynamic_link_file<'a>(path: &'a str, prefix: &'a str) -> &'a str {
+    //if !DYNAMIC_PATH.contains(path) {
+    //let (_, file_name) = path.rsplit_once("/").unwrap();
+    // log::info!("[map_dynamic] file_name={}", file_name);
+
+    //let full_path = format!("{}{}", prefix, file_name);
+    let full_path = format!("{}{}", prefix, path);
+    debug!("[map_dynamic] full_path={}", full_path);
+    if DYNAMIC_PATH.contains(full_path.as_str()) {
+        return full_path.leak();
     }
+    //}
     path
 }
 
@@ -478,12 +478,12 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
         debug!("find device ok");
         return Ok(FileClass::Abs(device));
     }
-    // 如果是动态链接文件,转换路径
+    ////如果是动态链接文件,转换路径
     // if is_dynamic_link_file(abs_path) {
     //     abs_path = map_dynamic_link_file(abs_path);
     //     debug!("dynamic path={}", abs_path);
     // }
-    // debug!("open file: {}, flags: {:?}", abs_path, flags);
+    debug!("open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {
@@ -534,81 +534,92 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
 }
 
 static DYNAMIC_PREFIX: Lazy<Vec<&'static str>> =
-    Lazy::new(|| vec!["/lib/", "/lib/glibc/", "/lib/musl/"]);
+    Lazy::new(|| vec!["/lib/", "/glibc/lib/", "/musl/lib"]);
 
 static DYNAMIC_PATH: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
-        // lib/
-        "/lib/tls_get_new-dtv_dso.so",
-        "/lib/tls_align_dso.so",
-        "/lib/tls_init_dso.so",
-        "/lib/ld-musl-riscv64-sf.so.1",
-        "/lib/path.py",
-        "/lib/dlopen_dso.so",
-        // lib/musl/
-        "/lib/musllibc.so",
-        // lib/glibc/
-        "/lib/glibc/libutil-2.31.so",
-        "/lib/glibc/libpthread-2.31.so",
-        "/lib/glibc/libgomp.so.1.0.0",
-        "/lib/glibc/libSegFault.so",
-        "/lib/glibc/libdl.so",
-        "/lib/glibc/libnss_dns.so.2",
-        "/lib/glibc/libatomic.so.1",
-        "/lib/glibc/libthread_db.so.1",
-        "/lib/glibc/ld-linux-riscv64-lp64d.so.1",
-        "/lib/glibc/libm.so.6",
-        "/lib/glibc/libm-2.31.so",
-        "/lib/glibc/librt-2.31.so",
-        "/lib/glibc/libnss_dns-2.31.so",
-        "/lib/glibc/libutil.so.1",
-        "/lib/glibc/libc.so",
-        "/lib/glibc/libdl.so.2",
-        "/lib/glibc/libnss_files.so.2",
-        "/lib/glibc/libnss_dns.so",
-        "/lib/glibc/libnss_nisplus.so",
-        "/lib/glibc/libresolv-2.31.so",
-        "/lib/glibc/libnss_nis-2.31.so",
-        "/lib/glibc/libBrokenLocale-2.31.so",
-        "/lib/glibc/ld-2.31.so",
-        "/lib/glibc/libnss_nis.so",
-        "/lib/glibc/libnsl.so",
-        "/lib/glibc/libresolv.so",
-        "/lib/glibc/librt.so.1",
-        "/lib/glibc/libpcprofile.so",
-        "/lib/glibc/librt.so",
-        "/lib/glibc/libnss_hesiod.so",
-        "/lib/glibc/libnsl.so.1",
-        "/lib/glibc/libdl-2.31.so",
-        "/lib/glibc/libc-2.31.so",
-        "/lib/glibc/libanl.so",
-        "/lib/glibc/libBrokenLocale.so",
-        "/lib/glibc/libnss_nis.so.2",
-        "/lib/glibc/libthread_db-1.0.so",
-        "/lib/glibc/libmemusage.so",
-        "/lib/glibc/libc.so.6",
-        "/lib/glibc/libBrokenLocale.so.1",
-        "/lib/glibc/libnss_nisplus.so.2",
-        "/lib/glibc/libnss_compat-2.31.so",
-        "/lib/glibc/libnss_hesiod.so.2",
-        "/lib/glibc/libnss_compat.so.2",
-        "/lib/glibc/libgcc_s.so.1",
-        "/lib/glibc/libatomic.so.1.2.0",
-        "/lib/glibc/libm.so",
-        "/lib/glibc/libanl-2.31.so",
-        "/lib/glibc/libnss_nisplus-2.31.so",
-        "/lib/glibc/libresolv.so.2",
-        "/lib/glibc/libnss_files.so",
-        "/lib/glibc/libthread_db.so",
-        "/lib/glibc/libpthread.so.0",
-        "/lib/glibc/libnss_compat.so",
-        "/lib/glibc/libanl.so.1",
-        "/lib/glibc/libgomp.so.1",
-        "/lib/glibc/libpthread.so",
-        "/lib/glibc/libnss_hesiod-2.31.so",
-        "/lib/glibc/libnsl-2.31.so",
-        "/lib/glibc/libnss_files-2.31.so",
-        "/lib/glibc/libutil.so",
+        // glibc/lib/
+        "/glibc/lib/dlopen_dso.so",
+        "/glibc/lib/ld-linux-riscv64-lp64d.so.1",
+        "/glibc/lib/libc.so",
+        "/glibc/lib/libm.so",
+        "/glibc/lib/tls_align_dso.so",
+        "/glibc/lib/tls_get_new-dtv_dso.so",
+        "/glibc/lib/tls_init_dso.so",
+        // musl/lib/
+        "/musl/lib/dlopen_dso.so",
+        "/musl/lib/libc.so",
+        "/musl/lib/tls_align_dso.so",
+        "/musl/lib/tls_get_new-dtv_dso.so",
+        "/musl/lib/tls_init_dso.so",
+        // // lib/
+        // "/lib/tls_get_new-dtv_dso.so",
+        // "/lib/tls_align_dso.so",
+        // "/lib/tls_init_dso.so",
+        // "/lib/ld-musl-riscv64-sf.so.1",
+        // "/lib/path.py",
+        // // lib/musl/
+        // "/lib/musllibc.so",
+        // // lib/glibc/
+        // "/lib/glibc/libutil-2.31.so",
+        // "/lib/glibc/libpthread-2.31.so",
+        // "/lib/glibc/libgomp.so.1.0.0",
+        // "/lib/glibc/libSegFault.so",
+        // "/lib/glibc/libdl.so",
+        // "/lib/glibc/libnss_dns.so.2",
+        // "/lib/glibc/libatomic.so.1",
+        // "/lib/glibc/libthread_db.so.1",
+        // "/lib/glibc/libm.so.6",
+        // "/lib/glibc/libm-2.31.so",
+        // "/lib/glibc/librt-2.31.so",
+        // "/lib/glibc/libnss_dns-2.31.so",
+        // "/lib/glibc/libutil.so.1",
+        // "/lib/glibc/libdl.so.2",
+        // "/lib/glibc/libnss_files.so.2",
+        // "/lib/glibc/libnss_dns.so",
+        // "/lib/glibc/libnss_nisplus.so",
+        // "/lib/glibc/libresolv-2.31.so",
+        // "/lib/glibc/libnss_nis-2.31.so",
+        // "/lib/glibc/libBrokenLocale-2.31.so",
+        // "/lib/glibc/ld-2.31.so",
+        // "/lib/glibc/libnss_nis.so",
+        // "/lib/glibc/libnsl.so",
+        // "/lib/glibc/libresolv.so",
+        // "/lib/glibc/librt.so.1",
+        // "/lib/glibc/libpcprofile.so",
+        // "/lib/glibc/librt.so",
+        // "/lib/glibc/libnss_hesiod.so",
+        // "/lib/glibc/libnsl.so.1",
+        // "/lib/glibc/libdl-2.31.so",
+        // "/lib/glibc/libc-2.31.so",
+        // "/lib/glibc/libanl.so",
+        // "/lib/glibc/libBrokenLocale.so",
+        // "/lib/glibc/libnss_nis.so.2",
+        // "/lib/glibc/libthread_db-1.0.so",
+        // "/lib/glibc/libmemusage.so",
+        // "/lib/glibc/libc.so.6",
+        // "/lib/glibc/libBrokenLocale.so.1",
+        // "/lib/glibc/libnss_nisplus.so.2",
+        // "/lib/glibc/libnss_compat-2.31.so",
+        // "/lib/glibc/libnss_hesiod.so.2",
+        // "/lib/glibc/libnss_compat.so.2",
+        // "/lib/glibc/libgcc_s.so.1",
+        // "/lib/glibc/libatomic.so.1.2.0",
+        // "/lib/glibc/libm.so",
+        // "/lib/glibc/libanl-2.31.so",
+        // "/lib/glibc/libnss_nisplus-2.31.so",
+        // "/lib/glibc/libresolv.so.2",
+        // "/lib/glibc/libnss_files.so",
+        // "/lib/glibc/libthread_db.so",
+        // "/lib/glibc/libpthread.so.0",
+        // "/lib/glibc/libnss_compat.so",
+        // "/lib/glibc/libanl.so.1",
+        // "/lib/glibc/libgomp.so.1",
+        // "/lib/glibc/libpthread.so",
+        // "/lib/glibc/libnss_hesiod-2.31.so",
+        // "/lib/glibc/libnsl-2.31.so",
+        // "/lib/glibc/libnss_files-2.31.so",
+        // "/lib/glibc/libutil.so",
     ]
     .into_iter()
     .collect()

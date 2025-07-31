@@ -77,7 +77,7 @@ pub const USER_HEAP_BOTTOM: usize = 0x100_0000;
 ///heap size
 pub const USER_HEAP_SIZE: usize = 0x10_0000;
 
-pub const DL_INTERP_OFFSET: usize = 0x15_0000_0000;
+pub const DL_INTERP_OFFSET: usize = 0x2500_0000;
 /// qemu board info
 pub use crate::board::{CLOCK_FREQ, MMIO};
 

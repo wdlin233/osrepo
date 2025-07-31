@@ -300,7 +300,9 @@ impl ProcessControlBlock {
         // memory_set with elf program headers/trampoline/trap context/user stack
         // debug!("kernel: create process from elf data, size = {}", elf_data.len());
         let heap_id = heap_id_alloc();
-        let (memory_set, heap_bottom, entry_point, _) = MemorySet::from_elf(elf_data, heap_id);
+        let fs_info = FsInfo::new(String::from("/"));
+        let (memory_set, heap_bottom, entry_point, _) =
+            MemorySet::from_elf(elf_data, heap_id, fs_info.cwd());
         //info!("kernel: create process from elf data, size = {}, ustack_base = {:#x}, entry_point = {:#x}",
         //    elf_data.len(), ustack_base, entry_point);
         // allocate a pid
@@ -321,7 +323,7 @@ impl ProcessControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: Arc::new(FdTable::new_with_stdio()),
-                    fs_info: Arc::new(FsInfo::new(String::from("/"))),
+                    fs_info: Arc::new(fs_info),
                     signals: SignalFlags::empty(),
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(0),
@@ -386,10 +388,11 @@ impl ProcessControlBlock {
         debug!("kernel: exec, pid = {}", self.getpid());
         assert_eq!(self.inner_exclusive_access().thread_count(), 1);
         let heap_id = heap_id_alloc();
-        let (memory_set, user_heap_bottom, entry_point, mut aux) =
-            MemorySet::from_elf(elf_data, heap_id);
-        let new_token = memory_set.token();
         let mut inner = self.inner_exclusive_access();
+        let (memory_set, user_heap_bottom, entry_point, mut aux) =
+            MemorySet::from_elf(elf_data, heap_id, inner.fs_info.cwd());
+        let new_token = memory_set.token();
+
         inner.memory_set = Arc::new(memory_set);
         inner.heap_id = heap_id;
         //inner.memory_set.activate();
@@ -669,6 +672,7 @@ impl ProcessControlBlock {
                 trap_cx.set_sp(stack);
             }
             if flags.contains(CloneFlags::CLONE_SETTLS) {
+                debug!("tls");
                 trap_cx.x[4] = tls;
             }
             add_task(task);
