@@ -1,105 +1,220 @@
+FP_START = 32
+.altmacro
+.macro SAVE_GP n
+    st.d $r\n, $sp, \n*8
+.endm
+.macro LOAD_GP n
+    ld.d $r\n, $sp, \n*8
+.endm
+.macro SAVE_FP n, m
+    fst.d $f\n, $sp, \m*8
+.endm
+.macro LOAD_FP n, m
+    fld.d $f\n, $sp, \m*8
+.endm
+
+    .section .text.trampoline
     .globl __alltraps
     .globl __restore
     .balign 4096
+.equ CSR_SAVE, 0x30    
+.equ CSR_ERA, 0x6
+.equ CSR_PRMD, 0x1
+.equ CSR_PGDL, 0x19
+.equ CSR_PGD, 0x1b
+# user -> kernel
 __alltraps:
-    # 需要交换 sp 与 0x502 寄存器的值
-    csrwr   $sp, 0x502
-    # 保存通用寄存器
-    st.d    $r0, $sp, 0
-    st.d    $r1, $sp, 8
-    st.d    $r2, $sp, 16
-    # 这里不需要保存 sp的值
-    #st.d   $r3, $sp, 24
-    st.d    $r4, $sp, 32
-    st.d    $r5, $sp, 40
-    st.d    $r6, $sp, 48
-    st.d    $r7, $sp, 56
-    st.d    $r8, $sp, 64
-    st.d    $r9, $sp, 72
-    st.d    $r10, $sp, 80
-    st.d    $r11, $sp, 88
-    st.d    $r12, $sp, 96
-    st.d    $r13, $sp, 104
-    st.d    $r14, $sp, 112
-    st.d    $r15, $sp, 120
-    st.d    $r16, $sp, 128
-    st.d    $r17, $sp, 136
-    st.d    $r18, $sp, 144
-    st.d    $r19, $sp, 152
-    st.d    $r20, $sp, 160
-    st.d    $r21, $sp, 168
-    st.d    $r22, $sp, 176
-    st.d    $r23, $sp, 184
-    st.d    $r24, $sp, 192
-    st.d    $r25, $sp, 200
-    st.d    $r26, $sp, 208
-    st.d    $r27, $sp, 216
-    st.d    $r28, $sp, 224
-    st.d    $r29, $sp, 232
-    st.d    $r30, $sp, 240
-    st.d    $r31, $sp, 248
+    # turn off the interrept is necessary
+    csrwr   $sp, CSR_SAVE
+    # now sp->*TrapContext in user space, CSR_SAVE->user stack
+    # save other general purpose registers
+    # $r2 is $tp
+    SAVE_GP 1
+    SAVE_GP 2
+    # skip $sp($r3), we will save it later
+    # save $r4~$r31
+    .set n, 4
+    .rept 28
+        SAVE_GP %n
+        .set n, n+1
+    .endr
+    # save floating point registers
+    .set n, 0
+    .set m, FP_START
+    .rept 32
+        SAVE_FP %n, %m
+        .set n, n+1
+        .set m, m+1
+    .endr
+    # save fcsr
+    movfcsr2gr $t0, $fcsr0
+    st.w $t0, $sp, 64*8
+    # save FCC
+    movcf2gr $t0, $fcc7
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc6
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc5
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc4
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc3
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc2
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc1
+    slli.w $t0, $t0, 1
+    movcf2gr $t0, $fcc0
+    st.b $t0, $sp, 64*8+4
 
-    csrrd   $t0, 0x1        #读取prmd
-    csrrd   $t1, 0x6        #返回地址
-    st.d    $t0, $sp,256
-    st.d    $t1, $sp,264
+    # save origin_a0
+    st.d $a0, $sp, 70*8
+    # save prmd, era etc.
+    csrrd   $t0, CSR_PRMD       # prmd
+    csrrd   $t1, CSR_ERA        # return address
+    st.d    $t0, $sp, 65*8
+    st.d    $t1, $sp, 66*8      # pc register
 
-    csrrd   $t2,0x502       #读出用户栈指针
-    st.d    $t2, $sp,24
+    csrrd   $t2, CSR_SAVE       # read user stack pointer
+    st.d    $t2, $sp, 3*8
 
-    # set input argument of trap_handler(cx: &mut TrapContext)
-    move    $a0, $sp
+    # load kernel_satp into $t0
+    # ld.d    $t0, $sp, 67*8
+    # load trap_handler into $t1
+    ld.d    $t1, $sp, 69*8
+    # move to kernel_sp
+    ld.d    $sp, $sp, 68*8
+    # switch to kernel space
+    # csrwr   $t0, CSR_PGDL       # set kernel page table
+    invtlb 0x3, $zero, $zero
+    # jump to trap_handler
+    jr $t1
 
-    # bl trap_handler       #This will cause a link error
-    ld.d    $t0, $sp, 272   #读取trap_handler地址
-    jirl    $ra, $t0, 0
-
+# kernel -> user
 __restore:
+    # a0: *TrapContext in user space(Constant), 
+    # a1: user space token
+    # switch to user space
+    slli.d $a1, $a1, 12
+    csrwr  $a1, CSR_PGDL
+    invtlb 0x3, $zero, $zero
     move    $sp, $a0
+    csrwr  $a0, CSR_SAVE
 
-    ld.d    $t1, $sp,264    #加载返回地址
-    ld.d    $t2, $sp,24     #用户栈指针
-    ld.d    $t3, $sp,256    #加载prmd
+    # now sp points to TrapContext in user space, start restoring based on it
+    # restore fcsr
+    ld.d $t0, $sp, 64*8
+    movgr2fcsr $fcsr0, $t0
+    # restore FCC
+    ld.b $t0, $sp, 64*8+4
+    movgr2cf $fcc0, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc1, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc2, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc3, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc4, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc5, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc6, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc7, $t0
 
-    csrwr   $t3, 0x1        #将prmd写入prmd寄存器中
-    csrwr   $t1, 0x6        #将返回地址写入$era寄存器中
-    csrwr   $t2, 0x502      #将用户栈指针放到DSAVE中,这里暂时使用此寄存器
+    # restore prmd, era etc.
+    ld.d    $t0, $sp, 65*8     # prmd
+    ld.d    $t1, $sp, 66*8     # era
+    csrwr $t0, CSR_PRMD
+    csrwr $t1, CSR_ERA
 
-    # 恢复通用寄存器
-    ld.d    $r0, $sp, 0
-    ld.d    $r1, $sp, 8
-    ld.d    $r2, $sp, 16
-    # 这里不需要恢复 sp,此时这个内存位置是用户栈指针
-    # ld.d  $r3, $sp, 24
-    ld.d    $r4, $sp, 32
-    ld.d    $r5, $sp, 40
-    ld.d    $r6, $sp, 48
-    ld.d    $r7, $sp, 56
-    ld.d    $r8, $sp, 64
-    ld.d    $r9, $sp, 72
-    ld.d    $r10, $sp, 80
-    ld.d    $r11, $sp, 88
-    ld.d    $r12, $sp, 96
-    ld.d    $r13, $sp, 104
-    ld.d    $r14, $sp, 112
-    ld.d    $r15, $sp, 120
-    ld.d    $r16, $sp, 128
-    ld.d    $r17, $sp, 136
-    ld.d    $r18, $sp, 144
-    ld.d    $r19, $sp, 152
-    ld.d    $r20, $sp, 160
-    ld.d    $r21, $sp, 168
-    ld.d    $r22, $sp, 176
-    ld.d    $r23, $sp, 184
-    ld.d    $r24, $sp, 192
-    ld.d    $r25, $sp, 200
-    ld.d    $r26, $sp, 208
-    ld.d    $r27, $sp, 216
-    ld.d    $r28, $sp, 224
-    ld.d    $r29, $sp, 232
-    ld.d    $r30, $sp, 240
-    ld.d    $r31, $sp, 248
-    # r0不用恢复
+    # restore general purpose registers except r0/$sp
+    LOAD_GP 1
+    LOAD_GP 2
+    # skip $sp($r3), we will restore it later
+    # restore $r4~$r31
+    .set n, 4
+    .rept 28
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    # restore floating point registers
+    .set n, 0
+    .set m, FP_START
+    .rept 32
+        LOAD_FP %n, %m
+        .set n, n+1
+        .set m, m+1
+    .endr
+    # back to user stack pointer
+    LOAD_GP 3
+    ertn
 
-    csrwr   $sp, 0x502        #将用户栈指针与内核栈指针交换
+    .section .text
+    .globl __trap_from_kernel
+    .balign 4096
+__trap_from_kernel:
+    # Keep the original $sp in SAVE
+    csrwr $sp, CSR_SAVE    
+    csrrd $sp, CSR_SAVE
+    # Now move the $sp lower to push the registers
+    addi.d $sp, $sp, -256
+    # Align the $sp
+    srli.d  $sp, $sp, 3
+    slli.d  $sp, $sp, 3
+    # now sp->*GeneralRegisters in kern space, CSR_SAVE->(the previous $sp)
+
+    SAVE_GP 1 # Save $ra
+    SAVE_GP 2 # Save $tp
+
+    # skip r3(sp)
+    .set n, 4
+    .rept 28
+        SAVE_GP %n
+        .set n, n+1
+    .endr
+    
+    csrrd $t0, CSR_ERA
+    st.d $t0, $sp, 66*8
+
+    move $a0, $sp
+    csrrd $sp, CSR_SAVE
+    st.d $sp, $a0, 3*8
+    move $sp, $a0
+
+    bl trap_from_kernel
+
+    ld.d  $ra, $sp, 66*8
+    csrwr $ra, CSR_ERA
+    LOAD_GP 1
+    LOAD_GP 2
+
+    # skip r3(sp)
+    .set n, 4
+    .rept 28
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    .set n, 0
+    
+    csrrd $sp, CSR_SAVE
+    ertn
+
+# tlb refill
+    .section .text
+    .globl __tlb_refill
+    .balign 4096
+__tlb_refill:
+    csrwr $t0, 0x8B
+    csrrd $t0, 0x1B
+    lddir $t0, $t0, 3 #访问页目录表PGD
+    lddir $t0, $t0, 1 #访问页目录表PMD
+    ldpte $t0, 0
+    #取回偶数号页表项
+    ldpte $t0, 1
+    #取回奇数号页表项
+    tlbfill
+    csrrd $t0, 0x8B
+    #jr $ra
     ertn

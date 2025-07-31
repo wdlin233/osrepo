@@ -18,6 +18,7 @@ FP_START = 32
     .globl __alltraps
     .globl __restore
     .align 2
+# user -> kernel
 __alltraps:
     csrrw sp, sscratch, sp
     # now sp->*TrapContext in user space, sscratch->user stack
@@ -63,6 +64,7 @@ __alltraps:
     # jump to trap_handler
     jr t1
 
+# kernel -> user
 __restore:
     # a0: *TrapContext in user space(Constant); a1: user space token
     # switch to user space

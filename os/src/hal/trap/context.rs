@@ -2,7 +2,7 @@
 #[cfg(target_arch = "loongarch64")]
 use crate::hal::trap::trap_handler;
 #[cfg(target_arch = "loongarch64")]
-use loongarch64::register::{prmd, CpuMode};
+use loongarch64::register::{prmd::Prmd, prmd, CpuMode};
 #[cfg(target_arch = "riscv64")]
 use riscv::register::sstatus::{self, Sstatus, SPP, set_spp};
 
@@ -32,8 +32,8 @@ pub struct TrapContext {
     #[cfg(target_arch = "riscv64")]
     pub sstatus: Sstatus, // 65, Supervisor Status Register
     #[cfg(target_arch = "loongarch64")]
-    pub prmd: usize, //65, 控制状态寄存器
-    pub sepc: usize,    // 66, Supervisor Exception Program Counter，异常处理返回地址
+    pub sstatus: Prmd, //65, 控制状态寄存器
+    pub sepc: usize,    // 66, Supervisor Exception Program Counter，also CSR_ERA
     pub kernel_satp: usize, // 67, Token of kernel address space
     pub kernel_sp: usize, // 68, Kernel stack pointer of the current application
     pub kernel_ra: usize, // 69, Virtual address of trap handler entry point in kernel
@@ -55,8 +55,8 @@ impl Debug for TrapContext {
         {
             return write!(
                 f,
-                "TrapContext {{ x: {:?}, prmd: {:#x}, sepc: {:#x}, trap_handler: {:#x} }}",
-                self.gp.x, self.prmd, self.sepc, self.kernel_ra
+                "TrapContext {{ x: {:?}, sepc: {:#x}, trap_handler: {:#x} }}",
+                self.gp.x, self.sepc, self.kernel_ra
             );
         }
     }
@@ -85,7 +85,7 @@ impl TrapContext {
         trap_handler: usize,
     ) -> Self {
         #[cfg(target_arch = "riscv64")]
-        let mut sstatus = sstatus::read();
+        let sstatus = sstatus::read();
         // set CPU privilege to User after trapping back
         #[cfg(target_arch = "riscv64")]
         unsafe {
@@ -94,14 +94,13 @@ impl TrapContext {
         // 设置为用户模式,trap使用ertn进入用户态时会被加载到crmd寄存器中
         #[cfg(target_arch = "loongarch64")]
         prmd::set_pplv(CpuMode::Ring3);
+        #[cfg(target_arch = "loongarch64")]
+        let sstatus = prmd::read();
 
         let mut cx = Self {
             gp: GeneralRegs::default(),
             fp: FloatRegs::default(),
-            #[cfg(target_arch = "riscv64")]
             sstatus,
-            #[cfg(target_arch = "loongarch64")]
-            prmd: prmd::read().raw(),
             sepc: entry, // entry point of app
             kernel_satp, // addr of page table
             kernel_sp, // kernel stack

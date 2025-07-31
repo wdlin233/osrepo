@@ -13,8 +13,6 @@
 //! to [`syscall()`].
 
 mod context;
-#[cfg(target_arch = "loongarch64")]
-mod trap;
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use crate::mm::VirtAddr;
@@ -81,9 +79,9 @@ pub fn init() {
 
         // 设置普通异常和中断入口
         // 设置TLB重填异常地址
-        println!("(trap::init) __kernel_trap_entry: {:#x}", trap::__kernel_trap_entry as usize);
-        eentry::set_eentry(trap::__kernel_trap_entry as usize);
-        tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize); // 设置重填tlb地址    
+        println!("(trap::init) __trap_from_kernel: {:#x}", __trap_from_kernel as usize);
+        eentry::set_eentry(__trap_from_kernel as usize);
+        tlbrentry::set_tlbrentry(__tlb_refill as usize); // 设置重填tlb地址    
         stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
         tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
@@ -107,16 +105,12 @@ pub fn init() {
 #[inline]
 fn set_kernel_trap_entry() {
     #[cfg(target_arch = "riscv64")]
-    extern "C" {
-        fn __trap_from_kernel();
-    }
-    #[cfg(target_arch = "riscv64")]
     unsafe {
         stvec::write(__trap_from_kernel as usize, TrapMode::Direct);
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(trap::__kernel_trap_entry as usize);
+    eentry::set_eentry(__trap_from_kernel as usize);
 }
 /// set trap entry for traps happen in user mode
 #[inline]
@@ -380,6 +374,8 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
 extern "C" {
     fn __alltraps();
     fn __restore();
+    fn __trap_from_kernel();
+    fn __tlb_refill();
 }
 
 /// return to user space
@@ -419,12 +415,12 @@ pub fn trap_return() {
 }
 
 /// handle trap from kernel
-#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_from_kernel() -> ! {
-    //use riscv::register::sepc;
-    //trace!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+    #[cfg(target_arch = "riscv64")]
     panic!("a trap {:?} from kernel!", scause::read().cause());
+    #[cfg(target_arch = "loongarch64")]
+    panic!("a trap {:?} from kernel!", estat::read().cause());
 }
 
 #[cfg(target_arch = "loongarch64")]
@@ -458,6 +454,8 @@ pub fn trap_handler_kernel() {
             // 清除时钟专断
             trace!("timer interrupt from kernel");
             ticlr::clear_timer_interrupt();
+            enable_timer_interrupt();
+            suspend_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::HWI0) => {
             // 中断0 --- 外部中断处理
@@ -482,7 +480,7 @@ pub fn trap_handler_kernel() {
 fn tlb_refill_handler() {
     log::error!("TLB refill exception");
     unsafe {
-        trap::__tlb_rfill();
+        __tlb_refill();
     }
 }
 

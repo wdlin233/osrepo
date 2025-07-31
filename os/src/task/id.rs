@@ -200,7 +200,7 @@ impl KernelStack {
         kernel_stack_top
     }
     #[cfg(target_arch = "loongarch64")]
-    fn get_virt_top(&self) -> usize {
+    pub fn get_virt_top(&self) -> usize {
         let top: PhysAddr = self.frame.ppn.into();
         let top = phys_to_virt!(top.0 + PAGE_SIZE);
         top
