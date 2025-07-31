@@ -179,8 +179,8 @@ pub fn trap_handler() -> ! {
             //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
             // );
             let result = syscall(
-                cx.x[17],
-                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
+                cx.gp.x[17],
+                [cx.gp.x[10], cx.gp.x[11], cx.gp.x[12], cx.gp.x[13], cx.gp.x[14], cx.gp.x[15]],
             );
             // cx is changed during sys_exec, so we have to call it again
             //debug!("after syscall, to get cx");
@@ -189,7 +189,7 @@ pub fn trap_handler() -> ! {
             //     "after syscall, genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
             //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
             // );
-            cx.x[10] = result as usize;
+            cx.gp.x[10] = result as usize;
             //debug!("return x10 is : {}", cx.x[10]);
         }
         Trap::Exception(Exception::StorePageFault)
@@ -285,11 +285,11 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             cx.sepc += 4;
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
             let result = syscall(
-                cx.x[11],
-                [cx.x[4], cx.x[5], cx.x[6], cx.x[7], cx.x[8], cx.x[9]],
+                cx.gp.x[11],
+                [cx.gp.x[4], cx.gp.x[5], cx.gp.x[6], cx.gp.x[7], cx.gp.x[8], cx.gp.x[9]],
             ) as usize;
             cx = current_trap_cx();
-            cx.x[4] = result;
+            cx.gp.x[4] = result;
         }
         Trap::Exception(Exception::LoadPageFault)
         | Trap::Exception(Exception::StorePageFault)
@@ -409,6 +409,7 @@ pub fn trap_return() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_return() {
+    warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
     let trap_addr = current_trap_addr();
     unsafe {
