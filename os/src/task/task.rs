@@ -1,7 +1,6 @@
 //! Types related to task management & Functions for completely changing TCB
 
 use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid};
-#[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
 use crate::config::{
@@ -18,25 +17,18 @@ use spin::MutexGuard;
 /// Task control block structure
 pub struct TaskControlBlock {
     /// immutable
-    pub process: Weak<ProcessControlBlock>, //所属进程
-    /// Kernel stack corresponding to PID
-    #[cfg(target_arch = "riscv64")]
+    pub process: Weak<ProcessControlBlock>, 
+    /// Kernel stack corresponding to TID
     pub kstack: KernelStack,
     /// mutable
     inner: UPSafeCell<TaskControlBlockInner>,
 }
 
 pub struct TaskControlBlockInner {
-    //pub res: Option<TaskUserRes>,
     pub tid: usize,
     pub ptid: usize,
     /// The physical page number of the frame where the trap context is placed
-    #[cfg(target_arch = "riscv64")]
     pub trap_cx_ppn: PhysPageNum,
-    //每个线程都存在内核栈，其trap上下文位于内核栈上
-    #[cfg(target_arch = "loongarch64")]
-    pub kstack: KernelStack,
-
     /// Save task context, 线程上下文
     pub task_cx: TaskContext,
     /// Maintain the execution status of the current process
@@ -64,27 +56,16 @@ impl TaskControlBlockInner {
         ustack_bottom_from_tid(self.tid) + USER_STACK_SIZE
     }
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        #[cfg(target_arch = "riscv64")]
-        {
-            debug!(
-                "in tcb inner, get trap cx, trap cx ppn is : {}",
-                self.trap_cx_ppn.0
-            );
-            self.trap_cx_ppn.get_mut()
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            self.kstack.get_trap_cx()
-        }
+        debug!(
+            "in tcb inner, get trap cx, trap cx ppn is : {}",
+            self.trap_cx_ppn.0
+        );
+        self.trap_cx_ppn.get_mut()
     }
 
     #[allow(unused)]
     fn get_status(&self) -> TaskStatus {
         self.task_status
-    }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn get_trap_addr(&self) -> usize {
-        self.kstack.get_trap_addr()
     }
 }
 
@@ -118,13 +99,11 @@ impl TaskControlBlock {
             MapAreaType::Trap,
         );
     }
-    #[cfg(target_arch = "riscv64")]
     pub fn set_user_trap(&self) {
         let trap_cx_ppn = self.trap_cx_ppn(self.tid());
         let mut inner = self.inner_exclusive_access();
         inner.trap_cx_ppn = trap_cx_ppn;
     }
-    #[cfg(target_arch = "riscv64")]
     /// The physical page number(ppn) of the trap context for a task with tid
     pub fn trap_cx_ppn(&self, tid: usize) -> PhysPageNum {
         debug!(
@@ -141,7 +120,6 @@ impl TaskControlBlock {
             .unwrap()
             .ppn()
     }
-    #[cfg(target_arch = "riscv64")]
     /// The bottom usr vaddr (low addr) of the trap context for a task with tid
     pub fn trap_cx_user_va(&self) -> usize {
         //debug!("in tcb, trap cx user va");
@@ -152,32 +130,17 @@ impl TaskControlBlock {
         let tid = process.inner_exclusive_access().alloc_tid();
         debug!("in tcb new, the tid is : {}", tid);
         let (kstack, kstack_top) = {
-            #[cfg(target_arch = "riscv64")]
-            {
-                let kstack = kstack_alloc();
-                let kstack_top = kstack.get_top();
-                (Some(kstack), kstack_top)
-            }
-            #[cfg(target_arch = "loongarch64")]
-            {
-                // info!("Finish TaskUserRes::new!");
-                let kstack = KernelStack::new();
-                let kstack_top = kstack.get_trap_addr(); //存放了trap上下文后的地址
-                                                         // debug!("create task: kstack_top={:#x}", kstack_top);
-                (Some(kstack), kstack_top)
-            }
+            let kstack = kstack_alloc();
+            let kstack_top = kstack.get_top();
+            (Some(kstack), kstack_top)
         };
-        let mut new_task = TaskControlBlock {
+        let new_task = TaskControlBlock {
             process: Arc::downgrade(&process),
-            #[cfg(target_arch = "riscv64")]
             kstack: kstack.unwrap(),
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
                     tid,
                     ptid: parent_tid,
-                    #[cfg(target_arch = "loongarch64")]
-                    kstack: kstack.unwrap(),
-                    #[cfg(target_arch = "riscv64")]
                     trap_cx_ppn: PhysPageNum(0),
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
@@ -187,20 +150,13 @@ impl TaskControlBlock {
         };
         if alloc_user_res {
             new_task.alloc_user_res();
-            //new_task.alloc_user_trap();
-        }
-        #[cfg(target_arch = "riscv64")]
-        {
-            //new_task.alloc_user_trap();
-            if alloc_user_res {
-                let trap_cx_ppn = new_task.trap_cx_ppn(tid);
-                //let trap_cx_ppn = new_task.trap_cx_ppn(new_task.tid());
-                new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
-            } else {
-                //let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
-                let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
-                new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
-            }
+            let trap_cx_ppn = new_task.trap_cx_ppn(tid);
+            //let trap_cx_ppn = new_task.trap_cx_ppn(new_task.tid());
+            new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
+        } else {
+            //let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
+            let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
+            new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
         }
         new_task
     }

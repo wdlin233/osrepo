@@ -149,24 +149,14 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
-#[cfg(target_arch = "riscv64")]
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
     current_task().unwrap().trap_cx_user_va()
 }
 
-#[cfg(target_arch = "riscv64")]
 /// get the top addr of kernel stack
 pub fn current_kstack_top() -> usize {
     current_task().unwrap().kstack.get_top()
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn current_trap_addr() -> usize {
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .get_trap_addr()
 }
 
 /// Return to idle control flow for new scheduling

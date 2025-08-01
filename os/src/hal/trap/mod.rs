@@ -21,7 +21,7 @@ pub use crate::signal::SignalFlags;
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_process, current_trap_cx,
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
+    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, current_trap_cx_user_va,
 };
 use crate::timer::check_timer;
 
@@ -29,13 +29,11 @@ use crate::config::TRAMPOLINE;
 
 #[cfg(target_arch = "riscv64")]
 use crate::{
-    task::current_trap_cx_user_va,
     timer::{get_time, set_next_trigger},
 };
 #[cfg(target_arch = "loongarch64")]
 use crate::{
     mm::{PageTable, VirtPageNum},
-    task::current_trap_addr,
     timer::get_time,
 };
 
@@ -410,10 +408,23 @@ pub fn trap_return() -> ! {
 pub fn trap_return() {
     warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
-    let trap_addr = current_trap_addr();
+    let trap_cx_user_va = current_trap_cx_user_va();
+    debug!("in trap return, get trap va");
+    let user_satp = current_user_token();
+
+    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
     unsafe {
-        asm!("move $a0,{}",in(reg)trap_addr);
-        __restore();
+        asm!(
+            "ibar 0",
+            "move $ra, {0}",
+            "move $a0, {1}",
+            "move $a1, {2}",
+            "jr $ra",
+            in(reg) restore_va,
+            in(reg) trap_cx_user_va,
+            in(reg) user_satp,
+            options(noreturn)
+        );
     }
 }
 

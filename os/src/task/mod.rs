@@ -48,9 +48,6 @@ pub use manager::{
 pub use process::{
     CloneFlags, ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
 };
-#[cfg(target_arch = "loongarch64")]
-pub use processor::current_trap_addr;
-#[cfg(target_arch = "riscv64")]
 pub use processor::{current_kstack_top, current_trap_cx_user_va};
 pub use processor::{
     current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
@@ -58,7 +55,6 @@ pub use processor::{
 };
 pub use task::{TaskControlBlock, TaskStatus};
 
-#[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;
 
 use core::arch::{asm, global_asm};

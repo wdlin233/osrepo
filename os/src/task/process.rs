@@ -347,10 +347,7 @@ impl ProcessControlBlock {
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
         let ustack_top = task_inner.ustack_top(true);
-        #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
-        #[cfg(target_arch = "loongarch64")]
-        let kstack_top = task.inner_exclusive_access().kstack.get_virt_top();
         drop(task_inner);
         //info!("ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
 
@@ -423,7 +420,6 @@ impl ProcessControlBlock {
             self.getpid(),
             task.tid()
         );
-        #[cfg(target_arch = "riscv64")]
         let trap_cx_ppn = task.trap_cx_ppn(task.tid());
         let mut task_inner = task.inner_exclusive_access();
 
@@ -431,11 +427,8 @@ impl ProcessControlBlock {
             "kernel: exec .. alloc user resource for main thread again, pid = {}",
             self.getpid()
         );
-        #[cfg(target_arch = "riscv64")]
-        {
-            task_inner.trap_cx_ppn = trap_cx_ppn;
-            debug!("in pcb exec, trap cx ppn is : {}", task_inner.trap_cx_ppn.0);
-        }
+        task_inner.trap_cx_ppn = trap_cx_ppn;
+        debug!("in pcb exec, trap cx ppn is : {}", task_inner.trap_cx_ppn.0);
         // push arguments on user stack
         let mut user_sp = task_inner.ustack_top(true) as usize;
         info!("in pcb exec, initial user_sp = {}", user_sp);
@@ -524,10 +517,7 @@ impl ProcessControlBlock {
 
         // initialize trap_cx
         debug!("init context");
-        #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
-        #[cfg(target_arch = "loongarch64")]
-        let kstack_top = task.inner_exclusive_access().kstack.get_virt_top();
         let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -728,12 +718,10 @@ impl ProcessControlBlock {
             // modify kstack_top in trap_cx of this thread
             #[cfg(target_arch = "loongarch64")]
             {
-                let mut kstack = &mut task.inner_exclusive_access().kstack;
-                // 修改trap_cx的内容，使其保持与父进程相同
-                // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
-                let trap_cx = kstack.get_trap_cx();
-                trap_cx.gp.x[4] = 0; // a0, the same with
-                kstack.copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+                let task_inner = task.inner_exclusive_access();
+                let trap_cx = task_inner.get_trap_cx();
+                trap_cx.gp.x[4] = 0;
+                trap_cx.kernel_sp = task.kstack.get_top();
             }
 
             insert_into_pid2process(child.getpid(), Arc::clone(&child));
