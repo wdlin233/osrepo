@@ -183,7 +183,7 @@ __trap_from_kernel:
     st.d $sp, $a0, 3*8
     move $sp, $a0
 
-    bl trap_from_kernel
+    bl trap_handler_kernel
 
     ld.d  $ra, $sp, 66*8
     csrwr $ra, CSR_ERA

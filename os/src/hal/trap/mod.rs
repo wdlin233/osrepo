@@ -25,9 +25,10 @@ use crate::task::{
 };
 use crate::timer::check_timer;
 
+use crate::config::TRAMPOLINE;
+
 #[cfg(target_arch = "riscv64")]
 use crate::{
-    config::TRAMPOLINE,
     task::current_trap_cx_user_va,
     timer::{get_time, set_next_trigger},
 };
@@ -80,7 +81,7 @@ pub fn init() {
         // 设置普通异常和中断入口
         // 设置TLB重填异常地址
         println!("(trap::init) __trap_from_kernel: {:#x}", __trap_from_kernel as usize);
-        eentry::set_eentry(__trap_from_kernel as usize);
+        set_kernel_trap_entry();
         tlbrentry::set_tlbrentry(__tlb_refill as usize); // 设置重填tlb地址    
         stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
         tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
@@ -121,7 +122,7 @@ fn set_user_trap_entry() {
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
+    eentry::set_eentry(TRAMPOLINE as usize); // 设置普通异常和中断入口
 }
 
 /// enable timer interrupt in supervisor mode
@@ -261,6 +262,7 @@ pub fn trap_handler() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
+    warn!("(trap_handler) in loongarch64 trap handler");
     set_kernel_trap_entry();
     let estat = estat::read();
     let crmd = crmd::read();
@@ -321,6 +323,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Interrupt(Interrupt::Timer) => {
             // 时钟中断
+            warn!("timer interrupt from user");
             timer_handler();
         }
         Trap::Exception(Exception::TLBRFill) => {
@@ -430,6 +433,7 @@ fn timer_handler() {
     check_timer();
     // 清除时钟中断
     ticlr::clear_timer_interrupt();
+    enable_timer_interrupt();
     suspend_current_and_run_next();
 }
 
@@ -454,8 +458,6 @@ pub fn trap_handler_kernel() {
             // 清除时钟专断
             trace!("timer interrupt from kernel");
             ticlr::clear_timer_interrupt();
-            enable_timer_interrupt();
-            suspend_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::HWI0) => {
             // 中断0 --- 外部中断处理
