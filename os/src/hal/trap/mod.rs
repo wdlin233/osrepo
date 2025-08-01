@@ -120,7 +120,7 @@ fn set_user_trap_entry() {
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(TRAMPOLINE as usize); // 设置普通异常和中断入口
+    eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
 }
 
 /// enable timer interrupt in supervisor mode
@@ -137,13 +137,13 @@ pub fn enable_timer_interrupt() {
         // println!("timer freq: {}", timer_freq);
         tcfg::set_init_val(timer_freq / TICKS_PER_SEC);
         tcfg::set_en(true);
-        tcfg::set_periodic(true);
+        tcfg::set_periodic(false);
 
         // 开启全局中断
-        ecfg::set_lie(LineBasedInterrupt::TIMER | LineBasedInterrupt::HWI0);
+        ecfg::set_lie(LineBasedInterrupt::TIMER);
         crmd::set_ie(true);
 
-        println!("Interrupt enable: {:?}", ecfg::read().lie());
+        //println!("Interrupt enable: {:?}", ecfg::read().lie());
     }
 }
 
@@ -386,7 +386,7 @@ pub fn trap_return() -> ! {
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
-    debug!("in trap return, get trap va");
+    //debug!("in trap return, get trap va");
     let user_satp = current_user_token();
 
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
@@ -406,10 +406,10 @@ pub fn trap_return() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_return() {
-    warn!("(trap_return) in loongarch64 trap return");
+    //warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
-    debug!("in trap return, get trap va");
+    //debug!("in trap return, get trap va");
     let user_satp = current_user_token();
 
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
@@ -467,7 +467,6 @@ pub fn trap_handler_kernel() {
     match estat.cause() {
         Trap::Interrupt(Interrupt::Timer) => {
             // 清除时钟专断
-            trace!("timer interrupt from kernel");
             ticlr::clear_timer_interrupt();
         }
         Trap::Interrupt(Interrupt::HWI0) => {
