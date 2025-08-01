@@ -60,8 +60,7 @@ pub fn shutdown() -> ! {
 pub(crate) extern "C" fn shutdown() -> ! {
     use core::panic;
     use loongarch64::asm;
-    use crate::phys_to_virt;
-    let ged_ptr = phys_to_virt!(0x100E001C as usize) as *mut u8;
+    let ged_ptr = 0x100E001C as usize as *mut u8;
     unsafe {
         ged_ptr.write_volatile(0x34);
     }

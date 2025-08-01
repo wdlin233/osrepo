@@ -4,7 +4,6 @@ use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
 use crate::println;
 use crate::sync::UPSafeCell;
-use crate::virt_to_phys;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;

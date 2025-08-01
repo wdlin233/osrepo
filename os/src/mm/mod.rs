@@ -44,17 +44,3 @@ pub fn init() {
     #[cfg(target_arch = "riscv64")]
     remap_test();
 }
-
-#[macro_export]
-macro_rules! virt_to_phys {
-    ($va:expr) => {
-        $va - 0x9000_0000_0000_0000
-    };
-}
-/// Translate a physical address to a virtual address.
-#[macro_export]
-macro_rules! phys_to_virt {
-    ($pa:expr) => {
-        $pa + 0x9000_0000_0000_0000
-    };
-}

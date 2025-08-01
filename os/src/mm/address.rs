@@ -6,7 +6,6 @@
 /// 因此11-11-11-14,最高位是次高位的扩展
 ///
 use super::{translated_byte_buffer, PageTableEntry};
-use crate::phys_to_virt;
 use crate::{
     config::{PAGE_SIZE, PAGE_SIZE_BITS},
     task::current_user_token,
@@ -218,7 +217,6 @@ impl VirtPageNum {
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
@@ -230,17 +228,6 @@ impl PhysAddr {
     }
 }
 
-#[cfg(target_arch = "loongarch64")]
-impl PhysAddr {
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        unsafe { ((phys_to_virt!(self.0)) as *mut T).as_mut().unwrap() }
-    }
-    pub fn get_ref<T>(&self) -> &'static T {
-        unsafe { ((phys_to_virt!(self.0)) as *const T).as_ref().unwrap() }
-    }
-}
-
-#[cfg(target_arch = "riscv64")]
 impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
@@ -259,32 +246,11 @@ impl PhysPageNum {
     }
 }
 
-#[cfg(target_arch = "loongarch64")]
-impl PhysPageNum {
-    pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
-        let pa: PhysAddr = self.clone().into();
-        let va = phys_to_virt!(pa.0);
-        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 512) }
-    }
-    pub fn get_bytes_array(&self) -> &'static mut [u8] {
-        let pa: PhysAddr = self.clone().into();
-        let va = phys_to_virt!(pa.0);
-        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 4096) }
-    }
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        let pa: PhysAddr = self.clone().into();
-        pa.get_mut()
-    }
-}
-
 impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         debug!("(PhysPageNum, bytes_array_mut) Getting bytes array for PhysAddr: {:#x}", pa.0);
-        #[cfg(target_arch = "riscv64")]
         let va = pa.0;
-        #[cfg(target_arch = "loongarch64")]
-        let va = phys_to_virt!(pa.0);
         use crate::config::PAGE_SIZE;
         unsafe { core::slice::from_raw_parts_mut(va as *mut u8, PAGE_SIZE) }
     }
