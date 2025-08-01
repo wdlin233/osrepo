@@ -151,6 +151,10 @@ impl MemorySet {
         self.inner.get_unchecked_mut().append_to(start, new_end)
     }
     #[inline(always)]
+    pub fn clone_area(&self, start_vpn: VirtPageNum, another: &MemorySetInner) {
+        self.get_mut().clone_area(start_vpn, another)
+    }
+    #[inline(always)]
     pub fn lazy_page_fault(&self, vpn: VirtPageNum, scause: Trap) -> bool {
         self.inner.get_unchecked_mut().lazy_page_fault(vpn, scause)
     }
@@ -300,6 +304,7 @@ impl MemorySetInner {
         map_area.map_given_frames(&mut self.page_table, frames);
         self.areas.push(map_area);
     }
+
     fn load_dl_interp_if_needed(&mut self, elf: &ElfFile, cwd: &str) -> Option<usize> {
         let elf_header = elf.header;
         let ph_count = elf_header.pt2.ph_count();
@@ -508,12 +513,12 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::PHNUM, ph_count as usize));
         auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
         // 设置动态链接
-        if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf, cwd) {
-            auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
-            entry_point = interp_entry_point;
-        } else {
-            auxv.push(Aux::new(AuxType::BASE, 0));
-        }
+        // if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf, cwd) {
+        //     auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
+        //     entry_point = interp_entry_point;
+        // } else {
+        auxv.push(Aux::new(AuxType::BASE, 0));
+        //}
         auxv.push(Aux::new(AuxType::FLAGS, 0 as usize));
         auxv.push(Aux::new(
             AuxType::ENTRY,
@@ -665,6 +670,9 @@ impl MemorySetInner {
         for area in user_space.get_mut().areas.iter() {
             let mut new_area = MapArea::from_another(area);
             // 映射相同的Frame
+            if area.area_type == MapAreaType::Stack || area.area_type == MapAreaType::Trap {
+                continue;
+            }
             if area.area_type == MapAreaType::Mmap
                 && !area.mmap_flags.contains(MmapFlags::MAP_SHARED)
             {
@@ -695,6 +703,25 @@ impl MemorySetInner {
             }
         }
         memory_set
+    }
+    pub fn clone_area(&mut self, start_vpn: VirtPageNum, another: &MemorySetInner) {
+        if let Some(area) = another
+            .areas
+            .iter()
+            .find(|area| area.vpn_range.get_start() == start_vpn)
+        {
+            debug!("in clone area, get area, start vpn is : {:#x}", start_vpn.0);
+
+            for vpn in area.vpn_range {
+                let src_ppn = another.translate(vpn).unwrap().ppn();
+                debug!("src ppn ok ");
+                let dst_ppn = self.translate(vpn).unwrap().ppn();
+                debug!("dst ppn ok");
+                dst_ppn
+                    .get_bytes_array()
+                    .copy_from_slice(src_ppn.get_bytes_array());
+            }
+        }
     }
     #[cfg(target_arch = "riscv64")]
     /// Change page table by writing satp CSR Register.
@@ -1189,69 +1216,21 @@ impl MemorySetInner {
         flush_tlb();
     }
     pub fn find_insert_addr(&self, hint: usize, size: usize) -> usize {
-        info!(
-            "(MemorySetInner, find_insert_addr) hint = {:#x}, size = {}",
-            hint, size
-        );
         let end_vpn = VirtAddr::from(hint).floor();
         let start_vpn = VirtAddr::from(hint - size).floor();
         let start_va: VirtAddr = start_vpn.into();
-        //for test let start_va: VirtAddr = (start_va.0 - PAGE_SIZE).into();
-        info!(
-            "(MemorySetInner, find_insert_addr) start_vpn = {:#x}, end_vpn = {:#x}, start_va = {:#x}",
-            start_vpn.0, end_vpn.0, start_va.0
-        );
         for area in self.areas.iter() {
             let (start, end) = area.vpn_range.range();
             if end_vpn > start && start_vpn < end {
                 let new_hint = VirtAddr::from(start_vpn).0 - PAGE_SIZE;
-                info!(
-                    "find_insert_addr: hint = {:#x}, size = {}, new_hint = {:#x}",
-                    hint, size, new_hint
-                );
+                // info!(
+                //     "find_insert_addr: hint = {:#x}, size = {}, new_hint = {:#x}",
+                //     hint, size, new_hint
+                // );
                 return self.find_insert_addr(new_hint, size);
             }
         }
         VirtAddr::from(start_vpn).0
-
-        // use crate::config::PAGE_SIZE_BITS;
-        // // 确保地址按16KB对齐
-        // let aligned_size = (size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        // let aligned_hint = hint & !(PAGE_SIZE - 1);
-
-        // // 从高地址向低地址搜索
-        // let mut candidate = aligned_hint - aligned_size;
-
-        // info!(
-        //     "find_insert_addr: hint={:#x}, size={}, aligned_size={}, candidate={:#x}",
-        //     hint, size, aligned_size, candidate
-        // );
-
-        // 'search: loop {
-        //     // 检查候选区域是否重叠
-        //     let candidate_end = candidate + aligned_size;
-        //     for area in self.areas.iter() {
-        //         let (area_start, area_end) = area.vpn_range.range();
-        //         let area_start_va = area_start.0 << PAGE_SIZE_BITS;
-        //         let area_end_va = area_end.0 << PAGE_SIZE_BITS;
-
-        //         if candidate_end > area_start_va && candidate < area_end_va {
-        //             // 有重叠，向前移动一个完整区域
-        //             candidate = candidate.checked_sub(PAGE_SIZE).unwrap_or(0);
-        //             info!("Overlap found, new candidate={:#x}", candidate);
-        //             continue 'search;
-        //         }
-        //     }
-
-        //     // 检查对齐
-        //     if candidate & (PAGE_SIZE - 1) != 0 {
-        //         warn!("Unaligned candidate: {:#x}, aligning down", candidate);
-        //         candidate = candidate & !(PAGE_SIZE - 1);
-        //     }
-
-        //     info!("Found valid address: {:#x}", candidate);
-        //     return candidate;
-        // }
     }
     pub fn cow_page_fault(&mut self, vpn: VirtPageNum, scause: Trap) -> bool {
         //info!("cow_page_fault: vpn = {:#x}", vpn.0);

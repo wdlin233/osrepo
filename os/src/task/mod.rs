@@ -98,11 +98,6 @@ use crate::board::QEMUExit;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
-    // trace!(
-    //     "kernel: pid[{}] exit_current_and_run_next",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid()
-    // );
-    // take from Processor
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let process = task.process.upgrade().unwrap();
@@ -110,7 +105,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let num = process.get_task_len();
     // record exit code
     task_inner.exit_code = Some(exit_code);
-    //task_inner.res = None;
+
     // here we do not remove the thread since we are still using the kstack
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
@@ -167,28 +162,22 @@ pub fn exit_current_and_run_next(exit_code: i32) {
             // removed when the PCB is deallocated.
             //trace!("kernel: exit_current_and_run_next .. remove_inactive_task");
             remove_inactive_task(Arc::clone(&task));
-            //let mut task_inner = task.inner_exclusive_access();
-            // if let Some(res) = task_inner.take() {
-            //     recycle_res.push(res);
-            // }
         }
-        // dealloc_tid and dealloc_user_res require access to PCB inner, so we
-        // need to collect those user res first, then release process_inner
-        // for now to avoid deadlock/double borrow problem.
+
         drop(process_inner);
-        // recycle_res.clear();
-        //debug!("recycle res ok");
+
         let mut process_inner = process.inner_exclusive_access();
-        process_inner.children.clear();
-        // deallocate other data in user space i.e. program code/data section
+        //process_inner.children.clear();
+
         process_inner.memory_set.recycle_data_pages();
-        // drop file descriptors
+
         if let Some(fd_table) = Arc::get_mut(&mut process_inner.fd_table) {
             fd_table.clear();
         }
+        debug!("in exit, to remove tasks");
         // remove all tasks, release all threads
         process_inner.tasks.clear();
-        //debug!("all clear ok");
+        debug!("all clear ok");
         //debug!("after clear, the parent fd table len is :{}",)
         heap_id_dealloc(process_inner.heap_id);
         #[cfg(target_arch = "loongarch64")]

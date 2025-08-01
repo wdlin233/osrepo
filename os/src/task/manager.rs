@@ -92,6 +92,9 @@ lazy_static! {
     /// PID2PCB instance (map of pid to pcb)
     pub static ref PID2PCB: UPSafeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
         unsafe { UPSafeCell::new(BTreeMap::new()) };
+
+    pub static ref TID2TCB: UPSafeCell<BTreeMap<usize,Arc<TaskControlBlock>>> =
+        unsafe { UPSafeCell::new(BTreeMap::new())};
 }
 
 /// Add a task to ready queue
@@ -146,16 +149,33 @@ pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
     map.get(&pid).map(Arc::clone)
 }
 
+/// Get process by pid
+pub fn tid2task(tid: usize) -> Option<Arc<TaskControlBlock>> {
+    info!("(pid2process) pid: {}", tid);
+    let map = TID2TCB.exclusive_access();
+    map.get(&tid).map(Arc::clone)
+}
+
 /// Insert item(pid, pcb) into PID2PCB map (called by do_fork AND ProcessControlBlock::new)
 pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
     info!("(insert_into_pid2process) pid: {}", pid);
     PID2PCB.exclusive_access().insert(pid, process);
 }
 
+pub fn insert_into_tid2task(tid: usize, task: Arc<TaskControlBlock>) {
+    info!("(insert_into_pid2process) pid: {}", tid);
+    TID2TCB.exclusive_access().insert(tid, task);
+}
+
 /// Remove item(pid, _some_pcb) from PDI2PCB map (called by exit_current_and_run_next)
 pub fn remove_from_pid2process(pid: usize) {
     info!("(remove_from_pid2process) pid: {}", pid);
     PID2PCB.exclusive_access().remove(&pid);
+}
+
+pub fn remove_from_tid2task(tid: usize) {
+    info!("(remove_from_pid2process) pid: {}", tid);
+    TID2TCB.exclusive_access().remove(&tid);
 }
 /// Take a process out of the ready queue
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {

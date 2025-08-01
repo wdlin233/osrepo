@@ -11,7 +11,7 @@ use super::{pid_alloc, PidHandle};
 use crate::config::PAGE_SIZE_BITS;
 use crate::mm::{translated_ref, MapPermission};
 
-use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
+use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
@@ -25,7 +25,8 @@ use crate::mm::{
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::task::heap_bottom_from_id;
-use crate::task::id::tid_dealloc;
+use crate::task::id::{tid_dealloc, trap_cx_bottom_from_tid};
+use crate::task::manager::{insert_into_thread_group, insert_into_tid2task};
 use crate::timer::get_time;
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path, SysErrNo};
@@ -200,13 +201,13 @@ impl ProcessControlBlockInner {
     }
     /// allocate a new task id
     pub fn alloc_tid(&mut self) -> usize {
-        self.task_res_allocator.alloc()
-        //tid_alloc().0
+        //self.task_res_allocator.alloc()
+        tid_alloc().0
     }
     /// deallocate a task id
     pub fn dealloc_tid(&mut self, tid: usize) {
-        self.task_res_allocator.dealloc(tid)
-        //tid_dealloc(tid);
+        //self.task_res_allocator.dealloc(tid)
+        tid_dealloc(tid);
     }
     /// the count of tasks(threads) in this process
     pub fn thread_count(&self) -> usize {
@@ -350,7 +351,7 @@ impl ProcessControlBlock {
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
-        let ustack_top = task_inner.ustack_top(true);
+        let ustack_top = task_inner.ustack_top();
         #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
@@ -421,30 +422,22 @@ impl ProcessControlBlock {
         task.alloc_user_res(true);
         // #[cfg(target_arch = "riscv64")]
         // task.set_user_trap();
-        let trap_cx_ppn = task.trap_cx_ppn(task.tid());
+        //let trap_cx_ppn = task.trap_cx_ppn(task.tid());
+        //let trap_cx_ppn = task.
         let mut task_inner = task.inner_exclusive_access();
 
         debug!(
             "kernel: exec .. alloc user resource for main thread again, pid = {}",
             self.getpid()
         );
-        #[cfg(target_arch = "riscv64")]
-        {
-            task_inner.trap_cx_ppn = trap_cx_ppn;
-            debug!("in pcb exec, trap cx ppn is : {}", task_inner.trap_cx_ppn.0);
-        }
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     task_inner.trap_cx_ppn = trap_cx_ppn;
+        //     debug!("in pcb exec, trap cx ppn is : {}", task_inner.trap_cx_ppn.0);
+        // }
         // push arguments on user stack
-        let mut user_sp = task_inner.ustack_top(true) as usize;
-        info!("in pcb exec, initial user_sp = {}", user_sp);
-
-        //      00000000000100b0 <main>:
-        //          100b0: 39 71        	addi	sp, sp, -0x40  ; 分配栈空间
-        //          100b2: 06 fc        	sd	ra, 0x38(sp)   ; 保存返回地址 ra
-        //          100b4: 22 f8        	sd	s0, 0x30(sp)   ; 保存基址指针 fp (previous fp)
-        //          100b6: 80 00        	addi	s0, sp, 0x40  ; s0 指向栈空间顶部 fp
-        //          100b8: aa 87        	mv	a5, a0          ; a5 = argc
-        //          100ba: 23 30 b4 fc  	sd	a1, -0x40(s0)  ; argv[0] 的地址
-        //          100be: 23 26 f4 fc  	sw	a5, -0x34(s0)  ; argc 比 argv 处于更高的地址
+        let mut user_sp = task_inner.ustack_top() as usize;
+        info!("in pcb exec, initial user_sp = {:#x}", user_sp);
 
         //usize大小
         let size = core::mem::size_of::<usize>();
@@ -464,7 +457,7 @@ impl ProcessControlBlock {
         }
         envp.push(0);
         user_sp -= user_sp % size;
-
+        debug!("push envp ok");
         //args
         let mut argv = Vec::new();
         for i in 0..args.len() {
@@ -732,6 +725,19 @@ impl ProcessControlBlock {
             let mut child_inner = child.inner_exclusive_access();
             child_inner.tasks.push(Some(Arc::clone(&task)));
 
+            let trap_cx_bottom = task.trap_cx_user_va();
+            debug!("fork, new task trap va is : {:#x}", trap_cx_bottom);
+            child_inner.memory_set.clone_area(
+                VirtAddr::from(trap_cx_bottom).floor(),
+                parent.memory_set.get_ref(),
+            );
+
+            let ustack_top = task.user_stack_top();
+            child_inner.memory_set.clone_area(
+                VirtAddr::from(ustack_top - USER_STACK_SIZE).floor(),
+                parent.memory_set.get_ref(),
+            );
+
             if flags.contains(CloneFlags::CLONE_PARENT_SETTID) {
                 put_data(parent_token, parent_tid, task.tid() as u32);
             }
@@ -777,6 +783,7 @@ impl ProcessControlBlock {
             if flags.contains(CloneFlags::CLONE_SETTLS) {
                 trap_cx.x[4] = tls;
             }
+            //insert_into_tid2task(task.tid(), task);
             insert_into_pid2process(child.getpid(), Arc::clone(&child));
             // add this thread to scheduler
             add_task(task);

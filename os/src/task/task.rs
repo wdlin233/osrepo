@@ -9,8 +9,11 @@ use crate::config::{
     USER_TRAP_CONTEXT_TOP,
 };
 use crate::hal::trap::TrapContext;
-use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum};
+use crate::mm::{
+    MapAreaType, MapPermission, PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
+};
 use crate::sync::UPSafeCell;
+use alloc::alloc::alloc;
 use alloc::sync::{Arc, Weak};
 use core::cell::RefMut;
 use spin::MutexGuard;
@@ -43,6 +46,10 @@ pub struct TaskControlBlockInner {
     pub task_status: TaskStatus,
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
+    ///trap_va
+    pub trap_va: VirtAddr,
+
+    pub ustack_top: VirtAddr,
 }
 
 impl TaskControlBlock {
@@ -59,23 +66,18 @@ impl TaskControlBlock {
 }
 
 impl TaskControlBlockInner {
-    pub fn ustack_top(&self, _get_self: bool) -> usize {
-        debug!("in ustack top,  tid is :{}", self.tid);
-        ustack_bottom_from_tid(self.tid) + USER_STACK_SIZE
+    pub fn ustack_top(&self) -> usize {
+        self.ustack_top.0
     }
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        #[cfg(target_arch = "riscv64")]
-        {
-            debug!(
-                "in tcb inner, get trap cx, trap cx ppn is : {}",
-                self.trap_cx_ppn.0
-            );
-            self.trap_cx_ppn.get_mut()
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            self.kstack.get_trap_cx()
-        }
+        debug!(
+            "in tcb inner, get trap cx, trap cx ppn is : {}",
+            self.trap_cx_ppn.0
+        );
+        self.trap_cx_ppn.get_mut()
+    }
+    pub fn trap_cx_bottom(&self) -> VirtAddr {
+        self.trap_va
     }
 
     #[allow(unused)]
@@ -89,35 +91,21 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
-    #[cfg(target_arch = "riscv64")]
-    pub fn set_user_trap(&self) {
-        let trap_cx_ppn = self.trap_cx_ppn(self.tid());
-        let mut inner = self.inner_exclusive_access();
-        inner.trap_cx_ppn = trap_cx_ppn;
-    }
-    #[cfg(target_arch = "riscv64")]
-    /// The physical page number(ppn) of the trap context for a task with tid
-    pub fn trap_cx_ppn(&self, tid: usize) -> PhysPageNum {
-        debug!(
-            "in get trap cx ppn , self tid is : {}, tid is : {}",
-            self.tid(),
-            tid
-        );
-        let process = self.process.upgrade().unwrap();
-        let process_inner = process.inner_exclusive_access();
-        let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(tid).into();
-        process_inner
-            .memory_set
-            .translate(trap_cx_bottom_va.into())
-            .unwrap()
-            .ppn()
-    }
-    #[cfg(target_arch = "riscv64")]
     /// The bottom usr vaddr (low addr) of the trap context for a task with tid
     pub fn trap_cx_user_va(&self) -> usize {
-        //debug!("in tcb, trap cx user va");
-        trap_cx_bottom_from_tid(self.tid())
+        //trap_cx_bottom_from_tid(self.tid())
+        let inner = self.inner_exclusive_access();
+        let va = inner.trap_cx_bottom();
+        debug!("tcb, trap cx user va is : {:#x}", va.0);
+        va.0
     }
+
+    pub fn user_stack_top(&self) -> usize {
+        let inner = self.inner_exclusive_access();
+        let va = inner.ustack_top();
+        va
+    }
+
     /// Create a new task
     pub fn new(
         process: Arc<ProcessControlBlock>,
@@ -134,14 +122,6 @@ impl TaskControlBlock {
                 let kstack_top = kstack.get_top();
                 (Some(kstack), kstack_top)
             }
-            #[cfg(target_arch = "loongarch64")]
-            {
-                // info!("Finish TaskUserRes::new!");
-                let kstack = KernelStack::new();
-                let kstack_top = kstack.get_trap_addr(); //存放了trap上下文后的地址
-                                                         // debug!("create task: kstack_top={:#x}", kstack_top);
-                (Some(kstack), kstack_top)
-            }
         };
         let mut new_task = TaskControlBlock {
             process: Arc::downgrade(&process),
@@ -155,29 +135,32 @@ impl TaskControlBlock {
                     kstack: kstack.unwrap(),
                     #[cfg(target_arch = "riscv64")]
                     trap_cx_ppn: PhysPageNum(0),
+                    trap_va: VirtAddr(0),
+                    ustack_top: VirtAddr(0),
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
                 })
             },
         };
-        if alloc_user_res {
-            new_task.alloc_user_res(alloc_ustack);
-            //new_task.alloc_user_trap();
-        }
-        #[cfg(target_arch = "riscv64")]
-        {
-            //new_task.alloc_user_trap();
-            if alloc_user_res {
-                let trap_cx_ppn = new_task.trap_cx_ppn(tid);
-                //let trap_cx_ppn = new_task.trap_cx_ppn(new_task.tid());
-                new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
-            } else {
-                //let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
-                let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
-                new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
-            }
-        }
+        // if alloc_user_res {
+        //     new_task.alloc_user_res(alloc_ustack);
+        //     //new_task.alloc_user_trap();
+        // }
+        new_task.alloc_user_res(alloc_ustack);
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     //new_task.alloc_user_trap();
+        //     if alloc_user_res {
+        //         let trap_cx_ppn = new_task.trap_cx_ppn(tid);
+        //         //let trap_cx_ppn = new_task.trap_cx_ppn(new_task.tid());
+        //         new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
+        //     } else {
+        //         //let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
+        //         let trap_cx_ppn = new_task.trap_cx_ppn(parent_tid);
+        //         new_task.inner_exclusive_access().trap_cx_ppn = trap_cx_ppn;
+        //     }
+        // }
         new_task
     }
 
@@ -185,33 +168,44 @@ impl TaskControlBlock {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
         debug!("in alloc , give tid, tid is : {}", self.tid());
+        let mut ustack_bottom: usize = 0;
+        let mut ustack_top: usize = 0;
         if alloc_ustack {
-            let ustack_bottom = ustack_bottom_from_tid(self.tid());
-            let ustack_top = ustack_bottom + USER_STACK_SIZE;
-            process_inner.memory_set.insert_framed_area(
-                ustack_bottom.into(),
-                ustack_top.into(),
+            (ustack_bottom, ustack_top) = process_inner.memory_set.insert_framed_area_with_hint(
+                USER_STACK_TOP,
+                USER_STACK_SIZE,
                 MapPermission::default() | MapPermission::W,
                 MapAreaType::Stack,
             );
         }
 
-        #[cfg(target_arch = "riscv64")]
-        {
-            let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid());
-            let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
-            process_inner.memory_set.insert_framed_area(
-                trap_cx_bottom.into(),
-                trap_cx_top.into(),
-                MapPermission::R | MapPermission::W,
-                MapAreaType::Trap,
-            );
-        }
+        let (trap_cx_bottom, _) = process_inner.memory_set.insert_framed_area_with_hint(
+            USER_TRAP_CONTEXT_TOP,
+            PAGE_SIZE,
+            MapPermission::R | MapPermission::W,
+            MapAreaType::Trap,
+        );
+        debug!("alloc res, trap bottom is : {:#x}", trap_cx_bottom);
+        let trap_cx_ppn = process_inner
+            .memory_set
+            .translate(VirtAddr::from(trap_cx_bottom).floor())
+            .unwrap()
+            .ppn();
+
+        let mut inner = self.inner_exclusive_access();
+        inner.trap_va = trap_cx_bottom.into();
+        inner.trap_cx_ppn = trap_cx_ppn;
+        inner.ustack_top = VirtAddr::from(ustack_top);
     }
 
     pub fn tid(&self) -> usize {
         let inner = self.inner_exclusive_access();
         let id = inner.tid;
+        id
+    }
+    pub fn ptid(&self) -> usize {
+        let inner = self.inner_exclusive_access();
+        let id = inner.ptid;
         id
     }
 }

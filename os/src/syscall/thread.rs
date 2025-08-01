@@ -24,7 +24,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     add_task(Arc::clone(&new_task));
     let new_task_inner = new_task.inner_exclusive_access();
     let new_task_tid = new_task_inner.tid;
-    let ustack_top = new_task_inner.ustack_top(true);
+    let ustack_top = new_task_inner.ustack_top();
     let mut process_inner = process.inner_exclusive_access();
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
