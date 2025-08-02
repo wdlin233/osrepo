@@ -413,6 +413,9 @@ impl PageTable {
             .unwrap()
             .set_flags(flags | PTEFlags::V);
     }
+    pub fn clear(&mut self) {
+        self.frames.clear();
+    }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table

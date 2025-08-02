@@ -15,12 +15,9 @@ __alltraps:
     # save other general purpose registers
     sd x1, 1*8(sp)
     # skip sp(x2), we will save it later
-    sd x3, 3*8(sp)
-    # skip tp(x4), application does not use it
-    # sd x4, 4*8(sp)
-    # save x5~x31
-    .set n, 5
-    .rept 27
+    # save x3~x31
+    .set n, 3
+    .rept 29
         SAVE_GP %n
         .set n, n+1
     .endr
@@ -57,12 +54,10 @@ __restore:
     ld t1, 33*8(sp)
     csrw sstatus, t0
     csrw sepc, t1
-    # restore general purpose registers except x0/sp/tp
+    # restore general purpose registers except x0/sp
     ld x1, 1*8(sp)
-    ld x3, 3*8(sp)
-    # ld x4, 4*8(sp)
-    .set n, 5
-    .rept 27
+    .set n, 3
+    .rept 29
         LOAD_GP %n
         .set n, n+1
     .endr

@@ -158,7 +158,11 @@ pub fn kstack_alloc() -> KernelStack {
     let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
     //debug!("kstack id is : {}", kstack_id);
     let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
-    //debug!("to map kernel space");
+    debug!("to map kernel space");
+    debug!(
+        "bottom is : {:#x}, top is : {:#x}",
+        kstack_bottom, kstack_top
+    );
     KERNEL_SPACE.exclusive_access().insert_framed_area(
         kstack_bottom.into(),
         kstack_top.into(),
@@ -169,19 +173,23 @@ pub fn kstack_alloc() -> KernelStack {
 }
 
 //#[cfg(target_arch = "riscv64")]
-// impl Drop for KernelStack {
-//     fn drop(&mut self) {
-//         debug!("to drop kernel stack");
-//         let (kernel_stack_bottom, _) = kernel_stack_position(self.0);
-//         let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
-//         KERNEL_SPACE
-//             .exclusive_access()
-//             .remove_area_with_start_vpn(kernel_stack_bottom_va.floor());
-//         debug!("remove ok");
-//         KSTACK_ALLOCATOR.exclusive_access().dealloc(self.0);
-//         debug!("drop kernel stack ok");
-//     }
-// }
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        debug!("to drop kernel stack");
+        let (kernel_stack_bottom, ktop) = kernel_stack_position(self.0);
+        debug!(
+            "kbottom is : {:#x}, ktop is : {:#x}",
+            kernel_stack_bottom, ktop
+        );
+        let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
+        KERNEL_SPACE
+            .exclusive_access()
+            .remove_area_with_start_vpn(kernel_stack_bottom_va.floor());
+        debug!("remove ok");
+        KSTACK_ALLOCATOR.exclusive_access().dealloc(self.0);
+        debug!("drop kernel stack ok");
+    }
+}
 
 /// Create a kernelstack
 /// 在loongArch平台上，并不需要根据pid在内核空间分配内核栈

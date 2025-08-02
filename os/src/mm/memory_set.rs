@@ -34,6 +34,7 @@ use crate::utils::SysErrNo;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::error;
@@ -292,11 +293,8 @@ impl MemorySetInner {
             .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
         {
             area.unmap(&mut self.page_table);
+            debug!("unmap ok");
             self.areas.remove(idx);
-            #[cfg(target_arch = "riscv64")]
-            unsafe {
-                asm!("sfence.vma");
-            }
         }
     }
 
@@ -500,8 +498,8 @@ impl MemorySetInner {
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
-        let _magic = elf_header.pt1.magic;
-        //assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
+        let magic = elf_header.pt1.magic;
+        assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
         let ph_count = elf_header.pt2.ph_count();
         let max_end_vpn = VirtPageNum(0);
         let mut entry_point = elf.header.pt2.entry_point() as usize;
@@ -512,13 +510,13 @@ impl MemorySetInner {
         )); // ELF64 header 64bytes
         auxv.push(Aux::new(AuxType::PHNUM, ph_count as usize));
         auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
-        // 设置动态链接
-        // if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf, cwd) {
-        //     auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
-        //     entry_point = interp_entry_point;
-        // } else {
-        auxv.push(Aux::new(AuxType::BASE, 0));
-        //}
+        //设置动态链接
+        if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf, cwd) {
+            auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
+            entry_point = interp_entry_point;
+        } else {
+            auxv.push(Aux::new(AuxType::BASE, 0));
+        }
         auxv.push(Aux::new(AuxType::FLAGS, 0 as usize));
         auxv.push(Aux::new(
             AuxType::ENTRY,
@@ -541,7 +539,7 @@ impl MemorySetInner {
         });
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        //let mut user_heap_bottom: usize = USER_HEAP_BOTTOM + heap_id * USER_HEAP_SIZE;
+
         let mut user_heap_bottom: usize = heap_bottom_from_id(0);
         // guard page
         user_heap_bottom += PAGE_SIZE;
@@ -561,14 +559,7 @@ impl MemorySetInner {
             perm,
             MapAreaType::Brk,
         );
-        // memory_set.push_lazily(MapArea::new(
-        //     user_heap_bottom.into(),
-        //     user_heap_top.into(),
-        //     #[cfg(target_arch = "riscv64")]
-        //     MapType::Framed,
-        //     perm,
-        //     MapAreaType::Brk,
-        // ));
+
         // 返回 address空间,用户栈顶,入口地址
         (memory_set, user_heap_bottom, entry_point, auxv)
     }
@@ -678,6 +669,7 @@ impl MemorySetInner {
             {
                 GROUP_SHARE.lock().add_area(new_area.groupid);
             }
+
             if area.area_type == MapAreaType::Shm {
                 let frames = area.data_frames.values().cloned().collect();
                 memory_set.push_with_given_frames(new_area, frames);
@@ -714,9 +706,7 @@ impl MemorySetInner {
 
             for vpn in area.vpn_range {
                 let src_ppn = another.translate(vpn).unwrap().ppn();
-                debug!("src ppn ok ");
                 let dst_ppn = self.translate(vpn).unwrap().ppn();
-                debug!("dst ppn ok");
                 dst_ppn
                     .get_bytes_array()
                     .copy_from_slice(src_ppn.get_bytes_array());
@@ -739,8 +729,28 @@ impl MemorySetInner {
 
     ///Remove all `MapArea`
     pub fn recycle_data_pages(&mut self) {
-        //*self = Self::new_bare();
+        // 先检测是否需要munmap
+        for area in self.areas.iter_mut() {
+            if area.area_type == MapAreaType::Mmap {
+                if area.mmap_flags.contains(MmapFlags::MAP_SHARED)
+                    && area.map_perm.contains(MapPermission::W)
+                {
+                    let addr: VirtAddr = area.vpn_range.get_start().into();
+                    let mapped_len: usize = area
+                        .vpn_range
+                        .into_iter()
+                        .filter(|vpn| area.data_frames.contains_key(&vpn))
+                        .count()
+                        * PAGE_SIZE;
+                    let file = area.mmap_file.file.clone().unwrap();
+                    let buf =
+                        unsafe { core::slice::from_raw_parts_mut(addr.0 as *mut u8, mapped_len) };
+                    file.write(UserBuffer::new(vec![buf])).unwrap();
+                }
+            }
+        }
         self.areas.clear();
+        self.page_table.clear();
     }
 
     /// shrink the area to new_end

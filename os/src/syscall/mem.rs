@@ -133,6 +133,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if fd == usize::MAX {
+        debug!("fd = usize max");
         let ret = inner
             .memory_set
             .mmap(addr, len, permission, flags, None, usize::MAX);
@@ -140,6 +141,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
     }
     if flags.contains(MmapFlags::MAP_ANONYMOUS) {
         // anonymous mapping
+        debug!("anonymous map");
         let ret = inner
             .memory_set
             .mmap(0, 1, MapPermission::empty(), flags, None, usize::MAX);
@@ -147,6 +149,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
         debug!("[sys_mmap] bad address is {:x}", ret);
         return ret as isize;
     }
+    debug!("sys mmap, not in anonymous mmap");
     // file mapping
     let inode = inner.fd_table.get(fd);
     let file = match inode.file() {
