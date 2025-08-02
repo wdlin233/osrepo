@@ -176,7 +176,7 @@ __trap_from_kernel:
     .endr
     
     csrrd $t0, CSR_ERA
-    st.d $t0, $sp, 66*8
+    st.d $t0, $sp, 0
 
     move $a0, $sp
     csrrd $sp, CSR_SAVE
@@ -185,7 +185,7 @@ __trap_from_kernel:
 
     bl trap_handler_kernel
 
-    ld.d  $ra, $sp, 66*8
+    ld.d  $ra, $sp, 0
     csrwr $ra, CSR_ERA
     LOAD_GP 1
     LOAD_GP 2
@@ -206,15 +206,51 @@ __trap_from_kernel:
     .globl __tlb_refill
     .balign 4096
 __tlb_refill:
-    csrwr $t0, 0x8B
-    csrrd $t0, 0x1B
-    lddir $t0, $t0, 3 #访问页目录表PGD
-    lddir $t0, $t0, 1 #访问页目录表PMD
-    ldpte $t0, 0
-    #取回偶数号页表项
-    ldpte $t0, 1
-    #取回奇数号页表项
+    csrwr  $t0, 0x8b
+    csrrd  $t0, 0x1b
+    lddir  $t0, $t0, 3
+    andi   $t0, $t0, 1
+    beqz   $t0, 1f
+
+    csrrd  $t0, 0x1b
+    lddir  $t0, $t0, 3
+    addi.d $t0, $t0, -1
+    lddir  $t0, $t0, 1
+    andi   $t0, $t0, 1
+    beqz   $t0, 1f
+    csrrd  $t0, 0x1b
+    lddir  $t0, $t0, 3
+    addi.d $t0, $t0, -1
+    lddir  $t0, $t0, 1
+    addi.d $t0, $t0, -1
+
+    ldpte  $t0, 0
+    ldpte  $t0, 1
+    csrrd  $t0, 0x8c
+    csrrd  $t0, 0x8d
+    csrrd  $t0, 0x0
+2:
     tlbfill
-    csrrd $t0, 0x8B
-    #jr $ra
+    csrrd  $t0, 0x89
+    srli.d $t0, $t0, 13
+    slli.d $t0, $t0, 13
+    csrwr  $t0, 0x11
+    tlbsrch
+    tlbrd
+    csrrd  $t0, 0x12
+    csrrd  $t0, 0x13
+    csrrd  $t0, 0x8b
     ertn
+1:
+    csrrd  $t0, 0x8e
+    ori    $t0, $t0, 0xC
+    csrwr  $t0, 0x8e
+
+    rotri.d $t0, $t0, 61
+    ori    $t0, $t0, 3
+    rotri.d $t0, $t0, 3
+
+    csrwr  $t0, 0x8c
+    csrrd  $t0, 0x8c
+    csrwr  $t0, 0x8d
+    b      2b

@@ -110,6 +110,8 @@ pub fn run_tasks() {
             // release processor manually
             drop(processor);
             info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
+            warn!("idle_task_cx_ptr ra: {:#x}, next_task_cx_ptr ra: {:#x}", unsafe { (*idle_task_cx_ptr).get_ra() }, unsafe { (*next_task_cx_ptr).get_ra() });
+            warn!("idle_task_cx_ptr sp: {:#x}, next_task_cx_ptr sp: {:#x}", unsafe { (*idle_task_cx_ptr).get_sp() }, unsafe { (*next_task_cx_ptr).get_sp() });
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

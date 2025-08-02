@@ -469,11 +469,6 @@ pub fn trap_handler_kernel() {
             // 清除时钟专断
             ticlr::clear_timer_interrupt();
         }
-        Trap::Interrupt(Interrupt::HWI0) => {
-            // 中断0 --- 外部中断处理
-            // hwi0_handler();
-            unimplemented!("unnecessary")
-        }
         e => {
             panic!(
                 "[pc:{:#x}], cause:{:?},  code:{:b}",

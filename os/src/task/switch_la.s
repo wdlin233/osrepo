@@ -14,8 +14,12 @@ __switch:
     #     next_task_cx_ptr: *const TaskContext
     # )
     # save kernel stack of current task
+    
+    # used for debugging
+    # jr $ra
+    
     st.d $sp, $a0,8
-    # save ra & s0~s19 of current execution
+    # save ra($r1) & s0~s8 of current execution
     st.d $ra, $a0,0
     .set n, 0
     .rept 9
@@ -23,7 +27,7 @@ __switch:
         .set n, n + 1
     .endr
     st.d $fp,$a0,(9+2)*8
-    # restore ra & s0~s11 of next execution
+    # restore ra & s0~s8 of next execution
     ld.d $ra, $a1,0
     .set n, 0
     .rept 9
