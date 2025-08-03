@@ -32,6 +32,8 @@ pub const SYSCALL_UNMOUNT2: usize = 39;
 pub const SYSCALL_MOUNT: usize = 40;
 /// stat fs
 pub const SYSCALL_STATFS: usize = 43;
+/// ftruncate
+pub const SYSCALL_FTUNCATE: usize = 46;
 /// faccessat syscall
 pub const SYSCALL_FACCESSAT: usize = 48;
 /// chdir syscall
@@ -66,6 +68,10 @@ pub const SYSCALL_READLINKAT: usize = 78;
 pub const SYSCALL_FSTATAT: usize = 79;
 /// fstat syscall
 pub const SYSCALL_FSTAT: usize = 80;
+/// sync syscall
+pub const SYSCALL_SYNC: usize = 81;
+/// fsync
+pub const SYSCALL_FSYNC: usize = 82;
 /// utimesat sysall
 pub const SYSCALL_UTIMENSAT: usize = 88;
 /// exit syscall
@@ -250,6 +256,9 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_FSYNC => sys_fsync(args[0]),
+        SYSCALL_FTUNCATE => sys_ftruncate(args[0], args[1] as i32),
+        SYSCALL_SYNC => sys_sync(),
         SYSCALL_TGKILL => sys_tgkill(args[0], args[1], args[2]),
         SYSCALL_TKILL => sys_tkill(args[0], args[1]),
         SYSCALL_CLOCKNANOSLEEP => sys_clock_nano_sleep(

@@ -3,7 +3,7 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, fs_stat, open, open_device_file, remove_inode_idx, stat, File,
+    convert_kstat_to_statx, fs_stat, open, open_device_file, remove_inode_idx, stat, sync, File,
     FileClass, FileDescriptor, Kstat, OpenFlags, Statfs, Statx, StatxFlags, MAX_PATH_LEN,
     MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
@@ -28,6 +28,38 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+
+pub fn sys_fsync(fd: usize) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+
+    if fd >= inner.fd_table.len() || inner.fd_table.try_get(fd).is_none() {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    let file = inner.fd_table.get(fd).file().unwrap();
+    file.inode.sync();
+    0
+}
+
+pub fn sys_ftruncate(fd: usize, length: i32) -> isize {
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+
+    if fd >= inner.fd_table.len() || (fd as isize) < 0 {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if length < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if let Some(file) = inner.fd_table.try_get(fd) {
+        let file = file.file().unwrap();
+        return file.inode.truncate(length as usize).unwrap() as isize;
+    }
+    SysErrNo::EBADF as isize
+}
 
 //pselect6
 pub fn sys_pselect6(
@@ -1508,4 +1540,9 @@ pub fn sys_renameat2(
         Ok(n) => n as isize,
         Err(e) => e as isize,
     }
+}
+
+pub fn sys_sync() -> isize {
+    sync();
+    0
 }
