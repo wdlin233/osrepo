@@ -15,7 +15,6 @@
 mod context;
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
-#[cfg(target_arch = "loongarch64")]
 use crate::hal::strampoline;
 use crate::mm::VirtAddr;
 use crate::println;
@@ -94,6 +93,8 @@ pub fn init() {
 
         pwch::set_dir3_base(30); //第三级页目录表
         pwch::set_dir3_width(9); //页目录表宽度为9位
+
+        euen::set_fpe(true);
 
         // make sure that the interrupt is enabled when first task returns user mode
         prmd::set_pie(true);
@@ -407,13 +408,20 @@ pub fn trap_return() -> ! {
 pub fn trap_return() -> ! {
     warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
-    let trap_cx_user_va = current_trap_cx_user_va();
+    let trap_cx = current_trap_cx();
+    let trap_cx_ptr = trap_cx as *const TrapContext as usize;
     //debug!("in trap return, get trap va");
     prmd::set_pplv(CpuMode::Ring3);
     prmd::set_pie(true);
     let user_satp = current_user_token();
 
-    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    let restore_va = __restore as usize - __alltraps as usize + strampoline as usize;
+    debug!(
+        "[kernel] trap_return: ..before return, restore_va = {:#x}, trap_cx_ptr = {:#x}, user_satp = {:#x}",
+        restore_va,
+        trap_cx_ptr,
+        user_satp
+    );
     unsafe {
         asm!(
             "ibar 0",
@@ -422,7 +430,7 @@ pub fn trap_return() -> ! {
             "move $a1, {2}",
             "jr $ra",
             in(reg) restore_va,
-            in(reg) trap_cx_user_va,
+            in(reg) trap_cx_ptr,
             in(reg) user_satp,
             options(noreturn)
         );

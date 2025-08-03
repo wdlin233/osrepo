@@ -86,13 +86,6 @@ pub struct HeapidHandle(pub usize);
 /// A handle to a pid
 pub struct PidHandle(pub usize);
 
-// impl Drop for PidHandle {
-//     fn drop(&mut self) {
-//         // trace!("drop pid {}", self.0);
-//         PID_ALLOCATOR.exclusive_access().dealloc(self.0);
-//     }
-// }
-
 impl Drop for HeapidHandle {
     fn drop(&mut self) {
         HEAP_ID_ALLOCATOR.exclusive_access().dealloc(self.0);
@@ -107,9 +100,6 @@ pub fn pid_dealloc(id: usize) {
 pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
-// pub fn heap_id_alloc() -> HeapidHandle {
-//     HeapidHandle(HEAP_ID_ALLOCATOR.exclusive_access().alloc())
-// }
 pub fn heap_id_alloc() -> usize {
     HEAP_ID_ALLOCATOR.exclusive_access().alloc()
 }
@@ -127,19 +117,30 @@ pub fn tid_dealloc(id: usize) {
 }
 
 /// Return (bottom, top) of a kernel stack in kernel space.
+#[cfg(target_arch = "riscv64")]
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     //debug!("in kernel stack position, app id is : {}", app_id);
-    // TODO: How about low address such as 0x6000_0000 instead of TRAMPOLINE?
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
-    //debug!("kstack bottom is : {}, top is : {}", bottom, top);
+    (bottom, top)
+}
+
+#[cfg(target_arch = "loongarch64")]
+pub fn kernel_stack_position(v: &Vec<u8>) -> (usize, usize) {
+    let bottom = &v[0] as *const u8 as usize;
+    let top = bottom + KERNEL_STACK_SIZE;
     (bottom, top)
 }
 
 /// Kernel stack for a task
+#[cfg(target_arch = "riscv64")]
 pub struct KernelStack(pub usize);
 
+#[cfg(target_arch = "loongarch64")]
+pub struct KernelStack(Vec<u8>);
+
 /// Allocate a kernel stack for a task
+#[cfg(target_arch = "riscv64")]
 pub fn kstack_alloc() -> KernelStack {
     //debug!("in kstack alloc");
     let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
@@ -155,6 +156,12 @@ pub fn kstack_alloc() -> KernelStack {
     KernelStack(kstack_id)
 }
 
+#[cfg(target_arch = "loongarch64")]
+pub fn kstack_alloc() -> KernelStack {
+    KernelStack(alloc::vec![0u8; KERNEL_STACK_SIZE])
+}
+
+#[cfg(target_arch = "riscv64")]
 impl Drop for KernelStack {
     fn drop(&mut self) {
         debug!("to drop kernel stack");
@@ -168,15 +175,14 @@ impl Drop for KernelStack {
 }
 
 /// Create a kernelstack
-/// 在loongArch平台上，并不需要根据pid在内核空间分配内核栈
-/// 内核态并不处于页表翻译模式，而是以类似于直接管理物理内存的方式管理
-/// 因此这里会直接申请对应大小的内存空间
-/// 但这也会造成内核栈无法被保护的状态
 impl KernelStack {
     /// return the top of the kernel stack
     pub fn get_top(&self) -> usize {
         debug!("in kernel stack, to get top");
+        #[cfg(target_arch = "riscv64")]
         let (_, kernel_stack_top) = kernel_stack_position(self.0);
+        #[cfg(target_arch = "loongarch64")]
+        let (_, kernel_stack_top) = kernel_stack_position(&self.0);
         kernel_stack_top
     }
     /// Push a variable of type T into the top of the KernelStack and return its raw pointer

@@ -1,7 +1,5 @@
 //! Implementation of [`TrapContext`]
 #[cfg(target_arch = "loongarch64")]
-use crate::hal::trap::trap_handler;
-#[cfg(target_arch = "loongarch64")]
 use loongarch64::register::{prmd::Prmd, prmd, CpuMode};
 #[cfg(target_arch = "riscv64")]
 use riscv::register::sstatus::{self, Sstatus, SPP, set_spp};
