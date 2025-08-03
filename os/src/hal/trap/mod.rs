@@ -98,6 +98,8 @@ pub fn init() {
 
         // make sure that the interrupt is enabled when first task returns user mode
         prmd::set_pie(true);
+        crmd::set_ie(false);
+        crmd::set_pg(true);
 
         println!("trap init success");
     }
@@ -411,6 +413,7 @@ pub fn trap_return() -> ! {
     let trap_cx = current_trap_cx();
     let trap_cx_ptr = trap_cx as *const TrapContext as usize;
     //debug!("in trap return, get trap va");
+    warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
     prmd::set_pplv(CpuMode::Ring3);
     prmd::set_pie(true);
     let user_satp = current_user_token();
