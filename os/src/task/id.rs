@@ -129,6 +129,7 @@ pub fn tid_dealloc(id: usize) {
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     //debug!("in kernel stack position, app id is : {}", app_id);
+    // TODO: How about low address such as 0x6000_0000 instead of TRAMPOLINE?
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
     //debug!("kstack bottom is : {}, top is : {}", bottom, top);

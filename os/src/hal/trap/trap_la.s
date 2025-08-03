@@ -176,14 +176,14 @@ __trap_from_kernel:
     .endr
     
     csrrd $t0, CSR_ERA
-    st.d $t0, $sp, 0
+    st.d $t0, $sp, 0 # temporarily save $pc on $r0
 
-    move $a0, $sp
+    move $t1, $sp
     csrrd $sp, CSR_SAVE
-    st.d $sp, $a0, 3*8
-    move $sp, $a0
+    st.d $sp, $t1, 3*8
+    move $sp, $t1
 
-    bl trap_handler_kernel
+    bl trap_from_kernel
 
     ld.d  $ra, $sp, 0
     csrwr $ra, CSR_ERA

@@ -7,7 +7,6 @@
 .endm
     .section .text
     .globl __switch
-    .align 4
 __switch:
     # __switch(
     #     current_task_cx_ptr: *mut TaskContext,
@@ -18,17 +17,17 @@ __switch:
     # used for debugging
     # jr $ra
     
-    st.d $sp, $a0,8
+    st.d $sp, $a0, 8
     # save ra($r1) & s0~s8 of current execution
-    st.d $ra, $a0,0
+    st.d $ra, $a0, 0
     .set n, 0
     .rept 9
         SAVE_SN %n
         .set n, n + 1
     .endr
-    st.d $fp,$a0,(9+2)*8
+    st.d $fp,$a0, (9+2)*8   # n as 9
     # restore ra & s0~s8 of next execution
-    ld.d $ra, $a1,0
+    ld.d $ra, $a1, 0
     .set n, 0
     .rept 9
         LOAD_SN %n

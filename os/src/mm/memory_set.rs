@@ -644,7 +644,9 @@ impl MemorySetInner {
     }
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
+        warn!("(MemorySetInner, activate)");
         let satp = self.page_table.token();
+        warn!("satp = {:#x}", satp as u32);
         #[cfg(target_arch = "riscv64")]
         unsafe {
             satp::write(satp);
@@ -652,9 +654,12 @@ impl MemorySetInner {
         }
         #[cfg(target_arch = "loongarch64")]
         {
+            unsafe {
+                asm!("invtlb 0x0,$zero, $zero");
+            }
             use loongarch64::register::pgdl;
             use crate::config::PAGE_SIZE_BITS;
-            pgdl::set_base(satp << PAGE_SIZE_BITS)
+            pgdl::set_base(satp << PAGE_SIZE_BITS);
         }
     }
     /// Translate a virtual page number to a page table entry

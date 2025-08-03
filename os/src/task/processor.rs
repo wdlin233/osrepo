@@ -19,7 +19,7 @@ use core::arch::asm;
 //use core::str::next_code_point;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
-use loongarch64::register::{asid, pgdl};
+use loongarch64::register::{asid, pgdl, pgdh};
 
 /// Processor management structure
 pub struct Processor {
@@ -83,6 +83,7 @@ pub fn run_tasks() {
             {
                 //应用进程号
                 let pgd = task.get_user_token() << PAGE_SIZE_BITS;
+                warn!("(Processor, run_tasks) pid: {}, pgd: {:#x}", pid, pgd);
                 pgdl::set_base(pgd); //设置根页表基地址
                 asid::set_asid(pid); //设置ASID
             }
@@ -112,6 +113,11 @@ pub fn run_tasks() {
             info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
             warn!("idle_task_cx_ptr ra: {:#x}, next_task_cx_ptr ra: {:#x}", unsafe { (*idle_task_cx_ptr).get_ra() }, unsafe { (*next_task_cx_ptr).get_ra() });
             warn!("idle_task_cx_ptr sp: {:#x}, next_task_cx_ptr sp: {:#x}", unsafe { (*idle_task_cx_ptr).get_sp() }, unsafe { (*next_task_cx_ptr).get_sp() });
+            #[cfg(target_arch = "loongarch64")]
+            {
+                let (tlbrsave, sp) = read_tlbrsave_and_sp();
+                warn!("tlbrsave: {:#x}, sp: {:#x}", tlbrsave, sp);
+            }
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
@@ -197,4 +203,19 @@ pub fn munmap(addr: usize, len: usize) -> isize {
         .inner_exclusive_access()
         .memory_set
         .munmap(addr, len)
+}
+
+#[cfg(target_arch = "loongarch64")]
+fn read_tlbrsave_and_sp() -> (usize, usize) {
+    let tlbrsave: usize;
+    let sp: usize;
+    unsafe {
+        asm!(
+            "csrrd {}, 0x30",
+            "move {}, $sp",
+            out(reg) tlbrsave,
+            out(reg) sp
+        );
+    }
+    (tlbrsave, sp)
 }

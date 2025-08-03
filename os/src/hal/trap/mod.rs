@@ -15,6 +15,8 @@
 mod context;
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+#[cfg(target_arch = "loongarch64")]
+use crate::hal::strampoline;
 use crate::mm::VirtAddr;
 use crate::println;
 pub use crate::signal::SignalFlags;
@@ -120,7 +122,7 @@ fn set_user_trap_entry() {
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
+    eentry::set_eentry(strampoline as usize); // 设置普通异常和中断入口
 }
 
 /// enable timer interrupt in supervisor mode
@@ -259,7 +261,7 @@ pub fn trap_handler() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
+pub fn trap_handler() -> ! {
     warn!("(trap_handler) in loongarch64 trap handler");
     set_kernel_trap_entry();
     let estat = estat::read();
@@ -276,6 +278,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
     match estat.cause() {
         Trap::Exception(Exception::Syscall) => {
             //系统调用
+            let mut cx = current_trap_cx();
             cx.sepc += 4;
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
             let result = syscall(
@@ -354,11 +357,6 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             tlb_page_fault();
             panic!("[kernel] PagePrivilegeIllegal in application, core dumped.");
         }
-        Trap::Interrupt(Interrupt::HWI0) => {
-            //中断0 --- 外部中断处理
-            //hwi0_handler();
-            unimplemented!()
-        }
         _ => {
             panic!("{:?}", estat.cause());
         }
@@ -368,8 +366,8 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
         println!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
-    set_user_trap_entry();
-    cx
+    //set_user_trap_entry();
+    trap_return();
 }
 
 extern "C" {
@@ -383,6 +381,7 @@ extern "C" {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
+    warn!("(trap_return) in riscv64 trap return");
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
@@ -405,11 +404,13 @@ pub fn trap_return() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-pub fn trap_return() {
-    //warn!("(trap_return) in loongarch64 trap return");
+pub fn trap_return() -> ! {
+    warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
     //debug!("in trap return, get trap va");
+    prmd::set_pplv(CpuMode::Ring3);
+    prmd::set_pie(true);
     let user_satp = current_user_token();
 
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
@@ -434,7 +435,18 @@ pub fn trap_from_kernel() -> ! {
     #[cfg(target_arch = "riscv64")]
     panic!("a trap {:?} from kernel!", scause::read().cause());
     #[cfg(target_arch = "loongarch64")]
-    panic!("a trap {:?} from kernel!", estat::read().cause());
+    {
+        warn!("(trap_from_kernel) in loongarch64 trap from kernel");
+        let estat = estat::read();
+        let era = era::read();
+        panic!(
+            "a trap {:?} from kernel! [pc:{:#x}], code:{:b}",
+            estat::read().cause(),
+            era.pc(),
+            estat.is(),
+        );
+    }
+    
 }
 
 #[cfg(target_arch = "loongarch64")]
