@@ -138,17 +138,17 @@ bitflags! {
     /// Mmap flags
     pub struct MmapFlags: u32 {
         /// Shared
-        const MAP_SHARED = 1;
+        const MAP_SHARED      = 0x01;
         /// Private
-        const MAP_PRIVATE = 1 << 1;
-        /// Fixed
-        const MAP_FIXED = 1 << 4;
-        /// Anonymous
-        const MAP_ANONYMOUS = 1 << 5;
-        /// Compatity
-        const MAP_DENYWRITE = 1 << 11;
-        /// Stack
-        const MAP_STACK = 1 << 17;
+        const MAP_PRIVATE     = 0x02;
+        /// Fixed address
+        const MAP_FIXED       = 0x10;
+        /// Anonymous mapping
+        const MAP_ANONYMOUS   = 0x20;
+        /// Deny write (compatibility)
+        const MAP_DENYWRITE   = 0x800;
+        /// Stack mapping
+        const MAP_STACK       = 0x20000;
     }
 }
 
@@ -317,6 +317,7 @@ bitflags! {
         const FUTEX_WAIT = 0;
         const FUTEX_WAKE = 1;
         const FUTEX_REQUEUE = 3;
+        const FUTEX_WAKE_OP = 9;
     }
 }
 

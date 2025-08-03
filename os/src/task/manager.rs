@@ -117,6 +117,7 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
     add_task(task);
 }
 pub fn wakeup_futex_task(task: Arc<TaskControlBlock>) {
+    debug!("in wake up futex task");
     let mut task_inner = task.inner_exclusive_access();
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
@@ -151,7 +152,7 @@ pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
 
 /// Get process by pid
 pub fn tid2task(tid: usize) -> Option<Arc<TaskControlBlock>> {
-    info!("(pid2process) pid: {}", tid);
+    info!("(tid2task) tid: {}", tid);
     let map = TID2TCB.exclusive_access();
     map.get(&tid).map(Arc::clone)
 }
@@ -163,7 +164,7 @@ pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
 }
 
 pub fn insert_into_tid2task(tid: usize, task: Arc<TaskControlBlock>) {
-    info!("(insert_into_pid2process) pid: {}", tid);
+    info!("(insert_into_tid2task) pid: {}", tid);
     TID2TCB.exclusive_access().insert(tid, task);
 }
 
@@ -174,7 +175,7 @@ pub fn remove_from_pid2process(pid: usize) {
 }
 
 pub fn remove_from_tid2task(tid: usize) {
-    info!("(remove_from_pid2process) pid: {}", tid);
+    info!("(remove_from_tid2task) pid: {}", tid);
     TID2TCB.exclusive_access().remove(&tid);
 }
 /// Take a process out of the ready queue

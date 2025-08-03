@@ -21,6 +21,7 @@ use crate::{
         exit_current_and_run_next,
         ProcessControlBlock,
         THREAD_GROUP, //    THREAD_GROUP, TID_TO_TASK
+        TID2TCB,
     },
     //hal::trap::{MachineContext, UserContext},
     utils::{SysErrNo, SyscallRet},
@@ -218,22 +219,21 @@ pub fn send_signal_to_thread_group(pid: usize, sig: SignalFlags) {
     }
 }
 
-pub fn send_signal_to_thread(_tid: usize, _sig: SignalFlags) {
-    unimplemented!()
-    // let tid2task = TID_TO_TASK.lock();
-    // if let Some(task) = tid2task.get(&tid) {
-    //     add_signal(Arc::clone(task), sig);
-    // }
+pub fn send_signal_to_thread(tid: usize, sig: SignalFlags) {
+    let tid2task = TID2TCB.exclusive_access();
+    if let Some(task) = tid2task.get(&tid) {
+        add_signal(task.get_process(), sig);
+    }
 }
 
-// pub fn send_signal_to_thread_of_proc(pid: usize, tid: usize, sig: SignalFlags) {
-//     let tid2task = TID_TO_TASK.lock();
-//     if let Some(task) = tid2task.get(&tid) {
-//         if task.pid() == pid {
-//             add_signal(Arc::clone(task), sig);
-//         }
-//     }
-// }
+pub fn send_signal_to_thread_of_proc(pid: usize, tid: usize, sig: SignalFlags) {
+    let tid2task = TID2TCB.exclusive_access();
+    if let Some(task) = tid2task.get(&tid) {
+        if task.pid() == pid {
+            add_signal(task.get_process(), sig);
+        }
+    }
+}
 
 // // 目前的进程组只是一个进程的所有子进程的集合
 // pub fn send_signal_to_process_group(_pid: usize, _sig: SignalFlags) {

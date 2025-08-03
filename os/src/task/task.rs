@@ -63,6 +63,11 @@ impl TaskControlBlock {
         let inner = process.inner_exclusive_access();
         inner.memory_set.token()
     }
+
+    pub fn get_process(&self) -> Arc<ProcessControlBlock> {
+        let process = self.process.upgrade().unwrap();
+        Arc::clone(&process)
+    }
 }
 
 impl TaskControlBlockInner {
@@ -207,6 +212,11 @@ impl TaskControlBlock {
         let inner = self.inner_exclusive_access();
         let id = inner.ptid;
         id
+    }
+
+    pub fn pid(&self) -> usize {
+        let process = self.process.upgrade().unwrap();
+        process.getpid()
     }
 }
 

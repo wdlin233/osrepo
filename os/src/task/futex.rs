@@ -4,7 +4,8 @@ use crate::{
 };
 
 use super::{
-    block_current_and_run_next, current_process, current_task, wakeup_futex_task, TaskControlBlock,
+    block_current_and_run_next, current_process, current_task, suspend_current_and_run_next,
+    wakeup_futex_task, TaskControlBlock,
 };
 use alloc::{
     collections::{BTreeMap, VecDeque},
@@ -67,7 +68,7 @@ pub fn futex_wake_up(key: FutexKey, max_num: i32) -> usize {
             }
             if let Some(weak_task) = queue.pop_front() {
                 if let Some(task) = weak_task.upgrade() {
-                    //debug!("wake up task {}", task.pid());
+                    debug!("wake up task {}", task.pid());
                     wakeup_futex_task(task);
                     num += 1;
                 }

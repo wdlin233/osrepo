@@ -67,8 +67,10 @@ lazy_static! {
 pub fn run_tasks() {
     loop {
         let mut processor = PROCESSOR.exclusive_access();
+
         if let Some(task) = fetch_task() {
-            //debug!("in processor run task, fetch task ok");
+            debug!("in processor run task, fetch task ok");
+            //check_timer();
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
             #[cfg(target_arch = "riscv64")]

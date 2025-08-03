@@ -21,6 +21,7 @@ use crate::{
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
+use core::sync::atomic::{AtomicI32, Ordering};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -45,8 +46,11 @@ pub fn sys_futex(
     val: i32,
     timeoutp: *const TimeSpec,
     uaddr2: *mut u32,
-    _val3: i32,
+    val3: i32,
 ) -> isize {
+    debug!("sys_futex");
+    debug!("the futex op is : {}", futex_op & 0x7f);
+
     let cmd = FutexCmd::from_bits(futex_op & 0x7f).unwrap();
     let opt = FutexOpt::from_bits_truncate(futex_op);
     if uaddr.align_offset(4) != 0 {
@@ -69,15 +73,21 @@ pub fn sys_futex(
         FutexKey::new(pa, 0)
     };
 
-    // log::debug!(
-    //     "[sys_futex] uaddr = {:x}, key = {:?}, cmd = {:?}, val = {},opt={:?}",
-    //     uaddr as usize,
-    //     key,
-    //     cmd,
-    //     val,
-    //     opt
-    // );
+    let va1 = VirtAddr::from(uaddr as usize);
+    let va2 = VirtAddr::from(uaddr2 as usize);
 
+    warn!(
+        "uaddr={:#x} va1={:#x} -> {:?}, \
+     uaddr2={:#x} va2={:#x} -> {:?}, \
+     align(uaddr2)={}",
+        uaddr as usize,
+        va1.0,
+        inner.memory_set.translate_va(va1),
+        uaddr2 as usize,
+        va2.0,
+        inner.memory_set.translate_va(va2),
+        (uaddr2 as usize) % 4
+    );
     match cmd {
         FutexCmd::FUTEX_WAIT => {
             //let futex_word =  *uaddr;
@@ -115,6 +125,7 @@ pub fn sys_futex(
                 .translate_va(VirtAddr::from(uaddr2 as usize))
                 .ok_or(SysErrNo::EINVAL)
                 .unwrap();
+
             let new_key = if private {
                 FutexKey::new(pa2, process.getpid())
             } else {
@@ -123,6 +134,52 @@ pub fn sys_futex(
             drop(inner);
             drop(process);
             futex_requeue(key, val, new_key, timeoutp as i32) as isize
+        }
+        FutexCmd::FUTEX_WAKE_OP => {
+            let op_arg1 = ((val3 >> 28) & 0xF) as u8;
+            let op = ((val3 >> 24) & 0xF) as u8;
+            let op_arg2 = (val3 & 0x00FF_FFFF) as i32;
+
+            let pa2 = inner
+                .memory_set
+                .translate_va(VirtAddr::from(uaddr2 as usize))
+                .ok_or(SysErrNo::EINVAL)
+                .unwrap();
+
+            if pa2.0 == 0 {
+                return SysErrNo::EINVAL as isize;
+            }
+            debug!("the pa2 is : {:#x}", pa2.0);
+            debug!("to get old");
+            let atomic_ref = translated_refmut::<AtomicI32>(token, uaddr2 as *mut AtomicI32);
+            let old = match op_arg1 {
+                0 => atomic_ref.swap(op_arg2, Ordering::Relaxed),
+                1 => atomic_ref.fetch_add(op_arg2, Ordering::Relaxed),
+                2 => atomic_ref.fetch_or(op_arg2, Ordering::Relaxed),
+                3 => atomic_ref.fetch_and(!op_arg2, Ordering::Relaxed),
+                4 => atomic_ref.fetch_xor(op_arg2, Ordering::Relaxed),
+                _ => return SysErrNo::EINVAL as isize,
+            };
+
+            let cmp_ok = match op {
+                0 => old == op_arg2,
+                1 => old != op_arg2,
+                2 => old < op_arg2,
+                3 => old <= op_arg2,
+                4 => old > op_arg2,
+                5 => old >= op_arg2,
+                _ => return SysErrNo::EINVAL as isize,
+            };
+
+            let new_key = if private {
+                FutexKey::new(pa2, process.getpid())
+            } else {
+                FutexKey::new(pa2, 0)
+            };
+            let wake_key = if cmp_ok { key } else { new_key };
+            drop(inner);
+            drop(process);
+            futex_wake_up(wake_key, val) as isize
         }
         _ => unimplemented!(),
     }
@@ -295,7 +352,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_path);
     }
 
-    let env_ld_library_path = "LD_LIBRARY_PATH=/lib:/lib/glibc:/lib/musl:".to_string();
+    let env_ld_library_path = "LD_LIBRARY_PATH=/lib:/glibc/lib:/musl/lib:".to_string();
     if !env.contains(&env_ld_library_path) {
         env.push(env_ld_library_path);
     }
@@ -317,7 +374,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         abs_path = String::from("/musl/busybox");
     }
     debug!("to open,the path is: {}", abs_path);
-    let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
+    let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE, cwd)
         .unwrap()
         .file()
         .unwrap();

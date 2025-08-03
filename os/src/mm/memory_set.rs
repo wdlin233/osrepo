@@ -332,7 +332,7 @@ impl MemorySetInner {
 
             // log::info!("interp {}", interp);
 
-            let interp_inode = match open(&interp, OpenFlags::O_RDONLY, NONE_MODE) {
+            let interp_inode = match open(&interp, OpenFlags::O_RDONLY, NONE_MODE, "") {
                 Ok(f) => f.file().ok(),
                 Err(e) => return None,
             };
@@ -923,7 +923,7 @@ impl MemorySetInner {
         file: Option<Arc<OSInode>>,
         off: usize,
     ) -> usize {
-        debug!("(MemorySetInner, mmap) addr:{:#x}, len:{}", addr, len);
+        debug!("(MemorySetInner, mmap) addr:{:#x}, len:{:#x}", addr, len);
         // 映射到固定地址
         // 如果已经映射的部分和需要固定映射的部分冲突,已经映射的部分将被拆分
         if flags.contains(MmapFlags::MAP_FIXED) {
@@ -932,6 +932,8 @@ impl MemorySetInner {
             let need_split = self.areas.iter().any(|area| {
                 let (l, r) = area.vpn_range.range();
                 if l <= start_vpn && end_vpn <= r {
+                    debug!("need split, the l is : {:#x}, the r is : {:#x}", l.0, r.0);
+
                     !(l == start_vpn && r == end_vpn && map_perm == area.map_perm)
                 } else {
                     false
@@ -946,6 +948,20 @@ impl MemorySetInner {
                         area.mmap_file.file = file.clone();
                     }
                 }
+                // self.munmap(addr, len);
+                // self.push(
+                //     MapArea::new_mmap(
+                //         VirtAddr::from(addr),
+                //         VirtAddr::from(addr + len),
+                //         MapType::Framed,
+                //         map_perm,
+                //         MapAreaType::Mmap,
+                //         file.clone(),
+                //         off,
+                //         flags,
+                //     ),
+                //     None,
+                // );
             } else {
                 #[cfg(target_arch = "riscv64")]
                 self.push(

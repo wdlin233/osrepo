@@ -27,7 +27,7 @@ mod task;
 use crate::fs::{open, OpenFlags, NONE_MODE};
 use crate::println;
 use crate::task::id::heap_id_dealloc;
-use crate::task::manager::add_stopping_task;
+use crate::task::manager::{add_stopping_task, remove_from_tid2task};
 use crate::timer::remove_timer;
 use alloc::{sync::Arc, vec::Vec};
 
@@ -36,6 +36,7 @@ use manager::fetch_task;
 use spin::Lazy;
 use switch::__switch;
 
+use crate::mm::{put_data, VirtAddr};
 use crate::signal::{send_signal_to_thread_group, SignalFlags};
 pub use aux::{Aux, AuxType};
 pub use context::TaskContext;
@@ -43,7 +44,7 @@ pub use futex::*;
 pub use id::{heap_bottom_from_id, pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
     add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
-    wakeup_futex_task, wakeup_task, wakeup_task_by_pid, THREAD_GROUP,
+    wakeup_futex_task, wakeup_task, wakeup_task_by_pid, THREAD_GROUP, TID2TCB,
 };
 pub use process::{
     CloneFlags, ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
@@ -103,6 +104,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let process = task.process.upgrade().unwrap();
     let tid = task_inner.tid;
     let num = process.get_task_len();
+    debug!("exit, the process's task len is : {}", num);
     // record exit code
     task_inner.exit_code = Some(exit_code);
 
@@ -110,6 +112,29 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
     // Move the task to stop-wait status, to avoid kernel stack from being freed
+
+    let mut inner = process.inner_exclusive_access();
+    if inner.clear_child_tid != 0 {
+        let token = inner.get_user_token();
+        put_data(token, inner.clear_child_tid as *mut u32, 0);
+        // 唤醒等待在 child_tid 的进程
+        let pa = inner
+            .memory_set
+            .translate_va(VirtAddr::from(inner.clear_child_tid))
+            .unwrap();
+        let thread_shared_key = FutexKey::new(pa, task.pid());
+        futex_wake_up(thread_shared_key, 1);
+        let process_shared_key = FutexKey::new(pa, 0);
+        futex_wake_up(process_shared_key, 1);
+    }
+    for (idx, t) in inner.tasks.iter().enumerate() {
+        if t.clone().unwrap().tid() == task.tid() {
+            inner.tasks.remove(idx);
+            break;
+        }
+    }
+    drop(inner);
+
     #[cfg(target_arch = "riscv64")]
     if tid == 0 {
         add_stopping_task(task);
@@ -269,7 +294,7 @@ pub fn current_add_signal(signal: SignalFlags) {
 /// the inactive(blocked) tasks are removed when the PCB is deallocated.(called by exit_current_and_run_next)
 pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_task(Arc::clone(&task));
-    //trace!("kernel: remove_inactive_task .. remove_timer");
+    remove_from_tid2task(task.tid());
     remove_timer(Arc::clone(&task));
     //add_task(INITPROC.clone());
     //将主线程退出的那些处于等待的子线程也删除掉

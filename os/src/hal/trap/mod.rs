@@ -197,34 +197,34 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::InstructionPageFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             // page fault
-            let mut res: bool;
+            //let mut res: bool = ;
             {
-                let process = current_process();
-                let inner = process.inner_exclusive_access();
+                // let process = current_process();
+                // let inner = process.inner_exclusive_access();
                 // info!(
                 //     "[kernel] trap_handler: {:?} at {:#x} as vpn",
                 //     scause.cause(),
                 //     stval,
                 // );
-                res = inner
-                    .memory_set
-                    .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
-                if !res {
-                    res = inner
-                        .memory_set
-                        .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
-                }
+                // res = inner
+                //     .memory_set
+                //     .lazy_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+                // if !res {
+                //     res = inner
+                //         .memory_set
+                //         .cow_page_fault(VirtAddr::from(stval).floor(), scause.cause());
+                // }
                 // drop to avoid deadlock and exit exception
             }
-            if !res {
-                error!(
+            //if !res {
+            error!(
                         "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
                         scause.cause(),
                         stval,
                         current_trap_cx().sepc,
                     );
-                current_add_signal(SignalFlags::SIGSEGV);
-            }
+            current_add_signal(SignalFlags::SIGSEGV);
+            // }
         }
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::InstructionFault)

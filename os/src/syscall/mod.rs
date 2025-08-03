@@ -95,7 +95,7 @@ pub const SYSCALL_KILL: usize = 129;
 ///tkill
 pub const SYSCALL_TKILL: usize = 130;
 /// tgkill
-//pub const SYSCALL_TGKILL: usize = 131;
+pub const SYSCALL_TGKILL: usize = 131;
 /*
 /// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
@@ -250,6 +250,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_TGKILL => sys_tgkill(args[0], args[1], args[2]),
         SYSCALL_TKILL => sys_tkill(args[0], args[1]),
         SYSCALL_CLOCKNANOSLEEP => sys_clock_nano_sleep(
             args[0],

@@ -190,7 +190,7 @@ pub fn flush_preload() {
         fn initproc_rv_end();
     }
 
-    let initproc = open("/initproc", OpenFlags::O_CREATE, DEFAULT_FILE_MODE)
+    let initproc = open("/initproc", OpenFlags::O_CREATE, DEFAULT_FILE_MODE, "")
         .unwrap()
         .file()
         .unwrap();
@@ -293,12 +293,14 @@ pub fn create_init_files() -> GeneralRet {
         "/proc",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
         DEFAULT_DIR_MODE,
+        "",
     )?;
     //创建/proc/mounts文件系统使用情况
     let mountsfile = open(
         "/proc/mounts",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )?
     .file()?;
     let mut mountsinfo = String::from(MOUNTS);
@@ -318,6 +320,7 @@ pub fn create_init_files() -> GeneralRet {
         "/proc/meminfo",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )?
     .file()?;
     let mut meminfo = String::from(MEMINFO);
@@ -334,6 +337,7 @@ pub fn create_init_files() -> GeneralRet {
         "/dev",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
         DEFAULT_DIR_MODE,
+        "",
     )?;
     //注册设备/dev/rtc和/dev/rtc0
     register_device("/dev/rtc");
@@ -351,6 +355,7 @@ pub fn create_init_files() -> GeneralRet {
         "/dev/misc",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
         DEFAULT_DIR_MODE,
+        "",
     )?;
     //注册设备/dev/misc/rtc
     register_device("/dev/misc/rtc");
@@ -359,12 +364,14 @@ pub fn create_init_files() -> GeneralRet {
         "/etc",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
         DEFAULT_DIR_MODE,
+        "",
     )?;
     //创建/etc/adjtime记录时间偏差
     let adjtimefile = open(
         "/etc/adjtime",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )?
     .file()?;
     let mut adjtime = String::from(ADJTIME);
@@ -382,6 +389,7 @@ pub fn create_init_files() -> GeneralRet {
         "/etc/localtime",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )?
     .file()?;
     let mut localtime = String::from(LOCALTIME);
@@ -402,6 +410,7 @@ pub fn create_init_files() -> GeneralRet {
         "/etc/passwd",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )?
     .file()?;
     let mut passwd = String::from(PASSWD);
@@ -419,6 +428,7 @@ pub fn create_init_files() -> GeneralRet {
         "/etc/ld.so.preload",
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )?
     .file()?;
     let mut preload = String::from(PRELOAD);
@@ -457,11 +467,11 @@ pub fn is_dynamic_link_file(path: &str) -> bool {
 
 pub fn map_dynamic_link_file<'a>(path: &'a str, prefix: &'a str) -> &'a str {
     //if !DYNAMIC_PATH.contains(path) {
-    //let (_, file_name) = path.rsplit_once("/").unwrap();
-    // log::info!("[map_dynamic] file_name={}", file_name);
+    let (_, file_name) = path.rsplit_once("/").unwrap();
+    debug!("[map_dynamic] file_name={}", file_name);
 
     //let full_path = format!("{}{}", prefix, file_name);
-    let full_path = format!("{}{}", prefix, path);
+    let full_path = format!("{}/lib/{}", prefix, file_name);
     debug!("[map_dynamic] full_path={}", full_path);
     if DYNAMIC_PATH.contains(full_path.as_str()) {
         return full_path.leak();
@@ -470,7 +480,12 @@ pub fn map_dynamic_link_file<'a>(path: &'a str, prefix: &'a str) -> &'a str {
     path
 }
 
-pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass, SysErrNo> {
+pub fn open<'a>(
+    mut abs_path: &'a str,
+    flags: OpenFlags,
+    mode: u32,
+    pre: &'a str,
+) -> Result<FileClass, SysErrNo> {
     // log::info!("[open] abs_path={}", abs_path);
     //判断是否是设备文件
     if find_device(abs_path) {
@@ -478,11 +493,12 @@ pub fn open(mut abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass
         debug!("find device ok");
         return Ok(FileClass::Abs(device));
     }
-    ////如果是动态链接文件,转换路径
-    // if is_dynamic_link_file(abs_path) {
-    //     abs_path = map_dynamic_link_file(abs_path);
-    //     debug!("dynamic path={}", abs_path);
-    // }
+    //如果是动态链接文件,转换路径
+    if is_dynamic_link_file(abs_path) {
+        debug!("the abs_path is : {}", abs_path);
+        abs_path = map_dynamic_link_file(abs_path, pre);
+        debug!("dynamic path={}", abs_path);
+    }
     debug!("open file: {}, flags: {:?}", abs_path, flags);
     let mut inode: Option<Arc<dyn Inode>> = None;
     // 同一个路径对应一个Inode
@@ -552,74 +568,75 @@ static DYNAMIC_PATH: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "/musl/lib/tls_align_dso.so",
         "/musl/lib/tls_get_new-dtv_dso.so",
         "/musl/lib/tls_init_dso.so",
+        "/musl/lib/ld-musl-riscv64-sf.so.1",
         // // lib/
         // "/lib/tls_get_new-dtv_dso.so",
         // "/lib/tls_align_dso.so",
         // "/lib/tls_init_dso.so",
-        // "/lib/ld-musl-riscv64-sf.so.1",
+
         // "/lib/path.py",
         // // lib/musl/
         // "/lib/musllibc.so",
         // // lib/glibc/
-        // "/lib/glibc/libutil-2.31.so",
-        // "/lib/glibc/libpthread-2.31.so",
-        // "/lib/glibc/libgomp.so.1.0.0",
-        // "/lib/glibc/libSegFault.so",
-        // "/lib/glibc/libdl.so",
-        // "/lib/glibc/libnss_dns.so.2",
-        // "/lib/glibc/libatomic.so.1",
-        // "/lib/glibc/libthread_db.so.1",
-        // "/lib/glibc/libm.so.6",
-        // "/lib/glibc/libm-2.31.so",
-        // "/lib/glibc/librt-2.31.so",
-        // "/lib/glibc/libnss_dns-2.31.so",
-        // "/lib/glibc/libutil.so.1",
-        // "/lib/glibc/libdl.so.2",
-        // "/lib/glibc/libnss_files.so.2",
-        // "/lib/glibc/libnss_dns.so",
-        // "/lib/glibc/libnss_nisplus.so",
-        // "/lib/glibc/libresolv-2.31.so",
-        // "/lib/glibc/libnss_nis-2.31.so",
-        // "/lib/glibc/libBrokenLocale-2.31.so",
-        // "/lib/glibc/ld-2.31.so",
-        // "/lib/glibc/libnss_nis.so",
-        // "/lib/glibc/libnsl.so",
-        // "/lib/glibc/libresolv.so",
-        // "/lib/glibc/librt.so.1",
-        // "/lib/glibc/libpcprofile.so",
-        // "/lib/glibc/librt.so",
-        // "/lib/glibc/libnss_hesiod.so",
-        // "/lib/glibc/libnsl.so.1",
-        // "/lib/glibc/libdl-2.31.so",
-        // "/lib/glibc/libc-2.31.so",
-        // "/lib/glibc/libanl.so",
-        // "/lib/glibc/libBrokenLocale.so",
-        // "/lib/glibc/libnss_nis.so.2",
-        // "/lib/glibc/libthread_db-1.0.so",
-        // "/lib/glibc/libmemusage.so",
-        // "/lib/glibc/libc.so.6",
-        // "/lib/glibc/libBrokenLocale.so.1",
-        // "/lib/glibc/libnss_nisplus.so.2",
-        // "/lib/glibc/libnss_compat-2.31.so",
-        // "/lib/glibc/libnss_hesiod.so.2",
-        // "/lib/glibc/libnss_compat.so.2",
-        // "/lib/glibc/libgcc_s.so.1",
-        // "/lib/glibc/libatomic.so.1.2.0",
-        // "/lib/glibc/libm.so",
-        // "/lib/glibc/libanl-2.31.so",
-        // "/lib/glibc/libnss_nisplus-2.31.so",
-        // "/lib/glibc/libresolv.so.2",
-        // "/lib/glibc/libnss_files.so",
-        // "/lib/glibc/libthread_db.so",
-        // "/lib/glibc/libpthread.so.0",
-        // "/lib/glibc/libnss_compat.so",
-        // "/lib/glibc/libanl.so.1",
-        // "/lib/glibc/libgomp.so.1",
-        // "/lib/glibc/libpthread.so",
-        // "/lib/glibc/libnss_hesiod-2.31.so",
-        // "/lib/glibc/libnsl-2.31.so",
-        // "/lib/glibc/libnss_files-2.31.so",
-        // "/lib/glibc/libutil.so",
+        "/glibc/lib/libutil-2.31.so",
+        "/glibc/lib/libpthread-2.31.so",
+        "/glibc/lib/libgomp.so.1.0.0",
+        "/glibc/lib/libSegFault.so",
+        "/glibc/lib/libdl.so",
+        "/glibc/lib/libnss_dns.so.2",
+        "/glibc/lib/libatomic.so.1",
+        "/glibc/lib/libthread_db.so.1",
+        "/glibc/lib/libm.so.6",
+        "/glibc/lib/libm-2.31.so",
+        "/glibc/lib/librt-2.31.so",
+        "/glibc/lib/libnss_dns-2.31.so",
+        "/glibc/lib/libutil.so.1",
+        "/glibc/lib/libdl.so.2",
+        "/glibc/lib/libnss_files.so.2",
+        "/glibc/lib/libnss_dns.so",
+        "/glibc/lib/libnss_nisplus.so",
+        "/glibc/lib/libresolv-2.31.so",
+        "/glibc/lib/libnss_nis-2.31.so",
+        "/glibc/lib/libBrokenLocale-2.31.so",
+        "/glibc/lib/ld-2.31.so",
+        "/glibc/lib/libnss_nis.so",
+        "/glibc/lib/libnsl.so",
+        "/glibc/lib/libresolv.so",
+        "/glibc/lib/librt.so.1",
+        "/glibc/lib/libpcprofile.so",
+        "/glibc/lib/librt.so",
+        "/glibc/lib/libnss_hesiod.so",
+        "/glibc/lib/libnsl.so.1",
+        "/glibc/lib/libdl-2.31.so",
+        "/glibc/lib/libc-2.31.so",
+        "/glibc/lib/libanl.so",
+        "/glibc/lib/libBrokenLocale.so",
+        "/glibc/lib/libnss_nis.so.2",
+        "/glibc/lib/libthread_db-1.0.so",
+        "/glibc/lib/libmemusage.so",
+        "/glibc/lib/libc.so.6",
+        "/glibc/lib/libBrokenLocale.so.1",
+        "/glibc/lib/libnss_nisplus.so.2",
+        "/glibc/lib/libnss_compat-2.31.so",
+        "/glibc/lib/libnss_hesiod.so.2",
+        "/glibc/lib/libnss_compat.so.2",
+        "/glibc/lib/libgcc_s.so.1",
+        "/glibc/lib/libatomic.so.1.2.0",
+        "/glibc/lib/libm.so",
+        "/glibc/lib/libanl-2.31.so",
+        "/glibc/lib/libnss_nisplus-2.31.so",
+        "/glibc/lib/libresolv.so.2",
+        "/glibc/lib/libnss_files.so",
+        "/glibc/lib/libthread_db.so",
+        "/glibc/lib/libpthread.so.0",
+        "/glibc/lib/libnss_compat.so",
+        "/glibc/lib/libanl.so.1",
+        "/glibc/lib/libgomp.so.1",
+        "/glibc/lib/libpthread.so",
+        "/glibc/lib/libnss_hesiod-2.31.so",
+        "/glibc/lib/libnsl-2.31.so",
+        "/glibc/lib/libnss_files-2.31.so",
+        "/glibc/lib/libutil.so",
     ]
     .into_iter()
     .collect()
@@ -630,6 +647,7 @@ pub fn create_proc_dir_and_file(pid: usize, ppid: usize) -> Result<(), SysErrNo>
         format!("/proc/{}", pid).as_str(),
         OpenFlags::O_DIRECTORY | OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_DIR_MODE,
+        "",
     )
     .unwrap()
     .file()?;
@@ -639,6 +657,7 @@ pub fn create_proc_dir_and_file(pid: usize, ppid: usize) -> Result<(), SysErrNo>
         format!("/proc/{}/stat", pid).as_str(),
         OpenFlags::O_CREATE | OpenFlags::O_RDWR,
         DEFAULT_FILE_MODE,
+        "",
     )
     .unwrap()
     .file()?;

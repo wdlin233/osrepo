@@ -668,6 +668,7 @@ impl ProcessControlBlock {
                 debug!("tls");
                 trap_cx.x[4] = tls;
             }
+            insert_into_tid2task(task.tid(), Arc::clone(&task));
             add_task(task);
             self.clone()
         } else {
@@ -783,7 +784,7 @@ impl ProcessControlBlock {
             if flags.contains(CloneFlags::CLONE_SETTLS) {
                 trap_cx.x[4] = tls;
             }
-            //insert_into_tid2task(task.tid(), task);
+            insert_into_tid2task(task.tid(), Arc::clone(&task));
             insert_into_pid2process(child.getpid(), Arc::clone(&child));
             // add this thread to scheduler
             add_task(task);
