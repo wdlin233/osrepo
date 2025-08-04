@@ -77,33 +77,9 @@ pub fn run_tasks() {
                 .inner_exclusive_access()
                 .tms
                 .set_begin();
-            #[cfg(target_arch = "loongarch64")]
-            let pid = task.process.upgrade().unwrap().getpid();
-            #[cfg(target_arch = "loongarch64")]
-            {
-                //应用进程号
-                let pgd = task.get_user_token() << PAGE_SIZE_BITS;
-                warn!("(Processor, run_tasks) pid: {}, pgd: {:#x}", pid, pgd);
-                pgdl::set_base(pgd); //设置根页表基地址
-                asid::set_asid(pid); //设置ASID
-            }
-            // debug!(
-            //     "run_tasks: pid: {}, tid: {}",
-            //     task.process.upgrade().unwrap().getpid(),
-            //     task.inner_exclusive_access().res.as_ref().unwrap().tid
-            // );
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
-            #[cfg(target_arch = "loongarch64")]
-            // 在进行线程切换的时候
-            // 地址空间是相同的，并且pgd也是相同的
-            // 每个线程都有自己的内核栈和用户栈，用户栈互相隔离
-            // 在进入用户态后应该每个线程的地址转换是相同的
-            unsafe {
-                asm!("invtlb 0x4,{},$r0",in(reg) pid);
-            }
-
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually

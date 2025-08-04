@@ -269,6 +269,7 @@ pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
     let estat = estat::read();
     let crmd = crmd::read();
+    warn!("pgdl: {:#x}, pgdh: {:#x}, pgd: {:#x}", pgdl::read().raw(), pgdh::read().raw(), pgd::read().raw());
     if crmd.ie() {
         // 全局中断会在中断处理程序被关掉
         panic!("kerneltrap: global interrupt enable");
@@ -408,6 +409,8 @@ pub fn trap_return() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
+    use crate::config::PAGE_SIZE_BITS;
+
     warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
     let trap_cx = current_trap_cx();
@@ -425,16 +428,14 @@ pub fn trap_return() -> ! {
         trap_cx_ptr,
         user_satp
     );
+    //pgdl::set_base(user_satp << PAGE_SIZE_BITS);
     unsafe {
         asm!(
             "ibar 0",
-            "move $ra, {0}",
-            "move $a0, {1}",
-            "move $a1, {2}",
-            "jr $ra",
-            in(reg) restore_va,
-            in(reg) trap_cx_ptr,
-            in(reg) user_satp,
+            "jr {restore_va}",
+            restore_va = in(reg) restore_va,
+            in("$a0") trap_cx_ptr,
+            in("$a1") user_satp,
             options(noreturn)
         );
     }

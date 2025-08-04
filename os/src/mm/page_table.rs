@@ -248,6 +248,7 @@ impl PageTable {
     /// Create a new page table
     pub fn new() -> Self {
         let frame = frame_alloc().unwrap();
+        info!("PageTable::new: frame: {:?}", frame);
         PageTable {
             root_ppn: frame.ppn,
             frames: vec![frame],
@@ -266,6 +267,7 @@ impl PageTable {
     /// 毕竟寄存器和页的偏移等各自不同
     #[cfg(target_arch = "loongarch64")]
     pub fn from_token(pgd: usize) -> Self {
+        warn!("(PageTable, from_token) pgd: {:#x}", pgd);
         Self {
             root_ppn: PhysPageNum::from(pgd & ((1usize << 34) - 1)),
             frames: Vec::new(),

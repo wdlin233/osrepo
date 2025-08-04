@@ -658,7 +658,7 @@ impl MemorySetInner {
                 asm!("invtlb 0x0,$zero, $zero");
             }
             use loongarch64::register::pgdl;
-            use crate::config::PAGE_SIZE_BITS;
+            use crate::config::PAGE_SIZE_BITS; // 4K aligned
             pgdl::set_base(satp << PAGE_SIZE_BITS);
         }
     }
