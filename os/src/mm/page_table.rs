@@ -125,11 +125,11 @@ impl PageTableEntry {
     /// Get the flags from the page table entry
     /// 返回标志位
     pub fn flags(&self) -> PTEFlags {
-        info!("[kernel] PageTableEntry::flags: bits: {:#x}", self.bits);
+        info!("[kernel] PageTableEntry::flags: bits: {:#x}", self.bits & 0xe000_0000_0000_01ff);
         #[cfg(target_arch = "riscv64")]
         return PTEFlags::from_bits(self.bits as u8).unwrap();
         #[cfg(target_arch = "loongarch64")]
-        return PTEFlags::from_bits(self.bits).unwrap();
+        return PTEFlags::from_bits(self.bits & 0xe000_0000_0000_01ff).unwrap();
     }
     // 返回物理页号---页目录项
     // 在一级和二级页目录表中目录项存放的是只有下一级的基地址
@@ -199,7 +199,7 @@ impl PageTableEntry {
         #[cfg(target_arch = "riscv64")]
         let new_flags: u8 = (self.bits & 0xFF) as u8 | flags.bits().clone();
         #[cfg(target_arch = "loongarch64")]
-        let new_flags: usize = (self.bits & 0xFF) as usize | flags.bits().clone();
+        let new_flags: usize = (self.bits & 0xe000_0000_0000_01ff) as usize | flags.bits().clone();
         self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
     }
     pub fn set_flags(&mut self, flags: PTEFlags) {
