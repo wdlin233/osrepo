@@ -75,27 +75,6 @@ pub struct PageTableEntry {
     pub bits: usize,
 }
 
-#[cfg(target_arch = "loongarch64")]
-impl fmt::Debug for PageTableEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "PageTableEntry RPLV:{},NX:{},NR:{},PPN:{:#x},W:{},P:{},G:{},MAT:{},PLV:{},D:{},V:{}",
-            self.bits.get_bit(63),
-            self.bits.get_bit(62),
-            self.bits.get_bit(61),
-            self.bits.get_bits(12..PALEN), // PALEN is 48
-            self.bits.get_bit(8),
-            self.bits.get_bit(7),
-            self.bits.get_bit(6),
-            self.bits.get_bits(4..=5),
-            self.bits.get_bits(2..=3),
-            self.bits.get_bit(1),
-            self.bits.get_bit(0)
-        )
-    }
-}
-
 impl PageTableEntry {
     /// Create a new page table entry
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
@@ -120,22 +99,16 @@ impl PageTableEntry {
         #[cfg(target_arch = "riscv64")]
         return (self.bits >> 10 & ((1usize << 44) - 1)).into();
         #[cfg(target_arch = "loongarch64")]
-        return self.bits.get_bits(12..PALEN).into();
+        return ((self.bits & !0xe000_0000_0000_01ff) >> 12).into();
     }
     /// Get the flags from the page table entry
     /// 返回标志位
     pub fn flags(&self) -> PTEFlags {
-        info!("[kernel] PageTableEntry::flags: bits: {:#x}", self.bits & 0xe000_0000_0000_01ff);
+        //info!("[kernel] PageTableEntry::flags: bits: {:#x}", self.bits & 0xe000_0000_0000_01ff);
         #[cfg(target_arch = "riscv64")]
         return PTEFlags::from_bits(self.bits as u8).unwrap();
         #[cfg(target_arch = "loongarch64")]
         return PTEFlags::from_bits(self.bits & 0xe000_0000_0000_01ff).unwrap();
-    }
-    // 返回物理页号---页目录项
-    // 在一级和二级页目录表中目录项存放的是只有下一级的基地址
-    #[cfg(target_arch = "loongarch64")]
-    pub fn directory_ppn(&self) -> PhysPageNum {
-        (self.bits >> PAGE_SIZE_BITS).into()
     }
 
     /// The page pointered by page table entry is valid?
@@ -164,14 +137,6 @@ impl PageTableEntry {
     #[cfg(target_arch = "loongarch64")]
     pub fn set_dirty(&mut self) {
         self.bits.set_bit(1, true);
-    }
-    // 用于判断存放的页目录项是否为0
-    // 由于页目录项只保存下一级目录的基地址
-    // 因此判断是否是有效的就只需判断是否为0即可
-    // 但我不认为这是一个好的设计，将在后续被修改
-    #[cfg(target_arch = "loongarch64")]
-    pub fn is_zero(&self) -> bool {
-        self.bits == 0
     }
     /// 统一用 9 位来做 cow. 在 rv 上这样可以减少接口的改动.
     pub fn is_cow(&self) -> bool {
@@ -253,38 +218,31 @@ impl PageTable {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
-        #[cfg(target_arch = "riscv64")]
         for (i, idx) in idxs.iter().enumerate() {
+            //debug!("(find_pte_create, in for loop) i: {}, ppn: {:?}", i, ppn);
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
+                //debug!("(find_pte_create, before return) found pte: {:#x}", pte.bits);
                 result = Some(pte);
                 break;
             }
             if !pte.is_valid() {
                 let frame = frame_alloc().unwrap();
-                *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
+                #[cfg(target_arch = "riscv64")]
+                {
+                    *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
+                }
+                #[cfg(target_arch = "loongarch64")]
+                {
+                    *pte = PageTableEntry::new(frame.ppn, PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P);
+                }
+                // debug!(
+                //     "(find_pte_create, alloc new frame) ppn: {:?}, pte: {:#x}",
+                //     frame.ppn, pte.bits
+                // );
                 self.frames.push(frame);
             }
             ppn = pte.ppn();
-        }
-        #[cfg(target_arch = "loongarch64")]
-        for i in 0..3 {
-            let pte = &mut ppn.get_pte_array()[idxs[i]];
-            if i == 2 {
-                //找到叶子节点，叶子节点的页表项是否合法由调用者来处理
-                result = Some(pte);
-                break;
-            }
-            if pte.is_zero() {
-                let frame = frame_alloc().unwrap();
-                // 页目录项只保存地址
-                *pte = PageTableEntry {
-                    bits: frame.ppn.0 << PAGE_SIZE_BITS,
-                };
-                info!("(PageTable, find_pte_create) create new pte: bits: {:#x}", pte.bits);
-                self.frames.push(frame);
-            }
-            ppn = pte.directory_ppn();
         }
         result
     }
@@ -293,7 +251,6 @@ impl PageTable {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
-        #[cfg(target_arch = "riscv64")]
         for (i, idx) in idxs.iter().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
@@ -305,18 +262,6 @@ impl PageTable {
             }
             ppn = pte.ppn();
         }
-        #[cfg(target_arch = "loongarch64")]
-        for i in 0..3 {
-            let pte = &mut ppn.get_pte_array()[idxs[i]];
-            if pte.is_zero() {
-                return None;
-            }
-            if i == 2 {
-                result = Some(pte);
-                break;
-            }
-            ppn = pte.directory_ppn();
-        }
         result
     }
     /// set the map between virtual page number and physical page number
@@ -324,8 +269,8 @@ impl PageTable {
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: MapPermission, is_cow: bool) {
         let pte = self.find_pte_create(vpn).unwrap();
         // info!(
-        //     "map vpn {:?} to ppn {:?} with flags {:?}",
-        //     vpn, ppn, flags
+        //     "map vpn {:?} to ppn {:?} with flags {:?}, pte flags: {:?}",
+        //     vpn, ppn, flags, pte.flags()
         // );
         //debug!("in page table map, find pte create ok");
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);

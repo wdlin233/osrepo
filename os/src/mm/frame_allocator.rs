@@ -73,11 +73,11 @@ impl FrameAllocator for StackFrameAllocator {
             None
         } else {
             self.current += 1;
-            info!(
-                "(FrameAllocator, alloc) alloc: current ppn {:#x}, recycled {:?}",
-                self.current - 1,
-                self.recycled
-            );
+            // info!(
+            //     "(FrameAllocator, alloc) alloc: current ppn {:#x}, recycled {:?}",
+            //     self.current - 1,
+            //     self.recycled
+            // );
             Some((self.current - 1).into())
         }
     }
