@@ -2,7 +2,11 @@ use super::sys_gettid;
 use crate::alloc::string::ToString;
 use crate::mm::MemorySet;
 use crate::task::exit_current_group_and_run_next;
-use crate::timer::{add_timer, calculate_left_timespec, get_time_ms, get_time_spec, TimeSpec};
+use crate::timer::TimeVal;
+use crate::timer::{
+    add_timer, calculate_left_timespec, get_time_ms, get_time_spec, Itimerval, TimeSpec,
+    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL,
+};
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
@@ -22,13 +26,6 @@ use crate::{
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicI32, Ordering};
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct TimeVal {
-    pub sec: usize,
-    pub usec: usize,
-}
 
 pub fn sys_setsid() -> isize {
     0
@@ -520,6 +517,51 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
         usec: us % 1_000_000,
     };
     copy_to_virt(&time_val, ts);
+    0
+}
+
+pub fn sys_set_timer(
+    which: usize,
+    new_value: *const Itimerval,
+    old_value: *mut Itimerval,
+) -> isize {
+    if (which as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    if (new_value as isize) < 0 || is_bad_address(new_value as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+    if (old_value as isize) < 0 || is_bad_address(old_value as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    let sig = match which {
+        ITIMER_REAL => SignalFlags::SIGALRM,
+        ITIMER_VIRTUAL => SignalFlags::SIGVTALRM,
+        ITIMER_PROF => SignalFlags::SIGPROF,
+        _ => return SysErrNo::EINVAL as isize,
+    };
+
+    if old_value as usize != 0 {
+        *translated_refmut(token, old_value) = inner.timer.timer();
+    }
+    if new_value as usize != 0 {
+        let new_timer = *translated_ref(token, new_value);
+
+        inner.timer.set_timer(new_timer, sig);
+        inner.timer.set_last_time(TimeVal::now());
+        if new_timer.it_interval.is_empty() {
+            if !new_timer.it_value.is_empty() {
+                inner.timer.set_trigger_once(true);
+            }
+        } else {
+            inner.timer.set_trigger_once(false);
+        }
+    }
     0
 }
 //

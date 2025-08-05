@@ -1,10 +1,10 @@
-use super::process::TimeVal;
 use crate::mm::translated_ref;
 use crate::sync::{
     alloc, dealloc, disable_banker_algo, enable_banker_algo, init_available_resource, request,
     Condvar, Mutex, MutexBlocking, MutexSpin, RequestResult, Semaphore,
 };
 use crate::task::{block_current_and_run_next, current_process, current_task, current_user_token};
+use crate::timer::TimeVal;
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall

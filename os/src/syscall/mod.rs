@@ -86,6 +86,9 @@ pub const SYSCALL_FUTEX: usize = 98;
 pub const SYSCALL_SETROBUSTLIST: usize = 99;
 /// sleep syscall
 pub const SYSCALL_SLEEP: usize = 101;
+/// set timer syscall
+pub const SYSCALL_SETTIMER: usize = 103;
+
 /// clock_get_time syscall
 pub const SYSCALL_CLOCKGETTIME: usize = 113;
 /// clock_nano_sleep
@@ -153,12 +156,18 @@ pub const SYSCALL_SOCKETPAIR: usize = 199;
 pub const SYSCALL_BIND: usize = 200;
 /// listen syscall
 pub const SYSCALL_LISTEN: usize = 201;
+/// connect syscall
+pub const SYSCALL_CONNECT: usize = 203;
+
 /// getsockname syscall
 pub const SYSCALL_GETSOCKNAME: usize = 204;
 /// send to syscall
 pub const SYSCALL_SENDTO: usize = 206;
 /// setsockopt syscall
 pub const SYSCALL_SETSOCKOPT: usize = 208;
+///get socket opt syscall
+pub const SYSCALL_GETSOCKETOPT: usize = 209;
+
 /// sbrk syscall
 pub const SYSCALL_BRK: usize = 214;
 /// munmap syscall
@@ -249,13 +258,22 @@ use crate::{
     signal::{SigAction, SigInfo, SignalFlags},
     system::UTSname,
     task::TmsInner,
-    timer::TimeSpec,
+    timer::{Itimerval, TimeSpec, TimeVal},
 };
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_GETSOCKETOPT => {
+            sys_getsocketopt(args[0], args[1], args[2], args[3] as *mut u8, args[4])
+        }
+        SYSCALL_CONNECT => sys_connect(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_SETTIMER => sys_set_timer(
+            args[0] as usize,
+            args[1] as *const Itimerval,
+            args[2] as *mut Itimerval,
+        ),
         SYSCALL_FSYNC => sys_fsync(args[0]),
         SYSCALL_FTUNCATE => sys_ftruncate(args[0], args[1] as i32),
         SYSCALL_SYNC => sys_sync(),

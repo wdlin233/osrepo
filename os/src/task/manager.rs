@@ -50,7 +50,7 @@ impl TaskManager {
 
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        //debug!("ready queue size:{}", self.ready_queue.len());
+        debug!("ready queue size:{}", self.ready_queue.len());
         self.ready_queue.pop_front()
     }
     pub fn remove(&mut self, task: Arc<TaskControlBlock>) {

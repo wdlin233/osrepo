@@ -9,6 +9,7 @@ use core::{
 
 use crate::config::CLOCK_FREQ;
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+use crate::signal::SignalFlags;
 use crate::sync::UPSafeCell;
 use crate::task::TaskControlBlock;
 use alloc::collections::BinaryHeap;
@@ -29,6 +30,143 @@ pub const USEC_PER_MSEC: usize = 1_000;
 
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct TimeVal {
+    pub sec: usize,
+    pub usec: usize,
+}
+
+impl TimeVal {
+    pub fn new(sec: usize, usec: usize) -> Self {
+        Self { sec, usec }
+    }
+    pub fn now() -> Self {
+        let now_time = get_time_ms();
+        Self {
+            sec: now_time / 1000,
+            usec: (now_time % 1000) * 1000,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.sec == 0 && self.usec == 0
+    }
+}
+
+impl Add for TimeVal {
+    type Output = TimeVal;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let usec = self.usec + rhs.usec;
+        Self {
+            sec: self.sec + rhs.sec + usec / 1_000_000,
+            usec: usec % 1_000_000,
+        }
+    }
+}
+
+impl PartialOrd for TimeVal {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.sec > other.sec {
+            Some(Ordering::Greater)
+        } else if self.sec < other.sec {
+            Some(Ordering::Less)
+        } else {
+            if self.usec > other.usec {
+                Some(Ordering::Greater)
+            } else if self.usec < other.usec {
+                Some(Ordering::Less)
+            } else {
+                Some(Ordering::Equal)
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Itimerval {
+    /// Interval for periodic timer
+    pub it_interval: TimeVal,
+    /// Time until next expiration
+    pub it_value: TimeVal,
+}
+
+impl Itimerval {
+    pub fn new() -> Self {
+        Self {
+            it_interval: TimeVal::new(0, 0),
+            it_value: TimeVal::new(0, 0),
+        }
+    }
+}
+///以实际（即挂钟）时间倒计时。在每次到期时，都会生成一个 SIGALRM 信号
+pub const ITIMER_REAL: usize = 0;
+/// 此计时器根据进程消耗的用户模式 CPU 时间倒计时。（测量值包括进程中所有线程消耗的 CPU 时间。
+/// 在每次到期时，都会生成一个 SIGVTALRM 信号
+pub const ITIMER_VIRTUAL: usize = 1;
+/// 此计时器根据进程消耗的总 CPU 时间（即用户和系统）进行倒计时。（测量值包括进程中所有线程消耗的 CPU 时间。
+/// 在每次到期时，都会生成一个 SIGPROF 信号。
+pub const ITIMER_PROF: usize = 2;
+
+/// 三种 itimer,实际只会使用ITIMER_REAL
+pub struct Timer {
+    pub inner: UPSafeCell<TimerInner>,
+}
+
+pub struct TimerInner {
+    pub timer: Itimerval,
+    pub last_time: TimeVal,
+    pub once: bool,
+    pub sig: SignalFlags,
+}
+
+impl TimerInner {
+    pub fn new() -> Self {
+        Self {
+            timer: Itimerval::new(),
+            last_time: TimeVal::new(0, 0),
+            once: false,
+            sig: SignalFlags::empty(),
+        }
+    }
+}
+
+impl Timer {
+    pub fn new() -> Self {
+        unsafe {
+            Self {
+                inner: UPSafeCell::new(TimerInner::new()),
+            }
+        }
+    }
+    pub fn set_timer(&self, new: Itimerval, newsig: SignalFlags) {
+        let inner = self.inner.get_unchecked_mut();
+        inner.timer = new;
+        inner.once = false;
+        inner.last_time = TimeVal::new(0, 0);
+        inner.sig = newsig;
+    }
+    pub fn set_last_time(&self, last_time: TimeVal) {
+        self.inner.get_unchecked_mut().last_time = last_time;
+    }
+    pub fn set_trigger_once(&self, once: bool) {
+        self.inner.get_unchecked_mut().once = once;
+    }
+    pub fn trigger_once(&self) -> bool {
+        self.inner.get_unchecked_ref().once
+    }
+    pub fn last_time(&self) -> TimeVal {
+        self.inner.get_unchecked_ref().last_time
+    }
+    pub fn timer(&self) -> Itimerval {
+        self.inner.get_unchecked_ref().timer
+    }
+    pub fn sig(&self) -> SignalFlags {
+        self.inner.get_unchecked_ref().sig
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Traditional UNIX timespec structures represent elapsed time, measured by the system clock

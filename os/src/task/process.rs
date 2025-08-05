@@ -27,7 +27,7 @@ use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::task::heap_bottom_from_id;
 use crate::task::id::{tid_dealloc, trap_cx_bottom_from_tid};
 use crate::task::manager::{insert_into_thread_group, insert_into_tid2task};
-use crate::timer::get_time;
+use crate::timer::{get_time, Timer};
 use crate::users::{current_user, User};
 use crate::utils::{get_abs_path, is_abs_path, SysErrNo};
 use alloc::string::String;
@@ -101,6 +101,8 @@ pub struct ProcessControlBlockInner {
     pub heap_top: usize,
     //
     pub robust_list: RobustList,
+
+    pub timer: Arc<Timer>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -341,6 +343,7 @@ impl ProcessControlBlock {
                     heap_bottom,
                     heap_top: heap_bottom,
                     robust_list: RobustList::default(),
+                    timer: Arc::new(Timer::new()),
                 })
             },
         });
@@ -677,8 +680,8 @@ impl ProcessControlBlock {
             let heap_id = heap_id_alloc();
             let heap_bottom = heap_bottom_from_id(heap_id);
             //ppid = self.pid;
-            //timer = Arc::new(Timer::new());
             sig_mask = parent.sig_mask.clone();
+            let timer = Arc::new(Timer::new());
             info!("(ProcessControlBlock, fork) pid = {}", pid);
             // create child process pcb
             let child = Arc::new(Self {
@@ -687,6 +690,7 @@ impl ProcessControlBlock {
                 user,
                 inner: unsafe {
                     UPSafeCell::new(ProcessControlBlockInner {
+                        timer,
                         is_zombie: false,
                         clear_child_tid,
                         memory_set: memory_set,

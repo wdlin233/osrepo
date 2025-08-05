@@ -1,5 +1,6 @@
 // src/net/udp.rs
 
+use crate::sync::UPSafeCell;
 use crate::{
     fs::{File, Kstat, StMode},
     mm::UserBuffer,
@@ -24,14 +25,19 @@ pub struct UdpSocket {
 
 impl UdpSocket {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: Arc::new(Mutex::new(UdpBuffer::default())),
-            bound_port: None,
-        })
+        unsafe {
+            Arc::new(Self {
+                inner: Arc::new(Mutex::new(UdpBuffer::default())),
+                bound_port: Some(49152),
+            })
+        }
     }
 }
 
 impl File for UdpSocket {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
     fn readable(&self) -> bool {
         true
     }
@@ -85,4 +91,21 @@ impl File for UdpSocket {
         }
         revents
     }
+}
+
+// UDP 连接实现
+pub fn udp_connect(socket: &UdpSocket, addr: (u32, u16)) -> isize {
+    let mut inner = socket.inner.lock();
+
+    // UDP 连接只是设置默认目标地址
+    inner.peer_addr = Some(addr);
+
+    // // 设置绑定端口（如果尚未绑定）
+    // if socket.bound_port.is_none() {
+    //     // 分配临时端口 (范围 49152-65535)
+    //     // 实际实现中应从端口管理器中获取
+    //     socket.bound_port = Some(49152);
+    // }
+
+    0 // 成功
 }

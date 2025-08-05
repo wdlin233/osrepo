@@ -20,6 +20,9 @@ const LF: usize = 0x0a;
 const CR: usize = 0x0d;
 
 impl File for Stdin {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
     fn readable(&self) -> bool {
         true
     }
@@ -101,6 +104,9 @@ impl File for Stdin {
 }
 
 impl File for Stdout {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
     fn readable(&self) -> bool {
         false
     }

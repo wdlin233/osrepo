@@ -11,20 +11,28 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-#[derive(Default)]
 struct TcpInner {
     rx: VecDeque<u8>,
     tx: VecDeque<u8>,
-    state: TcpState, // CLOSED / LISTEN / ESTAB 等
+    state: TcpState,                // CLOSED / LISTEN / ESTAB 等
+    peer_addr: Option<(u32, u16)>,  // 对端地址 (IP, port)
+    local_addr: Option<(u32, u16)>, // 本地地址
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Default)]
-enum TcpState {
+pub enum TcpState {
     #[default]
     Closed,
     Listen,
     SynSent,
+    SynReceived,
     Established,
+    FinWait1,
+    FinWait2,
+    CloseWait,
+    Closing,
+    LastAck,
+    TimeWait,
 }
 
 pub struct TcpSocket {
@@ -38,8 +46,22 @@ impl TcpSocket {
         })
     }
 }
+impl Default for TcpInner {
+    fn default() -> Self {
+        Self {
+            rx: VecDeque::new(),
+            tx: VecDeque::new(),
+            state: TcpState::Closed,
+            peer_addr: None,
+            local_addr: None,
+        }
+    }
+}
 
 impl File for TcpSocket {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
     fn readable(&self) -> bool {
         true
     }
@@ -97,4 +119,38 @@ impl File for TcpSocket {
         }
         revents
     }
+}
+
+// TCP 连接实现
+pub fn tcp_connect(socket: &TcpSocket, addr: (u32, u16)) -> isize {
+    let mut inner = socket.inner.lock();
+
+    // 检查套接字状态
+    match inner.state {
+        TcpState::Closed => {
+            // 可以开始连接
+        }
+        TcpState::Established | TcpState::SynSent => {
+            return SysErrNo::EALREADY as isize;
+        }
+        _ => {
+            return SysErrNo::EISCONN as isize;
+        }
+    }
+
+    // 设置目标地址和状态
+    inner.peer_addr = Some(addr);
+    inner.state = TcpState::SynSent;
+
+    // TODO: 实际网络实现中这里会发送 SYN 包
+    // 伪代码: net_send_syn(socket, addr);
+
+    // 等待连接完成（简化实现中直接成功）
+    inner.state = TcpState::Established;
+
+    // 唤醒等待的读/写操作
+    // TODO: 实际实现中需要唤醒等待的线程
+
+    // 返回成功
+    0
 }
