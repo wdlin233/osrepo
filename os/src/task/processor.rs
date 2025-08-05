@@ -7,7 +7,6 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
-#[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 use crate::hal::trap::TrapContext;
 use crate::mm::MapPermission;
@@ -136,6 +135,10 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
     current_task().unwrap().trap_cx_user_va()
+}
+
+pub fn current_trap_cx_user_pa() -> usize {
+   current_task().unwrap().trap_cx_user_pa()
 }
 
 /// get the top addr of kernel stack

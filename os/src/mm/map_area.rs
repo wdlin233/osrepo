@@ -248,7 +248,7 @@ impl From<MapPermission> for PTEFlags {
         if perm.is_empty() {
             return PTEFlags::empty();
         } else {
-            let mut res = PTEFlags::V | PTEFlags::MATL | PTEFlags::P;
+            let mut res = PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P;
             if !perm.contains(MapPermission::R) {
                 res |= PTEFlags::NR;
             }
@@ -259,7 +259,7 @@ impl From<MapPermission> for PTEFlags {
                 res |= PTEFlags::NX;
             }
             if perm.contains(MapPermission::U) {
-                res |= PTEFlags::PLVL | PTEFlags::PLVH; // as PLV3, user mode
+                res |= PTEFlags::PLV3; // as PLV3, user mode
             }
             return res;
         }

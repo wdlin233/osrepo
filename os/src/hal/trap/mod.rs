@@ -68,6 +68,11 @@ pub fn init() {
     set_kernel_trap_entry();
     #[cfg(target_arch = "loongarch64")]
     {
+        // make sure that the interrupt is enabled when first task returns user mode
+        euen::set_fpe(true);
+        prmd::set_pie(true);
+        crmd::set_ie(false);
+        crmd::set_pg(true);
         // 清除时钟专断
         ticlr::clear_timer_interrupt();
         tcfg::set_en(false);
@@ -85,6 +90,10 @@ pub fn init() {
         stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
         tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
+        dmw2::set_plv0(true);
+        dmw2::set_vseg(8);
+        dmw2::set_mat(MemoryAccessType::StronglyOrderedUnCached);
+
         pwcl::set_pte_width(8);
         pwcl::set_ptbase(0xc); // 第零级页表的起始地址
         pwcl::set_ptwidth(9); // 第零级页表的索引位数，4KiB的页大小，0xe->0xb, 0xc->0x9
@@ -93,13 +102,6 @@ pub fn init() {
 
         pwch::set_dir3_base(30); //第三级页目录表
         pwch::set_dir3_width(9); //页目录表宽度为9位
-
-        euen::set_fpe(true);
-
-        // make sure that the interrupt is enabled when first task returns user mode
-        prmd::set_pie(true);
-        crmd::set_ie(false);
-        crmd::set_pg(true);
 
         println!("trap init success");
     }
@@ -309,6 +311,13 @@ pub fn trap_handler() -> ! {
                 info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
                 let add = add.floor();
                 info!("[kernel] trap_handler: {:?} at {:#x} as vpn", t, add.0);
+                
+                // debug
+                let pte = inner.memory_set.get_ref().page_table.find_pte(add).unwrap();
+                let token = inner.memory_set.token();
+                info!("[kernel] trap_handler: {:?} at {:#x} as pte, pte ppn: {:#x}, pte flags: {:?}", t, add.0, pte.ppn().0, pte.flags());
+                info!("[kernel] trap_handler, current user token: {:#x}", token);
+
                 res = inner.memory_set.lazy_page_fault(add, t);
                 if !res {
                     res = inner.memory_set.cow_page_fault(add, t);
@@ -409,12 +418,11 @@ pub fn trap_return() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
-    use crate::config::PAGE_SIZE_BITS;
+    use crate::{config::PAGE_SIZE_BITS, task::current_trap_cx_user_pa};
 
     warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
-    let trap_cx = current_trap_cx();
-    let trap_cx_ptr = trap_cx as *const TrapContext as usize;
+    let trap_cx_ptr = current_trap_cx_user_pa();
     //debug!("in trap return, get trap va");
     warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
     prmd::set_pplv(CpuMode::Ring3);

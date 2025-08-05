@@ -529,6 +529,8 @@ impl MemorySetInner {
                 if ph_flags.is_execute() {
                     map_perm |= MapPermission::X;
                 }
+                let pteflags = PTEFlags::from(map_perm);
+                warn!("(map_elf) pteflags: {:?}", pteflags);
                 let map_area = MapArea::new(
                     start_va,
                     end_va,

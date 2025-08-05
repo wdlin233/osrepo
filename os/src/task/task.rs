@@ -4,8 +4,7 @@ use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid};
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
 use crate::config::{
-    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
-    USER_TRAP_CONTEXT_TOP,
+    KERNEL_STACK_SIZE, PAGE_SIZE, PAGE_SIZE_BITS, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
 use crate::hal::trap::TrapContext;
 use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum};
@@ -57,7 +56,7 @@ impl TaskControlBlockInner {
     }
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         debug!(
-            "in tcb inner, get trap cx, trap cx ppn is : {}",
+            "in tcb inner, get trap cx, trap cx ppn is : {:#x}",
             self.trap_cx_ppn.0
         );
         self.trap_cx_ppn.get_mut()
@@ -124,6 +123,18 @@ impl TaskControlBlock {
     pub fn trap_cx_user_va(&self) -> usize {
         //debug!("in tcb, trap cx user va");
         trap_cx_bottom_from_tid(self.tid())
+    }
+    /// 
+    pub fn trap_cx_user_pa(&self) -> usize {
+        let process = self.process.upgrade().unwrap();
+        let process_inner = process.inner_exclusive_access();
+        let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid()).into();
+        let trap_cx_user_pa = process_inner
+            .memory_set
+            .translate(trap_cx_bottom_va.into())
+            .unwrap()
+            .ppn();
+        trap_cx_user_pa.0 << PAGE_SIZE_BITS
     }
     /// Create a new task
     pub fn new(process: Arc<ProcessControlBlock>, alloc_user_res: bool, parent_tid: usize) -> Self {

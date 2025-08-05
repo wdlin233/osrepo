@@ -51,25 +51,19 @@ bitflags! {
     pub struct PTEFlags: usize {
         const V = 1 << 0;
         const D = 1 << 1;
-        const PLVL = 1 << 2;
-        const PLVH = 1 << 3;
-        const MATL = 1 << 4;
-        const MATH = 1 << 5;
+        const PLV0 = 0;
+        const PLV1 = 1 << 2;
+        const PLV2 = 2 << 2;
+        const PLV3 = 3 << 2;
+        const MAT_SUC = 0 << 4;
+        const MAT_CC = 1 << 4;
+        const MAT_WUC = 2 << 4;
         const G = 1 << 6;
         const P = 1 << 7;
         const W = 1 << 8;
         const NR = 1 << 61;
         const NX = 1 << 62;
         const RPLV = 1 << 63;
-    }
-}
-
-impl PTEFlags {
-    fn default() -> Self {
-        #[cfg(target_arch = "riscv64")]
-        return PTEFlags::V;
-        #[cfg(target_arch = "loongarch64")]
-        return PTEFlags::V | PTEFlags::MATL | PTEFlags::P | PTEFlags::W;
     }
 }
 
@@ -111,13 +105,9 @@ impl PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
         };
         #[cfg(target_arch = "loongarch64")]
-        {
-            //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
-            let mut bits = 0usize;
-            bits.set_bits(12..PALEN, ppn.0); //采用4kb大小的页
-            bits = bits | flags.bits;
-            PageTableEntry { bits }
-        }
+        return PageTableEntry {
+            bits: ppn.0 << 12 | flags.bits as usize,
+        };
     }
     /// Create an empty page table entry
     pub fn empty() -> Self {
@@ -135,26 +125,11 @@ impl PageTableEntry {
     /// Get the flags from the page table entry
     /// 返回标志位
     pub fn flags(&self) -> PTEFlags {
+        info!("[kernel] PageTableEntry::flags: bits: {:#x}", self.bits);
         #[cfg(target_arch = "riscv64")]
         return PTEFlags::from_bits(self.bits as u8).unwrap();
         #[cfg(target_arch = "loongarch64")]
-        {
-            //debug!("PageTableEntry::flags: bits: {:#x}", self.bits);
-            let valid_flags = PTEFlags::V.bits()
-                | PTEFlags::D.bits()
-                | PTEFlags::PLVL.bits()
-                | PTEFlags::PLVH.bits()
-                | PTEFlags::MATL.bits()
-                | PTEFlags::MATH.bits()
-                | PTEFlags::G.bits()
-                | PTEFlags::P.bits()
-                | PTEFlags::W.bits()
-                | PTEFlags::NR.bits()
-                | PTEFlags::NX.bits()
-                | PTEFlags::RPLV.bits();
-            let flags_bits = self.bits & valid_flags;
-            PTEFlags::from_bits_truncate(flags_bits)
-        }
+        return PTEFlags::from_bits(self.bits).unwrap();
     }
     // 返回物理页号---页目录项
     // 在一级和二级页目录表中目录项存放的是只有下一级的基地址
@@ -306,6 +281,7 @@ impl PageTable {
                 *pte = PageTableEntry {
                     bits: frame.ppn.0 << PAGE_SIZE_BITS,
                 };
+                info!("(PageTable, find_pte_create) create new pte: bits: {:#x}", pte.bits);
                 self.frames.push(frame);
             }
             ppn = pte.directory_ppn();
@@ -362,7 +338,7 @@ impl PageTable {
         }
         #[cfg(target_arch = "loongarch64")]
         {
-            *pte = PageTableEntry::new(ppn, PTEFlags::from(flags) | PTEFlags::V | PTEFlags::MATL | PTEFlags::P);
+            *pte = PageTableEntry::new(ppn, PTEFlags::from(flags) | PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P);
             if is_cow {
                 pte.set_cow();
             }

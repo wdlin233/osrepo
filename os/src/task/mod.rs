@@ -51,7 +51,7 @@ pub use process::{
 pub use processor::{current_kstack_top, current_trap_cx_user_va};
 pub use processor::{
     current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
-    schedule, take_current_task, PROCESSOR,
+    schedule, take_current_task, PROCESSOR, current_trap_cx_user_pa,
 };
 pub use task::{TaskControlBlock, TaskStatus};
 
