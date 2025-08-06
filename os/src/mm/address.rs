@@ -12,6 +12,7 @@ use crate::{
 };
 use core::fmt::{self, Debug, Formatter};
 use core::ops::Add;
+use crate::config::LA_BIAS;
 
 const PA_WIDTH_SV39: usize = 56;
 const VA_WIDTH_SV39: usize = 39;
@@ -220,11 +221,17 @@ impl VirtPageNum {
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
+        #[cfg(target_arch = "riscv64")]
         unsafe { (self.0 as *const T).as_ref().unwrap() }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe { ((self.0 | LA_BIAS) as *const T).as_ref().unwrap() }
     }
     /// Get the mutable reference of physical address
     pub fn get_mut<T>(&self) -> &'static mut T {
+        #[cfg(target_arch = "riscv64")]
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe { ((self.0 | LA_BIAS) as *mut T).as_mut().unwrap() }
     }
 }
 
@@ -232,12 +239,20 @@ impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
+        #[cfg(target_arch = "riscv64")]
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe {
+            core::slice::from_raw_parts_mut((pa.0 | LA_BIAS) as *mut PageTableEntry, 512)
+        }
     }
     /// Get the reference of page(array of bytes)
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
+        #[cfg(target_arch = "riscv64")]
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe { core::slice::from_raw_parts_mut((pa.0 | LA_BIAS) as *mut u8, 4096) }
     }
     /// Get the mutable reference of physical address
     pub fn get_mut<T>(&self) -> &'static mut T {
@@ -250,7 +265,10 @@ impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         debug!("(PhysPageNum, bytes_array_mut) Getting bytes array for PhysAddr: {:#x}", pa.0);
+        #[cfg(target_arch = "riscv64")]
         let va = pa.0;
+        #[cfg(target_arch = "loongarch64")]
+        let va = pa.0 | LA_BIAS;
         use crate::config::PAGE_SIZE;
         unsafe { core::slice::from_raw_parts_mut(va as *mut u8, PAGE_SIZE) }
     }

@@ -1,11 +1,14 @@
 //! Allocator for pid, task user resource, kernel stack using a simple recycle strategy.
 
 use super::ProcessControlBlock;
+#[cfg(target_arch = "loongarch64")]
+use crate::config::LA_BIAS;
 use crate::config::{
     KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_BOTTOM, USER_HEAP_SIZE, USER_STACK_SIZE,
     USER_STACK_TOP, USER_TRAP_CONTEXT_TOP,
 };
 use crate::hal::trap::TrapContext;
+#[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{frame_alloc, translated_ref, FrameTracker, PhysAddr};
 use crate::mm::{MapAreaType, MapPermission, PhysPageNum, VPNRange, VirtAddr, VirtPageNum};
@@ -127,6 +130,7 @@ pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
 
 #[cfg(target_arch = "loongarch64")]
 pub fn kernel_stack_position(v: &Vec<u8>) -> (usize, usize) {
+    use crate::config::LA_BIAS;
     let bottom = &v[0] as *const u8 as usize;
     let top = bottom + KERNEL_STACK_SIZE;
     (bottom, top)
@@ -182,7 +186,8 @@ impl KernelStack {
         #[cfg(target_arch = "riscv64")]
         let (_, kernel_stack_top) = kernel_stack_position(self.0);
         #[cfg(target_arch = "loongarch64")]
-        let (_, kernel_stack_top) = kernel_stack_position(&self.0);
+        let (_, kernel_stack_top) = kernel_stack_position(&self.0); // get virt top
+        info!("kernel stack top is : {:#x}", kernel_stack_top);
         kernel_stack_top
     }
     /// Push a variable of type T into the top of the KernelStack and return its raw pointer
@@ -196,6 +201,11 @@ impl KernelStack {
             *ptr_mut = value;
         }
         ptr_mut
+    }
+    /// 
+    pub fn get_trap_addr(&self) -> usize {
+        let addr = self.get_top() - core::mem::size_of::<TrapContext>();
+        addr
     }
 }
 

@@ -32,10 +32,12 @@ use virtio_drivers::transport::mmio::VirtIOHeader;
 use virtio_drivers::transport::mmio::MmioTransport;
 use virtio_drivers::transport::pci::PciTransport;
 use virtio::*;
+use crate::config::LA_BIAS;
+
 #[cfg(target_arch = "riscv64")]
 pub const VIRTIO0: usize = 0x1000_1000; // rvv64 virtio base address
 #[cfg(target_arch = "loongarch64")]
-const VIRTIO0: usize = 0x2000_0000;
+const VIRTIO0: usize = 0x2000_0000 | LA_BIAS;
 
 #[cfg(target_arch = "riscv64")]
 pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, MmioTransport>;

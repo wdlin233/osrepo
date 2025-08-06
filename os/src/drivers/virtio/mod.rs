@@ -13,8 +13,9 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::ptr::NonNull;
-//#[cfg(target_arch = "riscv64")]
+#[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
+use crate::config::LA_BIAS;
 
 /// 实现 Trait BlockDevice时对内部操作加锁
 // pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());
@@ -41,7 +42,7 @@ unsafe impl Hal for VirtIoHalImpl {
         }
         #[cfg(target_arch = "loongarch64")]
         unsafe {
-            (pa.0, NonNull::new_unchecked(pa.0 as *mut u8))
+            (pa.0, NonNull::new_unchecked((pa.0 | LA_BIAS) as *mut u8))
         }
     }
 
@@ -59,7 +60,7 @@ unsafe impl Hal for VirtIoHalImpl {
         #[cfg(target_arch = "riscv64")]  
         return NonNull::new_unchecked((PhysAddr::from(paddr).0 | 0x80200000) as *mut u8);
         #[cfg(target_arch = "loongarch64")]
-        return NonNull::new((paddr) as *mut u8).unwrap();
+        return NonNull::new((paddr | LA_BIAS) as *mut u8).unwrap();
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> usize {
@@ -73,7 +74,7 @@ unsafe impl Hal for VirtIoHalImpl {
             .unwrap()
             .0;
         #[cfg(target_arch = "loongarch64")]
-        return buffer.as_ptr() as *mut u8 as usize;
+        return buffer.as_ptr() as *mut u8 as usize - LA_BIAS;
     }
 
     unsafe fn unshare(_paddr: usize, _buffer: NonNull<[u8]>, _direction: BufferDirection) {

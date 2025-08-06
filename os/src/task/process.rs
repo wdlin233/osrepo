@@ -8,14 +8,13 @@ use super::stride::Stride;
 use super::TaskControlBlock;
 use super::{pid_alloc, PidHandle};
 use crate::config::PAGE_SIZE_BITS;
-use crate::mm::MapPermission;
+use crate::mm::{kernel_token, MapPermission};
 
 use crate::config::{PAGE_SIZE, USER_HEAP_BOTTOM, USER_HEAP_SIZE};
 use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
 use crate::mm::VPNRange;
-use crate::mm::KERNEL_SPACE;
 use crate::mm::{
     flush_tlb, put_data, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr,
     VirtPageNum,
@@ -356,7 +355,7 @@ impl ProcessControlBlock {
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             ustack_top,
-            KERNEL_SPACE.exclusive_access().token(),
+            kernel_token(),
             kstack_top,
             trap_handler as usize,
         );
@@ -521,7 +520,7 @@ impl ProcessControlBlock {
         let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            KERNEL_SPACE.exclusive_access().token(),
+            kernel_token(),
             kstack_top,
             trap_handler as usize,
         );

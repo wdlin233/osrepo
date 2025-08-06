@@ -1,6 +1,8 @@
 //! Implementation of [`FrameAllocator`] which
 //! controls all the frames in the operating system.
 use super::{PhysAddr, PhysPageNum};
+#[cfg(target_arch = "loongarch64")]
+use crate::config::LA_BIAS;
 use crate::config::MEMORY_END;
 use crate::println;
 use crate::sync::UPSafeCell;
@@ -111,8 +113,8 @@ pub fn init_frame_allocator() {
     );
     #[cfg(target_arch = "loongarch64")]
     FRAME_ALLOCATOR.exclusive_access().init(
-        PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
+        PhysAddr::from(ekernel as usize - LA_BIAS).ceil(),
+        PhysAddr::from(MEMORY_END - LA_BIAS).floor(),
     );
 }
 

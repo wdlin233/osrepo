@@ -39,6 +39,7 @@ use riscv::register::{
 use xmas_elf::ElfFile;
 
 // 内核地址空间的构建只在 RV 中才需要，因为在 LA 下映射窗口已经完成了 RV 中恒等映射相同功能的操作
+#[cfg(target_arch = "riscv64")]
 lazy_static! {
     /// The kernel's initial memory mapping(kernel address space)
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
@@ -47,7 +48,10 @@ lazy_static! {
 
 /// the kernel token
 pub fn kernel_token() -> usize {
-    KERNEL_SPACE.exclusive_access().token()
+    #[cfg(target_arch = "riscv64")]
+    return KERNEL_SPACE.exclusive_access().token();
+    #[cfg(target_arch = "loongarch64")]
+    return 0; // LoongArch64 does not have a kernel token
 }
 
 pub struct MemorySet {

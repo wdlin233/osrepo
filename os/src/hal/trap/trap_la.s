@@ -17,7 +17,7 @@ FP_START = 32
     .globl __alltraps
     .globl __restore
     .balign 4096
-.equ CSR_SAVE, 0x30    
+.equ CSR_SAVE, 0x502    
 .equ CSR_ERA, 0x6
 .equ CSR_PRMD, 0x1
 .equ CSR_PGDL, 0x19
@@ -81,25 +81,32 @@ __alltraps:
     # load kernel_satp into $t0
     # ld.d    $t0, $sp, 67*8
     # load trap_handler into $t1
-    ld.d    $t1, $sp, 69*8
+    # ld.d    $t1, $sp, 69*8
     # move to kernel_sp
-    ld.d    $sp, $sp, 68*8
+    # ld.d    $sp, $sp, 68*8
     # switch to kernel space
     # csrwr   $t0, CSR_PGDL       # set kernel page table
-    invtlb 0x3, $zero, $zero
+    # invtlb 0x3, $zero, $zero
     # jump to trap_handler
-    jr $t1
+    # jr $t1
+    
+    # set input argument of trap_handler(cx: &mut TrapContext)
+    move    $a0, $sp
+
+    # bl trap_handler       #This will cause a link error
+    ld.d    $t0, $sp, 69*8   #读取trap_handler地址
+    jirl    $ra, $t0, 0
 
 # kernel -> user
 __restore:
     # a0: *TrapContext in user space(Constant), 
     # a1: user space token
     # switch to user space
-    slli.d $a1, $a1, 12
-    csrwr  $a1, CSR_PGDL
-    invtlb 0x3, $zero, $zero
+    # slli.d $a1, $a1, 12
+    # csrwr  $a1, CSR_PGDL
+    # invtlb 0x3, $zero, $zero
     move    $sp, $a0
-    csrwr  $a0, CSR_SAVE
+    # csrwr  $a0, CSR_SAVE
 
     # now sp points to TrapContext in user space, start restoring based on it
     # restore fcsr
@@ -126,8 +133,10 @@ __restore:
     # restore prmd, era etc.
     ld.d    $t0, $sp, 65*8     # prmd
     ld.d    $t1, $sp, 66*8     # era
+    ld.d    $t2, $sp, 3*8      # restore user stack pointer
     csrwr $t0, CSR_PRMD
     csrwr $t1, CSR_ERA
+    csrwr $t2, CSR_SAVE
 
     # restore general purpose registers except r0/$sp
     LOAD_GP 1
@@ -148,7 +157,8 @@ __restore:
         .set m, m+1
     .endr
     # back to user stack pointer
-    LOAD_GP 3
+    # LOAD_GP 3
+    csrwr $sp, CSR_SAVE
     ertn
 
     .section .text
@@ -156,10 +166,10 @@ __restore:
     .balign 4096
 __trap_from_kernel:
     # Keep the original $sp in SAVE
-    csrwr $sp, CSR_SAVE    
-    csrrd $sp, CSR_SAVE
+    # csrwr $sp, CSR_SAVE    
+    # csrrd $sp, CSR_SAVE
     # Now move the $sp lower to push the registers
-    addi.d $sp, $sp, -256
+    addi.d $sp, $sp, -70*8
     # Align the $sp
     srli.d  $sp, $sp, 3
     slli.d  $sp, $sp, 3
@@ -176,17 +186,21 @@ __trap_from_kernel:
     .endr
     
     csrrd $t0, CSR_ERA
-    st.d $t0, $sp, 0 # temporarily save $pc on $r0
+    st.d $t0, $sp, 66*8
+    csrrd $t1, CSR_PRMD
+    st.d $t1, $sp, 65*8
 
-    move $t1, $sp
-    csrrd $sp, CSR_SAVE
-    st.d $sp, $t1, 3*8
-    move $sp, $t1
+    # move $t1, $sp
+    # csrrd $sp, CSR_SAVE
+    # st.d $sp, $t1, 3*8
+    # move $sp, $t1
 
-    bl trap_from_kernel
+    bl trap_handler_kernel
 
-    ld.d  $ra, $sp, 0
-    csrwr $ra, CSR_ERA
+    ld.d  $t0, $sp, 66*8 # restore $ra 
+    csrwr $t0, CSR_ERA
+    ld.d  $t1, $sp, 65*8 # restore $prmd
+    csrwr $t1, CSR_PRMD
     LOAD_GP 1
     LOAD_GP 2
 
@@ -198,7 +212,8 @@ __trap_from_kernel:
     .endr
     .set n, 0
     
-    csrrd $sp, CSR_SAVE
+    # csrrd $sp, CSR_SAVE
+    addi.d $sp, $sp, 70*8
     ertn
 
 # tlb refill
@@ -206,51 +221,15 @@ __trap_from_kernel:
     .globl __tlb_refill
     .balign 4096
 __tlb_refill:
-    csrwr  $t0, 0x8b
-    csrrd  $t0, 0x1b
-    lddir  $t0, $t0, 3
-    andi   $t0, $t0, 1
-    beqz   $t0, 1f
-
-    csrrd  $t0, 0x1b
-    lddir  $t0, $t0, 3
-    addi.d $t0, $t0, -1
-    lddir  $t0, $t0, 1
-    andi   $t0, $t0, 1
-    beqz   $t0, 1f
-    csrrd  $t0, 0x1b
-    lddir  $t0, $t0, 3
-    addi.d $t0, $t0, -1
-    lddir  $t0, $t0, 1
-    addi.d $t0, $t0, -1
-
-    ldpte  $t0, 0
-    ldpte  $t0, 1
-    csrrd  $t0, 0x8c
-    csrrd  $t0, 0x8d
-    csrrd  $t0, 0x0
-2:
+    csrwr $t0, 0x8B
+    csrrd $t0, 0x1B
+    lddir $t0, $t0, 3 #访问页目录表PGD
+    lddir $t0, $t0, 1 #访问页目录表PMD
+    ldpte $t0, 0
+    #取回偶数号页表项
+    ldpte $t0, 1
+    #取回奇数号页表项
     tlbfill
-    csrrd  $t0, 0x89
-    srli.d $t0, $t0, 13
-    slli.d $t0, $t0, 13
-    csrwr  $t0, 0x11
-    tlbsrch
-    tlbrd
-    csrrd  $t0, 0x12
-    csrrd  $t0, 0x13
-    csrrd  $t0, 0x8b
+    csrrd $t0, 0x8B
+    #jr $ra
     ertn
-1:
-    csrrd  $t0, 0x8e
-    ori    $t0, $t0, 0xC
-    csrwr  $t0, 0x8e
-
-    rotri.d $t0, $t0, 61
-    ori    $t0, $t0, 3
-    rotri.d $t0, $t0, 3
-
-    csrwr  $t0, 0x8c
-    csrrd  $t0, 0x8c
-    csrwr  $t0, 0x8d
-    b      2b

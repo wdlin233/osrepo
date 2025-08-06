@@ -88,11 +88,6 @@ pub fn run_tasks() {
             info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
             warn!("idle_task_cx_ptr ra: {:#x}, next_task_cx_ptr ra: {:#x}", unsafe { (*idle_task_cx_ptr).get_ra() }, unsafe { (*next_task_cx_ptr).get_ra() });
             warn!("idle_task_cx_ptr sp: {:#x}, next_task_cx_ptr sp: {:#x}", unsafe { (*idle_task_cx_ptr).get_sp() }, unsafe { (*next_task_cx_ptr).get_sp() });
-            #[cfg(target_arch = "loongarch64")]
-            {
-                let (tlbrsave, sp) = read_tlbrsave_and_sp();
-                warn!("tlbrsave: {:#x}, sp: {:#x}", tlbrsave, sp);
-            }
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
@@ -146,6 +141,11 @@ pub fn current_kstack_top() -> usize {
     current_task().unwrap().kstack.get_top()
 }
 
+/// get the kernel trap address
+pub fn get_kernel_trap_addr() -> usize {
+    current_task().unwrap().get_kernel_trap_addr()
+}
+
 /// Return to idle control flow for new scheduling
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.exclusive_access();
@@ -182,19 +182,4 @@ pub fn munmap(addr: usize, len: usize) -> isize {
         .inner_exclusive_access()
         .memory_set
         .munmap(addr, len)
-}
-
-#[cfg(target_arch = "loongarch64")]
-fn read_tlbrsave_and_sp() -> (usize, usize) {
-    let tlbrsave: usize;
-    let sp: usize;
-    unsafe {
-        asm!(
-            "csrrd {}, 0x30",
-            "move {}, $sp",
-            out(reg) tlbrsave,
-            out(reg) sp
-        );
-    }
-    (tlbrsave, sp)
 }

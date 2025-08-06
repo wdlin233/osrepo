@@ -78,8 +78,8 @@ impl TrapContext {
     pub fn app_init_context(
         entry: usize,
         sp: usize,
-        kernel_satp: usize,
-        kernel_sp: usize,
+        kernel_satp: usize, // rv
+        kernel_sp: usize, // rv
         trap_handler: usize,
     ) -> Self {
         #[cfg(target_arch = "riscv64")]
@@ -105,6 +105,7 @@ impl TrapContext {
             kernel_ra: trap_handler as usize, // addr of trap_handler function
             origin_a0: 0, // original a0 value
         };
+        warn!("TrapContext: sp = {:#x}, sepc = {:#x}, kernel_satp = {:#x}, kernel_sp = {:#x}, kernel_ra = {:#x}", sp, cx.sepc, cx.kernel_satp, cx.kernel_sp, cx.kernel_ra);
         cx.set_sp(sp); // app's user stack pointer
         cx // return initial Trap Context of app
     }

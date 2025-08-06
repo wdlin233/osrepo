@@ -90,10 +90,6 @@ pub fn init() {
         stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
         tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
-        dmw2::set_plv0(true);
-        dmw2::set_vseg(8);
-        dmw2::set_mat(MemoryAccessType::StronglyOrderedUnCached);
-
         pwcl::set_pte_width(8);
         pwcl::set_ptbase(0xc); // 第零级页表的起始地址
         pwcl::set_ptwidth(9); // 第零级页表的索引位数，4KiB的页大小，0xe->0xb, 0xc->0x9
@@ -266,7 +262,7 @@ pub fn trap_handler() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-pub fn trap_handler() -> ! {
+pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
     warn!("(trap_handler) in loongarch64 trap handler");
     set_kernel_trap_entry();
     let estat = estat::read();
@@ -284,7 +280,6 @@ pub fn trap_handler() -> ! {
     match estat.cause() {
         Trap::Exception(Exception::Syscall) => {
             //系统调用
-            let mut cx = current_trap_cx();
             cx.sepc += 4;
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
             let result = syscall(
@@ -379,8 +374,8 @@ pub fn trap_handler() -> ! {
         println!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
-    //set_user_trap_entry();
-    trap_return();
+    set_user_trap_entry();
+    cx
 }
 
 extern "C" {
@@ -417,35 +412,28 @@ pub fn trap_return() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-pub fn trap_return() -> ! {
-    use crate::{config::PAGE_SIZE_BITS, task::current_trap_cx_user_pa};
+pub fn trap_return() {
+    use crate::{config::PAGE_SIZE_BITS, task::get_kernel_trap_addr};
 
     warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
-    let trap_cx_ptr = current_trap_cx_user_pa();
+    let trap_cx_ptr = get_kernel_trap_addr();
     //debug!("in trap return, get trap va");
     warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
     prmd::set_pplv(CpuMode::Ring3);
-    prmd::set_pie(true);
-    let user_satp = current_user_token();
-
-    let restore_va = __restore as usize - __alltraps as usize + strampoline as usize;
+    //prmd::set_pie(true);
     debug!(
-        "[kernel] trap_return: ..before return, restore_va = {:#x}, trap_cx_ptr = {:#x}, user_satp = {:#x}",
-        restore_va,
+        "[kernel] trap_return: ..before return, trap_cx_ptr = {:#x}",
         trap_cx_ptr,
-        user_satp
     );
-    //pgdl::set_base(user_satp << PAGE_SIZE_BITS);
+    let (tlbrsave, sp) = read_tlbrsave_and_sp();
+    warn!("tlbrsave: {:#x}, sp: {:#x}, trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}", tlbrsave, sp, trap_cx_ptr, current_trap_cx().gp.x[3]);
     unsafe {
         asm!(
-            "ibar 0",
-            "jr {restore_va}",
-            restore_va = in(reg) restore_va,
-            in("$a0") trap_cx_ptr,
-            in("$a1") user_satp,
-            options(noreturn)
+            "move $a0, {trap_cx_ptr}",
+            trap_cx_ptr = in(reg) trap_cx_ptr,
         );
+        __restore();
     }
 }
 
@@ -591,4 +579,19 @@ pub fn wait_return() {
         satp::write(user_satp);
         asm!("sfence.vma");
     }
+}
+
+#[cfg(target_arch = "loongarch64")]
+fn read_tlbrsave_and_sp() -> (usize, usize) {
+    let tlbrsave: usize;
+    let sp: usize;
+    unsafe {
+        asm!(
+            "csrrd {}, 0x502",
+            "move {}, $sp",
+            out(reg) tlbrsave,
+            out(reg) sp
+        );
+    }
+    (tlbrsave, sp)
 }

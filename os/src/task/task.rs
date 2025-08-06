@@ -3,6 +3,8 @@
 use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid};
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
+#[cfg(target_arch = "loongarch64")]
+use crate::config::LA_BIAS;
 use crate::config::{
     KERNEL_STACK_SIZE, PAGE_SIZE, PAGE_SIZE_BITS, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
@@ -46,6 +48,10 @@ impl TaskControlBlock {
         let process = self.process.upgrade().unwrap();
         let inner = process.inner_exclusive_access();
         inner.memory_set.token()
+    }
+    /// Get the kernel trap address
+    pub fn get_kernel_trap_addr(&self) -> usize {
+        self.kstack.get_trap_addr()
     }
 }
 
