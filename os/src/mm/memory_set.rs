@@ -228,6 +228,14 @@ impl MemorySet {
     ) -> usize {
         self.get_mut().shm(addr, size, map_perm, pages)
     }
+    #[inline(always)]
+    pub fn copy_from_user(&self, src: usize, dst: &mut [u8]) -> Result<(), SysErrNo> {
+        self.get_mut().copy_from_user(src, dst)
+    }
+    #[inline(always)]
+    pub fn copy_to_user(&self, src: &[u8], dst: usize) -> Result<(), SysErrNo> {
+        self.get_mut().copy_to_user(src, dst)
+    }
 }
 
 /// address space
@@ -249,6 +257,48 @@ impl MemorySetInner {
     /// Get he page table token
     pub fn token(&self) -> usize {
         self.page_table.token()
+    }
+    pub fn copy_from_user(&self, src: usize, dst: &mut [u8]) -> Result<(), SysErrNo> {
+        let page_table = &self.page_table;
+        let mut bytes_copied = 0;
+
+        while bytes_copied < dst.len() {
+            let va = src + bytes_copied;
+            let pa = page_table.translate_va(va.into()).ok_or(SysErrNo::EFAULT)?;
+
+            let remaining = dst.len() - bytes_copied;
+            let copy_size = remaining.min(4096 - (va & 0xFFF));
+
+            let src_slice =
+                unsafe { core::slice::from_raw_parts(pa.get_ref::<u8>() as *const u8, copy_size) };
+
+            dst[bytes_copied..bytes_copied + copy_size].copy_from_slice(src_slice);
+
+            bytes_copied += copy_size;
+        }
+        Ok(())
+    }
+
+    pub fn copy_to_user(&self, src: &[u8], dst: usize) -> Result<(), SysErrNo> {
+        let page_table = &self.page_table;
+        let mut bytes_copied = 0;
+
+        while bytes_copied < src.len() {
+            let va = dst + bytes_copied;
+            let pa = page_table.translate_va(va.into()).ok_or(SysErrNo::EFAULT)?;
+
+            let remaining = src.len() - bytes_copied;
+            let copy_size = remaining.min(4096 - (va & 0xFFF));
+
+            let dst_slice = unsafe {
+                core::slice::from_raw_parts_mut(pa.get_mut::<u8>() as *mut u8, copy_size)
+            };
+
+            dst_slice.copy_from_slice(&src[bytes_copied..bytes_copied + copy_size]);
+
+            bytes_copied += copy_size;
+        }
+        Ok(())
     }
 
     pub fn insert_framed_area_with_hint(
