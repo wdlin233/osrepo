@@ -30,7 +30,7 @@ pub struct TrapContext {
     #[cfg(target_arch = "riscv64")]
     pub sstatus: Sstatus, // 65, Supervisor Status Register
     #[cfg(target_arch = "loongarch64")]
-    pub sstatus: Prmd, //65, 控制状态寄存器
+    pub sstatus: usize, //65, 控制状态寄存器
     pub sepc: usize,    // 66, Supervisor Exception Program Counter，also CSR_ERA
     pub kernel_satp: usize, // 67, Token of kernel address space
     pub kernel_sp: usize, // 68, Kernel stack pointer of the current application
@@ -93,7 +93,7 @@ impl TrapContext {
         #[cfg(target_arch = "loongarch64")]
         prmd::set_pplv(CpuMode::Ring3);
         #[cfg(target_arch = "loongarch64")]
-        let sstatus = prmd::read();
+        let sstatus = prmd::read().raw();
 
         let mut cx = Self {
             gp: GeneralRegs::default(),

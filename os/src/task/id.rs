@@ -128,20 +128,14 @@ pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     (bottom, top)
 }
 
-#[cfg(target_arch = "loongarch64")]
-pub fn kernel_stack_position(v: &Vec<u8>) -> (usize, usize) {
-    use crate::config::LA_BIAS;
-    let bottom = &v[0] as *const u8 as usize;
-    let top = bottom + KERNEL_STACK_SIZE;
-    (bottom, top)
-}
-
 /// Kernel stack for a task
 #[cfg(target_arch = "riscv64")]
 pub struct KernelStack(pub usize);
 
 #[cfg(target_arch = "loongarch64")]
-pub struct KernelStack(Vec<u8>);
+pub struct KernelStack {
+    pub frame: FrameTracker,
+}
 
 /// Allocate a kernel stack for a task
 #[cfg(target_arch = "riscv64")]
@@ -162,7 +156,7 @@ pub fn kstack_alloc() -> KernelStack {
 
 #[cfg(target_arch = "loongarch64")]
 pub fn kstack_alloc() -> KernelStack {
-    KernelStack(alloc::vec![0u8; KERNEL_STACK_SIZE])
+    frame_alloc().map(|frame| KernelStack { frame }).unwrap()
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -186,7 +180,9 @@ impl KernelStack {
         #[cfg(target_arch = "riscv64")]
         let (_, kernel_stack_top) = kernel_stack_position(self.0);
         #[cfg(target_arch = "loongarch64")]
-        let (_, kernel_stack_top) = kernel_stack_position(&self.0); // get virt top
+        let kernel_stack_top_pa: PhysAddr = self.frame.ppn.into();
+        #[cfg(target_arch = "loongarch64")]
+        let kernel_stack_top = kernel_stack_top_pa.0 + PAGE_SIZE + LA_BIAS - core::mem::size_of::<TrapContext>();
         info!("kernel stack top is : {:#x}", kernel_stack_top);
         kernel_stack_top
     }

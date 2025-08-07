@@ -136,14 +136,8 @@ pub fn current_trap_cx_user_pa() -> usize {
    current_task().unwrap().trap_cx_user_pa()
 }
 
-/// get the top addr of kernel stack
-pub fn current_kstack_top() -> usize {
-    current_task().unwrap().kstack.get_top()
-}
-
-/// get the kernel trap address
-pub fn get_kernel_trap_addr() -> usize {
-    current_task().unwrap().get_kernel_trap_addr()
+pub fn current_trap_addr() -> usize {
+    current_task().unwrap().kstack.get_trap_addr()
 }
 
 /// Return to idle control flow for new scheduling

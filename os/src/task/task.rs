@@ -51,7 +51,7 @@ impl TaskControlBlock {
     }
     /// Get the kernel trap address
     pub fn get_kernel_trap_addr(&self) -> usize {
-        self.kstack.get_trap_addr()
+        self.kstack.get_top()
     }
 }
 
@@ -103,11 +103,6 @@ impl TaskControlBlock {
             MapPermission::R | MapPermission::W,
             MapAreaType::Trap,
         );
-    }
-    pub fn set_user_trap(&self) {
-        let trap_cx_ppn = self.trap_cx_ppn(self.tid());
-        let mut inner = self.inner_exclusive_access();
-        inner.trap_cx_ppn = trap_cx_ppn;
     }
     /// The physical page number(ppn) of the trap context for a task with tid
     pub fn trap_cx_ppn(&self, tid: usize) -> PhysPageNum {

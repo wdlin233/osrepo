@@ -297,33 +297,12 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             // tlb_page_fault();
             let t = estat.cause();
             let badv = badv::read().vaddr();
-            info!("badv: {:#x}", badv);
-            let mut res: bool;
-            {
-                let process = current_process();
-                let inner = process.inner_exclusive_access();
-                let add = VirtAddr::from(badv);
-                info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
-                let add = add.floor();
-                info!("[kernel] trap_handler: {:?} at {:#x} as vpn", t, add.0);
-                
-                // debug
-                let pte = inner.memory_set.get_ref().page_table.find_pte(add).unwrap();
-                let token = inner.memory_set.token();
-                info!("[kernel] trap_handler: {:?} at {:#x} as pte, pte ppn: {:#x}, pte flags: {:?}", t, add.0, pte.ppn().0, pte.flags());
-                info!("[kernel] trap_handler, current user token: {:#x}", token);
-
-                res = inner.memory_set.lazy_page_fault(add, t);
-                if !res {
-                    res = inner.memory_set.cow_page_fault(add, t);
-                }
-                // drop to avoid deadlock and exit exception
-            }
-            if !res {
-                println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
-                // 设置SIGSEGV信号
-                current_add_signal(SignalFlags::SIGSEGV);
-            }
+            error!(
+                "[kernel] trap_handler: {:?} at {:#x} in application, kernel killed it.",
+                t,
+                badv
+            );
+            current_add_signal(SignalFlags::SIGSEGV);
         }
         Trap::Exception(Exception::InstructionPrivilegeIllegal) => {
             // 指令权限不足
@@ -413,21 +392,21 @@ pub fn trap_return() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_return() {
-    use crate::{config::PAGE_SIZE_BITS, task::get_kernel_trap_addr};
+    use crate::{config::PAGE_SIZE_BITS, task::{current_trap_addr, current_trap_cx}};
 
-    warn!("(trap_return) in loongarch64 trap return");
+    //warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
-    let trap_cx_ptr = get_kernel_trap_addr();
+    let trap_cx_ptr = current_trap_cx() as *const TrapContext as usize;
     //debug!("in trap return, get trap va");
-    warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
+    //warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
     prmd::set_pplv(CpuMode::Ring3);
     //prmd::set_pie(true);
-    debug!(
-        "[kernel] trap_return: ..before return, trap_cx_ptr = {:#x}",
-        trap_cx_ptr,
-    );
+    // debug!(
+    //     "[kernel] trap_return: ..before return, trap_cx_ptr = {:#x}",
+    //     trap_cx_ptr,
+    // );
     let (tlbrsave, sp) = read_tlbrsave_and_sp();
-    warn!("tlbrsave: {:#x}, sp: {:#x}, trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}", tlbrsave, sp, trap_cx_ptr, current_trap_cx().gp.x[3]);
+    //warn!("tlbrsave: {:#x}, sp: {:#x}, trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}", tlbrsave, sp, trap_cx_ptr, current_trap_cx().gp.x[3]);
     unsafe {
         asm!(
             "move $a0, {trap_cx_ptr}",

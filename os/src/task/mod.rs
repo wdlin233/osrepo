@@ -48,10 +48,10 @@ pub use manager::{
 pub use process::{
     CloneFlags, ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
 };
-pub use processor::{current_kstack_top, current_trap_cx_user_va};
+pub use processor::{current_trap_cx_user_va};
 pub use processor::{
     current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
-    schedule, take_current_task, PROCESSOR, current_trap_cx_user_pa, get_kernel_trap_addr,
+    schedule, take_current_task, PROCESSOR, current_trap_cx_user_pa, current_trap_addr,
 };
 pub use task::{TaskControlBlock, TaskStatus};
 
