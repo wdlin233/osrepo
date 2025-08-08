@@ -110,25 +110,25 @@ __restore:
 
     # now sp points to TrapContext in user space, start restoring based on it
     # restore fcsr
-    # ld.d $t0, $sp, 64*8
-    # movgr2fcsr $fcsr0, $t0
-    # # restore FCC
-    # ld.b $t0, $sp, 64*8+4
-    # movgr2cf $fcc0, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc1, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc2, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc3, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc4, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc5, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc6, $t0
-    # srli.w $t0, $t0, 1
-    # movgr2cf $fcc7, $t0
+    ld.d $t0, $sp, 64*8
+    movgr2fcsr $fcsr0, $t0
+    # restore FCC
+    ld.b $t0, $sp, 64*8+4
+    movgr2cf $fcc0, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc1, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc2, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc3, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc4, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc5, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc6, $t0
+    srli.w $t0, $t0, 1
+    movgr2cf $fcc7, $t0
 
     # restore prmd, era etc.
     ld.d    $t0, $sp, 65*8     # prmd
@@ -158,7 +158,7 @@ __restore:
     .endr
     # back to user stack pointer
     # LOAD_GP 3
-    #csrwr $sp, CSR_SAVE
+    csrwr $sp, CSR_SAVE
     ertn
 
     .section .text

@@ -70,9 +70,6 @@ pub fn init() {
     {
         // make sure that the interrupt is enabled when first task returns user mode
         euen::set_fpe(true);
-        prmd::set_pie(true);
-        crmd::set_ie(false);
-        crmd::set_pg(true);
         // 清除时钟专断
         ticlr::clear_timer_interrupt();
         tcfg::set_en(false);
@@ -99,6 +96,7 @@ pub fn init() {
         pwch::set_dir3_base(30); //第三级页目录表
         pwch::set_dir3_width(9); //页目录表宽度为9位
 
+        prmd::set_pie(true);
         println!("trap init success");
     }
 }
