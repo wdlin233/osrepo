@@ -10,7 +10,7 @@ use crate::config::{
 };
 use crate::hal::trap::TrapContext;
 use crate::mm::{
-    MapAreaType, MapPermission, PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
+    flush_tlb, MapAreaType, MapPermission, PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
 };
 use crate::signal::SignalFlags;
 use crate::sync::UPSafeCell;
@@ -191,6 +191,13 @@ impl TaskControlBlock {
                 MapPermission::default() | MapPermission::W,
                 MapAreaType::Stack,
             );
+            let mut inner = self.inner_exclusive_access();
+            inner.ustack_top = VirtAddr::from(ustack_top);
+            drop(inner);
+        } else {
+            let mut inner = self.inner_exclusive_access();
+            inner.ustack_top = VirtAddr::from(0);
+            drop(inner);
         }
 
         let (trap_cx_bottom, _) = process_inner.memory_set.insert_framed_area_with_hint(
@@ -209,9 +216,22 @@ impl TaskControlBlock {
         let mut inner = self.inner_exclusive_access();
         inner.trap_va = trap_cx_bottom.into();
         inner.trap_cx_ppn = trap_cx_ppn;
-        inner.ustack_top = VirtAddr::from(ustack_top);
     }
 
+    pub fn dealloc_user_res(&self) {
+        let inner = self.inner_exclusive_access();
+        let process = self.process.upgrade().unwrap();
+        let process_inner = process.inner_exclusive_access();
+        if inner.ustack_top.0 != 0 {
+            process_inner.memory_set.remove_area_with_start_vpn(
+                VirtAddr::from(inner.ustack_top.0 - USER_STACK_SIZE).floor(),
+            );
+        }
+        process_inner
+            .memory_set
+            .remove_area_with_start_vpn(inner.trap_va.floor());
+        flush_tlb();
+    }
     pub fn tid(&self) -> usize {
         let inner = self.inner_exclusive_access();
         let id = inner.tid;
