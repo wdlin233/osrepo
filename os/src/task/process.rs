@@ -303,6 +303,9 @@ impl ProcessControlBlock {
         // allocate a pid
         debug!("in pcb new, from elf ok");
         let user = current_user().unwrap();
+        let entry_point_pa = memory_set.translate_va(entry_point.into()).unwrap().0;
+        info!("entry point {:#x} corresponding phys address is : {:#x}", entry_point,
+            entry_point_pa);
         //let pid_handle = pid_alloc().0;
 
         let process = Arc::new(Self {

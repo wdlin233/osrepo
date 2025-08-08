@@ -85,6 +85,7 @@ pub fn run_tasks() {
             asid::set_asid(pid);
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            #[cfg(target_arch = "loongarch64")]
             unsafe {
                 asm!("invtlb 0x4,{},$r0",in(reg) pid);
             }

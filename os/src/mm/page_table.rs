@@ -51,10 +51,8 @@ bitflags! {
     pub struct PTEFlags: usize {
         const V = 1 << 0;
         const D = 1 << 1;
-        const PLV0 = 0;
-        const PLV1 = 1 << 2;
-        const PLV2 = 2 << 2;
-        const PLV3 = 3 << 2;
+        const PLVL = 1 << 2;
+        const PLVH = 1 << 3;
         const MAT_SUC = 0 << 4;
         const MAT_CC = 1 << 4;
         const MAT_WUC = 2 << 4;

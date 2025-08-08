@@ -259,7 +259,8 @@ impl From<MapPermission> for PTEFlags {
                 res |= PTEFlags::NX;
             }
             if perm.contains(MapPermission::U) {
-                res |= PTEFlags::PLV3; // as PLV3, user mode
+                let plv3 = PTEFlags::PLVL | PTEFlags::PLVH;
+                res |= plv3; // as PLV3, user mode
             }
             return res;
         }
