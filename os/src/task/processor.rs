@@ -77,8 +77,17 @@ pub fn run_tasks() {
                 .tms
                 .set_begin();
             let mut task_inner = task.inner_exclusive_access();
+            let pgd = task.get_user_token() << PAGE_SIZE_BITS;
+            let pid = task.process.upgrade().unwrap().getpid();
+            #[cfg(target_arch = "loongarch64")]
+            pgdl::set_base(pgd);
+            #[cfg(target_arch = "loongarch64")]
+            asid::set_asid(pid);
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            unsafe {
+                asm!("invtlb 0x4,{},$r0",in(reg) pid);
+            }
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually

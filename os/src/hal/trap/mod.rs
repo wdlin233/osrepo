@@ -392,21 +392,21 @@ pub fn trap_return() -> ! {
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
 pub fn trap_return() {
-    use crate::{config::PAGE_SIZE_BITS, task::{current_trap_addr, current_trap_cx}};
+    use crate::task::current_trap_cx;
 
     //warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
     let trap_cx_ptr = current_trap_cx() as *const TrapContext as usize;
     //debug!("in trap return, get trap va");
-    //warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
+    debug!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
     prmd::set_pplv(CpuMode::Ring3);
     //prmd::set_pie(true);
-    // debug!(
-    //     "[kernel] trap_return: ..before return, trap_cx_ptr = {:#x}",
-    //     trap_cx_ptr,
-    // );
+    debug!(
+        "[kernel] trap_return: ..before return, trap_cx_ptr = {:#x}",
+        trap_cx_ptr,
+    );
     let (tlbrsave, sp) = read_tlbrsave_and_sp();
-    //warn!("tlbrsave: {:#x}, sp: {:#x}, trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}", tlbrsave, sp, trap_cx_ptr, current_trap_cx().gp.x[3]);
+    debug!("tlbrsave: {:#x}, sp: {:#x}, trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}", tlbrsave, sp, trap_cx_ptr, current_trap_cx().gp.x[3]);
     unsafe {
         asm!(
             "move $a0, {trap_cx_ptr}",
