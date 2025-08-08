@@ -225,14 +225,14 @@ impl File for Pipe {
         let mut read_size = 0usize;
         let mut loop_read;
         loop {
-            let process = current_process();
-            let inner = process.inner_exclusive_access();
+            let task = current_task().unwrap();
+            let inner = task.inner_exclusive_access();
             let check_sig = inner.sig_pending.difference(inner.sig_mask);
             if !check_sig.is_empty() && check_sig != SignalFlags::SIGCHLD {
                 return Err(SysErrNo::ERESTART);
             }
             drop(inner);
-            drop(process);
+            drop(task);
             let ring_buffer = self.inner_lock();
             loop_read = ring_buffer.available_read();
             if loop_read == 0 {
@@ -273,14 +273,14 @@ impl File for Pipe {
         let mut write_size = 0usize;
         let mut loop_write;
         loop {
-            let process = current_process();
-            let inner = process.inner_exclusive_access();
+            let task = current_task().unwrap();
+            let inner = task.inner_exclusive_access();
             let check_sig = inner.sig_pending.difference(inner.sig_mask);
             if !check_sig.is_empty() && check_sig != SignalFlags::SIGCHLD {
                 return Err(SysErrNo::ERESTART);
             }
             drop(inner);
-            drop(process);
+            drop(task);
             let ring_buffer = self.inner_lock();
             loop_write = ring_buffer.available_write();
             if loop_write == 0 {

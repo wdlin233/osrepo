@@ -4,13 +4,17 @@ use super::options::SignalMaskFlag;
 use crate::{
     mm::{translated_ref, translated_refmut},
     signal::{
-        send_signal_to_thread, send_signal_to_thread_of_proc, KSigAction, SigAction, SigInfo,
-        SignalFlags, SIG_MAX_NUM,
+        restore_frame, send_signal_to_thread, send_signal_to_thread_of_proc, KSigAction, SigAction,
+        SigInfo, SignalFlags, SIG_MAX_NUM,
     },
-    task::{current_process, exit_current_and_run_next},
+    task::{current_process, current_task, exit_current_and_run_next},
     timer::TimeSpec,
     utils::SysErrNo,
 };
+
+pub fn sys_sig_return() -> isize {
+    restore_frame()
+}
 
 pub fn sys_sigprocmask(how: u32, set: *const SignalFlags, old_set: *mut SignalFlags) -> isize {
     debug!("in sys sig proc mask");
@@ -19,18 +23,24 @@ pub fn sys_sigprocmask(how: u32, set: *const SignalFlags, old_set: *mut SignalFl
     let how = SignalMaskFlag::from_bits(how)
         .ok_or(SysErrNo::EINVAL)
         .unwrap();
-
+    let token = inner.get_user_token();
+    drop(inner);
+    drop(process);
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
     if old_set as usize != 0 {
-        *translated_refmut(inner.get_user_token(), old_set as *mut SignalFlags) = inner.sig_mask;
+        *translated_refmut(token, old_set as *mut SignalFlags) = task_inner.sig_mask;
     }
+
     if set as usize != 0 {
         //let mask = unsafe { *set };
-        let mask = *translated_ref(inner.get_user_token(), set);
+        let mask = *translated_ref(token, set);
+
         // let mut blocked = &mut task_inner.sig_mask;
         match how {
-            SignalMaskFlag::SIG_BLOCK => inner.sig_mask |= mask,
-            SignalMaskFlag::SIG_UNBLOCK => inner.sig_mask &= !mask,
-            SignalMaskFlag::SIG_SETMASK => inner.sig_mask = mask,
+            SignalMaskFlag::SIG_BLOCK => task_inner.sig_mask |= mask,
+            SignalMaskFlag::SIG_UNBLOCK => task_inner.sig_mask &= !mask,
+            SignalMaskFlag::SIG_SETMASK => task_inner.sig_mask = mask,
             _ => return SysErrNo::EINVAL as isize,
         }
     }

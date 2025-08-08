@@ -24,6 +24,7 @@ use crate::mm::{
 };
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::task::current_task;
 use crate::task::heap_bottom_from_id;
 use crate::task::id::{tid_dealloc, trap_cx_bottom_from_tid};
 use crate::task::manager::{insert_into_thread_group, insert_into_tid2task};
@@ -87,10 +88,6 @@ pub struct ProcessControlBlockInner {
     pub tms: Tms,
     /// signal table
     pub sig_table: Arc<SigTable>,
-    /// signal mask
-    pub sig_mask: SignalFlags,
-    /// signal pending
-    pub sig_pending: SignalFlags,
     /// clear child tid
     pub clear_child_tid: usize,
     //heap id
@@ -338,8 +335,6 @@ impl ProcessControlBlock {
                     stride: Stride::default(),
                     tms: Tms::new(),
                     sig_table: Arc::new(SigTable::new()),
-                    sig_mask: SignalFlags::empty(),
-                    sig_pending: SignalFlags::empty(),
                     heap_bottom,
                     heap_top: heap_bottom,
                     robust_list: RobustList::default(),
@@ -377,6 +372,7 @@ impl ProcessControlBlock {
         process_inner.tasks.push(Some(Arc::clone(&task)));
         drop(process_inner);
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
+        insert_into_tid2task(task.tid(), Arc::clone(&task));
         // add main thread to scheduler
         debug!(
             "kernel: add main thread to scheduler, pid = {}",
@@ -410,8 +406,6 @@ impl ProcessControlBlock {
         let fd_table = Arc::new(FdTable::from_another(&inner.fd_table));
         inner.fd_table = fd_table;
         inner.fd_table.close_on_exec();
-        inner.sig_mask = SignalFlags::empty();
-        inner.sig_pending = SignalFlags::empty();
         inner.tms = Tms::new();
 
         inner.heap_id = heap_id;
@@ -580,29 +574,33 @@ impl ProcessControlBlock {
         //unimplemented!()
         let user = self.user.clone();
         let mut parent = self.inner_exclusive_access();
-        let ptid = parent.get_task(0).tid();
+        let ptid = current_task().unwrap().tid();
+
         //assert_eq!(parent.thread_count(), 1);
 
         // 检查是否共享虚拟内存
         let memory_set = if flags.contains(CloneFlags::CLONE_VM) {
+            debug!("frok, clone vm");
             Arc::clone(&parent.memory_set)
         } else {
             Arc::new(MemorySet::from_existed_user(&parent.memory_set))
         };
-        debug!("get memory set ok");
         let fs_info = if flags.contains(CloneFlags::CLONE_FS) {
+            debug!("fork, clone fs");
             Arc::clone(&parent.fs_info)
         } else {
             Arc::new(FsInfo::from_another(&parent.fs_info))
         };
         // 检查是否共享打开文件表
         let new_fd_table = if flags.contains(CloneFlags::CLONE_FILES) {
+            debug!("clone files");
             Arc::clone(&parent.fd_table)
         } else {
             Arc::new(FdTable::from_another(&parent.fd_table))
         };
 
         let sig_table = if flags.contains(CloneFlags::CLONE_SIGHAND) {
+            debug!("clone sighand");
             Arc::clone(&parent.sig_table)
         } else {
             Arc::new(SigTable::from_another(&parent.sig_table))
@@ -680,7 +678,7 @@ impl ProcessControlBlock {
             let heap_id = heap_id_alloc();
             let heap_bottom = heap_bottom_from_id(heap_id);
             //ppid = self.pid;
-            sig_mask = parent.sig_mask.clone();
+            sig_mask = current_task().unwrap().get_sig_mask().clone();
             let timer = Arc::new(Timer::new());
             info!("(ProcessControlBlock, fork) pid = {}", pid);
             // create child process pcb
@@ -708,8 +706,6 @@ impl ProcessControlBlock {
                         priority: 16,
                         stride: Stride::default(),
                         tms: Tms::new(),
-                        sig_mask,
-                        sig_pending,
                         sig_table,
                         heap_id,
                         heap_bottom: heap_bottom,
@@ -790,6 +786,7 @@ impl ProcessControlBlock {
             }
             insert_into_tid2task(task.tid(), Arc::clone(&task));
             insert_into_pid2process(child.getpid(), Arc::clone(&child));
+            insert_into_thread_group(child.pid, &child);
             // add this thread to scheduler
             add_task(task);
             child

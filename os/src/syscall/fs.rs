@@ -18,7 +18,8 @@ use crate::syscall::{
     SignalFlags, TimeVal,
 };
 use crate::task::{
-    block_current_and_run_next, current_process, current_user_token, suspend_current_and_run_next,
+    block_current_and_run_next, current_process, current_task, current_user_token,
+    suspend_current_and_run_next,
 };
 use crate::timer::{get_time_ms, TimeSpec};
 use crate::users::User;
@@ -92,15 +93,16 @@ pub fn sys_pselect6(
     if (timeout as isize) < 0 || is_bad_address(timeout as usize) {
         return SysErrNo::EFAULT as isize;
     }
-
-    // debug!("[sys_pselect6] nfds is {}, readfds is {}, writefds is {}, exceptfds is {}, timeout is {}, sigmask is {}",nfds,readfds,writefds,exceptfds,timeout,sigmask);
-
-    let old_mask = inner.sig_mask;
-    if sigmask != 0 {
-        inner.sig_mask = *translated_ref(token, sigmask as *const SignalFlags);
-    }
-
     let nfds = min(nfds, inner.fd_table.get_soft_limit());
+
+    drop(inner);
+    drop(process);
+    let task = current_task().unwrap();
+    let old_mask = task.get_sig_mask();
+    if sigmask != 0 {
+        task.set_sig_mask(*translated_ref(token, sigmask as *const SignalFlags));
+    }
+    drop(task);
 
     let mut using_readfds = if readfds != 0 {
         // get_data(token, readfds as *mut FdSet)
@@ -130,10 +132,6 @@ pub fn sys_pselect6(
     };
 
     let begin = get_time_ms() * 1_000_000;
-
-    //由于每次循环结束需要让出cpu，因此需要在每次循环时重新获得锁
-    drop(inner);
-    drop(process);
 
     loop {
         let process = current_process();
@@ -209,7 +207,9 @@ pub fn sys_pselect6(
                 *translated_refmut(token, exceptfds as *mut FdSet) = using_exceptfds;
             }
             if sigmask != 0 {
-                inner.sig_mask = old_mask;
+                drop(inner);
+                drop(process);
+                current_task().unwrap().set_sig_mask(old_mask);
             }
             return num as isize;
         }
@@ -218,7 +218,9 @@ pub fn sys_pselect6(
         if waittime > 0 && get_time_ms() * 1000000 - begin >= waittime as usize {
             // debug!("[sys_pselect6] ret for timeout");
             if sigmask != 0 {
-                inner.sig_mask = old_mask;
+                drop(inner);
+                drop(process);
+                current_task().unwrap().set_sig_mask(old_mask);
             }
             return 0;
         }

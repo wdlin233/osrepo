@@ -43,8 +43,9 @@ pub use context::TaskContext;
 pub use futex::*;
 pub use id::{heap_bottom_from_id, pid_alloc, KernelStack, PidHandle, IDLE_PID};
 pub use manager::{
-    add_block_task, add_task, pid2process, process_num, remove_from_pid2process, remove_task,
-    wakeup_futex_task, wakeup_task, wakeup_task_by_pid, THREAD_GROUP, TID2TCB,
+    add_block_task, add_task, insert_into_thread_group, pid2process, process_num,
+    remove_all_from_thread_group, remove_from_pid2process, remove_task, wakeup_futex_task,
+    wakeup_task, wakeup_task_by_pid, THREAD_GROUP, TID2TCB,
 };
 pub use process::{
     CloneFlags, ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
@@ -133,6 +134,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
             break;
         }
     }
+
+    remove_from_tid2task(task.tid());
     drop(inner);
 
     #[cfg(target_arch = "riscv64")]
@@ -171,7 +174,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // wakeup his parent
 
         let parent = process_inner.parent.clone().unwrap();
-        wakeup_task_by_pid(parent.upgrade().unwrap().getpid());
+        let ppid = parent.upgrade().unwrap().getpid();
+        wakeup_task_by_pid(ppid);
 
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
@@ -205,6 +209,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         debug!("all clear ok");
         //debug!("after clear, the parent fd table len is :{}",)
         heap_id_dealloc(process_inner.heap_id);
+
+        drop(process_inner);
         #[cfg(target_arch = "loongarch64")]
         // 使得原来的TLB表项无效掉，否则下一个进程与当前退出的进程号相同会导致
         // 无法正确进行地址转换
@@ -220,10 +226,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                     .all(|task| task.inner_exclusive_access().is_zombie == true)
                 {
                     drop(thread_group);
-                    send_signal_to_thread_group(
-                        parent.upgrade().unwrap().getpid(),
-                        SignalFlags::SIGCHLD,
-                    );
+                    send_signal_to_thread_group(ppid, SignalFlags::SIGCHLD);
                     let inner = process.inner_exclusive_access();
                     inner.memory_set.recycle_data_pages();
                     inner.fd_table.clear();
@@ -276,6 +279,7 @@ pub fn add_initproc() {
     let inner = initproc.inner_exclusive_access();
     let mut p = PROCESSOR.exclusive_access();
     p.current = Some(inner.tasks[0].clone().unwrap());
+    insert_into_thread_group(0, &INITPROC);
 }
 /// Check if the current task has any signal to handle
 pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
@@ -294,7 +298,6 @@ pub fn current_add_signal(signal: SignalFlags) {
 /// the inactive(blocked) tasks are removed when the PCB is deallocated.(called by exit_current_and_run_next)
 pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_task(Arc::clone(&task));
-    remove_from_tid2task(task.tid());
     remove_timer(Arc::clone(&task));
     //add_task(INITPROC.clone());
     //将主线程退出的那些处于等待的子线程也删除掉

@@ -20,6 +20,7 @@ pub const MSEC_PER_SEC: usize = 1000;
 pub const KERNEL_STACK_SIZE: usize = 4096 * 8;
 /// the virtual addr of trapoline
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
+pub const SIGRETURN: usize = usize::MAX - 3000 * PAGE_SIZE + 1;
 
 pub const THREAD_MAX_NUM: usize = 3000;
 // 0x40_0000_0000 即 256GiB，低位地址空间的最高地址，但是不影响

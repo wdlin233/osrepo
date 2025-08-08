@@ -44,14 +44,14 @@ pub fn futex_wait(key: FutexKey) -> isize {
             queue
         });
     }
-    //log::debug!("[futex_wait] blocked!");
-    drop(task);
+    let sig_mask = task.get_sig_mask();
+
     drop(waitq);
     block_current_and_run_next();
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
+
+    let task_inner = task.inner_exclusive_access();
     // woke by signal
-    if !inner.sig_pending.difference(inner.sig_mask).is_empty() {
+    if !task_inner.sig_pending.difference(sig_mask).is_empty() {
         return SysErrNo::EINTR as isize;
     }
     0

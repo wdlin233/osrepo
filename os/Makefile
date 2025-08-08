@@ -55,10 +55,10 @@ endif
 
 
 env:
-	(rustup target list | grep "$(TARGET) (installed)") || rustup target add $(TARGET)
-	cargo install cargo-binutils
-	rustup component add rust-src
-	rustup component add llvm-tools-preview
+# 	(rustup target list | grep "$(TARGET) (installed)") || rustup target add $(TARGET)
+# 	cargo install cargo-binutils
+# 	rustup component add rust-src
+# 	rustup component add llvm-tools-preview
 
 # cargo build $(MODE_ARG) --target $(TARGET)
 kernel:

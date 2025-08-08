@@ -20,12 +20,14 @@ use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use crate::mm::VirtAddr;
 use crate::println;
 pub use crate::signal::SignalFlags;
+use crate::signal::{check_if_any_sig_for_current_task, handle_signal};
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_process, current_trap_cx,
     current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
 };
 use crate::timer::check_timer;
+pub use context::{MachineContext, UserContext};
 
 #[cfg(target_arch = "riscv64")]
 use crate::{
@@ -387,6 +389,10 @@ extern "C" {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_return() -> ! {
+    if let Some(signo) = check_if_any_sig_for_current_task() {
+        debug!("found signo in trap_return");
+        handle_signal(signo);
+    }
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();

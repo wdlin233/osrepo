@@ -4,10 +4,27 @@ use crate::hal::trap::trap_handler;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::{prmd, CpuMode};
 #[cfg(target_arch = "riscv64")]
-use riscv::register::sstatus::{self, Sstatus, SPP, set_spp};
+use riscv::register::sstatus::{self, set_spp, Sstatus, SPP};
 
+use crate::signal::{SignalFlags, SignalStack};
 use core::fmt::{Debug, Formatter};
 
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+pub struct MachineContext {
+    x: [usize; 32],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UserContext {
+    pub flags: usize,
+    pub link: usize,
+    pub stack: SignalStack,
+    pub sigmask: SignalFlags,
+    pub __pad: [u8; 128],
+    pub mcontext: MachineContext,
+}
 #[repr(C)]
 #[derive(Clone, Copy)]
 /// trap context structure containing sstatus, sepc and registers
@@ -23,6 +40,7 @@ pub struct TrapContext {
     #[cfg(target_arch = "riscv64")]
     pub kernel_sp: usize, // Kernel stack pointer of the current application
     pub trap_handler: usize, // Virtual address of trap handler entry point in kernel
+    pub origin_a0: usize, //37
 }
 
 // Debug trait for loongarch64 TrapContext
@@ -92,8 +110,21 @@ impl TrapContext {
             #[cfg(target_arch = "riscv64")]
             kernel_sp, // kernel stack
             trap_handler: trap_handler as usize, // addr of trap_handler function
+            origin_a0: 0,
         };
         cx.set_sp(sp); // app's user stack pointer
         cx // return initial Trap Context of app
+    }
+
+    pub fn as_mctx(&self) -> MachineContext {
+        let mut x = [0; 32];
+        x.copy_from_slice(&self.x);
+        x[0] = self.sepc; // x0 寄存器永远为0,暂时借用一下,用于保存sepc
+        MachineContext { x }
+    }
+    pub fn copy_from_mctx(&mut self, mctx: MachineContext) {
+        self.x = mctx.x;
+        self.sepc = self.x[0];
+        self.x[0] = 0;
     }
 }

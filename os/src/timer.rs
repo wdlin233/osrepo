@@ -179,6 +179,7 @@ pub struct TimeSpec {
     /// The tv_usec member captures rest of the elapsed time, represented as the number of microseconds.
     pub tv_nsec: usize,
 }
+
 impl AddAssign for TimeSpec {
     fn add_assign(&mut self, rhs: Self) {
         self.tv_sec += rhs.tv_sec;
@@ -226,7 +227,19 @@ impl Ord for TimeSpec {
 
 impl PartialOrd for TimeSpec {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        if self.tv_sec > other.tv_sec {
+            Some(Ordering::Greater)
+        } else if self.tv_sec < other.tv_sec {
+            Some(Ordering::Less)
+        } else {
+            if self.tv_nsec > other.tv_nsec {
+                Some(Ordering::Greater)
+            } else if self.tv_nsec < other.tv_nsec {
+                Some(Ordering::Less)
+            } else {
+                Some(Ordering::Equal)
+            }
+        }
     }
 }
 
@@ -237,6 +250,9 @@ impl Default for TimeSpec {
 }
 
 impl TimeSpec {
+    pub fn to_tick(&self) -> usize {
+        self.tv_sec * CLOCK_FREQ + (self.tv_nsec * CLOCK_FREQ / NSEC_PER_SEC)
+    }
     pub fn new() -> Self {
         Self {
             tv_sec: 0,
@@ -340,21 +356,21 @@ pub fn get_time_spec() -> TimeSpec {
 /// condvar for timer
 pub struct TimerCondVar {
     /// The time when the timer expires, in milliseconds
-    pub expire_ms: usize,
+    pub expire: TimeSpec,
     /// The task to be woken up when the timer expires
     pub task: Arc<TaskControlBlock>,
 }
 
 impl PartialEq for TimerCondVar {
     fn eq(&self, other: &Self) -> bool {
-        self.expire_ms == other.expire_ms
+        self.expire == other.expire
     }
 }
 impl Eq for TimerCondVar {}
 impl PartialOrd for TimerCondVar {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let a = -(self.expire_ms as isize);
-        let b = -(other.expire_ms as isize);
+        let a = -(self.expire.to_tick() as isize);
+        let b = -(other.expire.to_tick() as isize);
         Some(a.cmp(&b))
     }
 }
@@ -372,10 +388,10 @@ lazy_static! {
 }
 
 /// Add a timer
-pub fn add_timer(expire_ms: usize, task: Arc<TaskControlBlock>) {
+pub fn add_timer(expire: TimeSpec, task: Arc<TaskControlBlock>) {
     debug!("in add timer");
     let mut timers = TIMERS.exclusive_access();
-    timers.push(TimerCondVar { expire_ms, task });
+    timers.push(TimerCondVar { expire, task });
 }
 
 /// Remove a timer
@@ -400,15 +416,11 @@ pub fn check_timer() {
     //     "kernel:pid[{}] check_timer",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    let current_ms = get_time_ms();
+    let current = get_time_spec();
     let mut timers: core::cell::RefMut<'_, BinaryHeap<TimerCondVar>> = TIMERS.exclusive_access();
     while let Some(timer) = timers.peek() {
         debug!("in check timer, peek ok");
-        if timer.expire_ms <= current_ms {
-            debug!(
-                "expire is : {}, current is : {}",
-                timer.expire_ms, current_ms
-            );
+        if timer.expire <= current {
             #[cfg(target_arch = "riscv64")]
             {
                 use crate::task::wakeup_task;

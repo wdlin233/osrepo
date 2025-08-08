@@ -105,10 +105,10 @@ pub const SYSCALL_KILL: usize = 129;
 pub const SYSCALL_TKILL: usize = 130;
 /// tgkill
 pub const SYSCALL_TGKILL: usize = 131;
-/*
-/// sigreturn syscall
+
+// sigreturn syscall
 pub const SYSCALL_SIGRETURN: usize = 139;
-*/
+
 /// sigaction syscall
 pub const SYSCALL_SIGACTION: usize = 134;
 /// sigprocmask syscall
@@ -265,6 +265,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SIGRETURN => sys_sig_return(),
         SYSCALL_GETSOCKETOPT => sys_getsocketopt(args[0], args[1], args[2], args[3], args[4]),
         SYSCALL_CONNECT => sys_connect(args[0], args[1] as *const u8, args[2] as u32),
         SYSCALL_SETTIMER => sys_set_timer(
@@ -395,7 +396,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_UNAME => sys_uname(args[0] as *mut UTSname),
         SYSCALL_TIMES => sys_tms(args[0] as *mut TmsInner),
         SYSCALL_BRK => sys_brk(args[0]),
-        SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeVal),
+        SYSCALL_SLEEP => sys_sleep(args[0] as *const TimeSpec, args[1] as *mut TimeSpec),
         SYSCALL_GETPPID => sys_getppid(),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32, args[2]),
         SYSCALL_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),

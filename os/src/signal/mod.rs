@@ -1,220 +1,241 @@
 pub mod sigact;
 pub mod signal;
 
-use core::mem::size_of;
+use core::{arch::global_asm, mem::size_of};
 
 use alloc::sync::Arc;
 use log::debug;
 pub use sigact::*;
 pub use signal::*;
 
-#[cfg(target_arch = "loongarch64")]
-use loongarch64::register::estat::{Exception, Trap};
-#[cfg(target_arch = "riscv64")]
-use riscv::register::scause::{self, Exception, Trap};
-
+pub use super::signal::SigInfo;
 use crate::{
     config::USER_STACK_SIZE,
+    hal::trap::{MachineContext, UserContext},
+    mm::{translated_ref, translated_refmut},
     task::{
         current_process,
         current_task,
         exit_current_and_run_next,
         ProcessControlBlock,
+        TaskControlBlock,
         THREAD_GROUP, //    THREAD_GROUP, TID_TO_TASK
         TID2TCB,
     },
-    //hal::trap::{MachineContext, UserContext},
     utils::{SysErrNo, SyscallRet},
 };
+#[cfg(target_arch = "loongarch64")]
+use loongarch64::register::estat::{Exception, Trap};
+#[cfg(target_arch = "riscv64")]
+use riscv::register::scause::{self, Exception, Trap};
 
 pub const SIG_MAX_NUM: usize = 33;
 pub const SIG_ERR: usize = usize::MAX;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
-// extern "C" {
-//     pub fn sigreturn_trampoline();
-// }
-
-pub fn check_if_any_sig_for_current_task() -> Option<usize> {
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
-
-    inner.sig_pending.difference(inner.sig_mask).peek_front()
+global_asm!(include_str!("sig_handle.s"));
+extern "C" {
+    pub fn sigreturn();
 }
 
-// pub fn handle_signal(signo: usize) {
-//     let task = current_task().unwrap();
-//     let mut task_inner = task.inner_lock();
-//     let signal = SignalFlags::from_sig(signo);
-//     debug!("[handle_signal] signo={},handle signal {:?}", signo, signal);
-//     let sig_action = task_inner.sig_table.action(signo);
-//     task_inner.sig_pending.remove(signal);
-//     drop(task_inner);
-//     drop(task);
-//     if sig_action.customed {
-//         setup_frame(signo, sig_action);
-//     } else {
-//         debug!("sa_handler:{:#x}", sig_action.act.sa_handler as usize);
-//         // 就在S模式运行,转换成fn(i32)
-//         if sig_action.act.sa_handler != 1 {
-//             if sig_action.act.sa_handler == exit_current_and_run_next as usize {
-//                 exit_current_and_run_next((signo + 128) as i32);
-//             }
-//         }
-//     }
-// }
-// /// 在用户态栈空间构建一个 Frame
-// /// 构建这个帧的目的就是为了执行完信号处理程序后返回到内核态，
-// /// 并恢复原来内核栈的内容
-// pub fn setup_frame(signo: usize, sig_action: KSigAction) {
-//     debug!("customed sa_handler={:#x}", sig_action.act.sa_handler);
+pub fn check_if_any_sig_for_current_task() -> Option<usize> {
+    let task = current_task().unwrap();
+    let task_inner = task.inner_exclusive_access();
 
-//     let task = current_task().unwrap();
-//     let mut task_inner = task.inner_lock();
+    task_inner
+        .sig_pending
+        .difference(task_inner.sig_mask)
+        .peek_front()
+}
 
-//     let trap_cx = task_inner.trap_cx();
-//     let mut user_sp = trap_cx.gp.x[2];
+pub fn handle_signal(signo: usize) {
+    let task = current_task().unwrap();
+    let process = task.process.upgrade().unwrap();
+    let inner = process.inner_exclusive_access();
+    let signal = SignalFlags::from_sig(signo);
+    let sig_action = inner.sig_table.action(signo);
+    drop(inner);
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.sig_pending.remove(signal);
+    drop(task_inner);
+    drop(task);
+    if sig_action.customed {
+        setup_frame(signo, sig_action);
+    } else {
+        debug!("sa_handler:{:#x}", sig_action.act.sa_handler as usize);
+        // 就在S模式运行,转换成fn(i32)
+        if sig_action.act.sa_handler != 1 {
+            if sig_action.act.sa_handler == exit_current_and_run_next as usize {
+                exit_current_and_run_next((signo + 128) as i32);
+            }
+        }
+    }
+}
+/// 在用户态栈空间构建一个 Frame
+/// 构建这个帧的目的就是为了执行完信号处理程序后返回到内核态，
+/// 并恢复原来内核栈的内容
+pub fn setup_frame(signo: usize, sig_action: KSigAction) {
+    debug!("customed sa_handler={:#x}", sig_action.act.sa_handler);
 
-//     // if this syscall wants to restart
-//     if scause::read().cause() == Trap::Exception(Exception::UserEnvCall)
-//         && trap_cx.gp.x[10] == SysErrNo::ERESTART as usize
-//     {
-//         // and if `SA_RESTART` is set
-//         if sig_action.act.sa_flags.contains(SigActionFlags::SA_RESTART) {
-//             debug!("[do_signal] syscall will restart after sigreturn");
-//             // back to `ecall`
-//             trap_cx.sepc -= 4;
-//             // restore syscall parameter `a0`
-//             trap_cx.gp.x[10] = trap_cx.origin_a0;
-//         } else {
-//             debug!("[do_signal] syscall was interrupted");
-//             // will return EINTR after sigreturn
-//             trap_cx.gp.x[10] = SysErrNo::EINTR as usize;
-//         }
-//     }
+    let task = current_task().unwrap();
+    let token = task.get_user_token();
+    let mut task_inner = task.inner_exclusive_access();
 
-//     if !sig_action.act.sa_flags.contains(SigActionFlags::SA_SIGINFO) {
-//         // 处理函数 (*sa_handler)(int);
-//         // 保存 Trap 上下文
-//         user_sp = user_sp - size_of::<MachineContext>();
-//         data_flow!({ *(user_sp as *mut MachineContext) = trap_cx.as_mctx() });
+    let trap_cx = task_inner.get_trap_cx();
+    let mut user_sp = trap_cx.x[2];
 
-//         // signal mask
-//         user_sp = user_sp - size_of::<SignalFlags>();
-//         data_flow!({ *(user_sp as *mut SignalFlags) = task_inner.sig_mask });
+    // if this syscall wants to restart
+    if scause::read().cause() == Trap::Exception(Exception::UserEnvCall)
+        && trap_cx.x[10] == SysErrNo::ERESTART as usize
+    {
+        // and if `SA_RESTART` is set
+        if sig_action.act.sa_flags.contains(SigActionFlags::SA_RESTART) {
+            debug!("[do_signal] syscall will restart after sigreturn");
+            // back to `ecall`
+            trap_cx.sepc -= 4;
+            // restore syscall parameter `a0`
+            trap_cx.x[10] = trap_cx.origin_a0;
+        } else {
+            debug!("[do_signal] syscall was interrupted");
+            // will return EINTR after sigreturn
+            trap_cx.x[10] = SysErrNo::EINTR as usize;
+        }
+    }
 
-//         // 不是 sigInfo
-//         user_sp = user_sp - size_of::<usize>();
-//         data_flow!({ *(user_sp as *mut usize) = 0 });
-//     } else {
-//         // (*sa_sigaction)(int, siginfo_t *, void *) 第三个参数指向UserContext
-//         let uctx_addr = user_sp - size_of::<UserContext>();
-//         let siginfo_addr = uctx_addr - size_of::<SigInfo>();
-//         let sig_sp = siginfo_addr;
-//         let sig_size = sig_sp - (task_inner.user_stack_top - USER_STACK_SIZE);
-//         // debug!("sig_size={:#x}", sig_size);
-//         data_flow!({
-//             *(uctx_addr as *mut UserContext) = UserContext {
-//                 flags: 0,
-//                 link: 0,
-//                 stack: SignalStack::new(sig_sp, sig_size),
-//                 sigmask: task_inner.sig_mask,
-//                 __pad: [0u8; 128],
-//                 mcontext: trap_cx.as_mctx(),
-//             }
-//         });
-//         // a2
-//         trap_cx.gp.x[12] = uctx_addr;
-//         data_flow!({ *(siginfo_addr as *mut SigInfo) = SigInfo::new(signo, 0, 0) });
-//         // a1
-//         trap_cx.gp.x[11] = siginfo_addr;
+    if !sig_action.act.sa_flags.contains(SigActionFlags::SA_SIGINFO) {
+        // 处理函数 (*sa_handler)(int);
+        // 保存 Trap 上下文
+        user_sp = user_sp - size_of::<MachineContext>();
+        //data_flow!({ *(user_sp as *mut MachineContext) = trap_cx.as_mctx() });
+        *translated_refmut(token, user_sp as *mut MachineContext) = trap_cx.as_mctx();
 
-//         user_sp = sig_sp;
-//         // 是 sigInfo
-//         user_sp = user_sp - size_of::<usize>();
-//         data_flow!({ *(user_sp as *mut usize) = usize::MAX });
-//     }
+        // signal mask
+        user_sp = user_sp - size_of::<SignalFlags>();
+        //data_flow!({ *(user_sp as *mut SignalFlags) = task_inner.sig_mask });
+        *translated_refmut(token, user_sp as *mut SignalFlags) = task_inner.sig_mask;
 
-//     // checkout(Magic Num)
-//     user_sp -= size_of::<usize>();
-//     data_flow!({ *(user_sp as *mut usize) = 0xdeadbeef });
-//     // a0
-//     trap_cx.gp.x[10] = signo;
-//     // sp
-//     trap_cx.set_sp(user_sp);
-//     // 修改Trap
-//     trap_cx.sepc = sig_action.act.sa_handler;
-//     // ra
-//     trap_cx.gp.x[1] = if sig_action
-//         .act
-//         .sa_flags
-//         .contains(SigActionFlags::SA_RESTORER)
-//     {
-//         sig_action.act.sa_restore
-//     } else {
-//         sigreturn_trampoline as usize
-//     };
-//     task_inner.sig_mask |= sig_action.act.sa_mask | SignalFlags::from_sig(signo);
-// }
-// /// 恢复栈帧
-// pub fn restore_frame() -> SyscallRet {
-//     unimplemented!()
-//     // let task = current_task().unwrap();
-//     // let mut task_inner = task.inner_lock();
+        // 不是 sigInfo
+        user_sp = user_sp - size_of::<usize>();
+        //data_flow!({ *(user_sp as *mut usize) = 0 });
+        *translated_refmut(token, user_sp as *mut usize) = 0;
+    } else {
+        // (*sa_sigaction)(int, siginfo_t *, void *) 第三个参数指向UserContext
+        let uctx_addr = user_sp - size_of::<UserContext>();
+        let siginfo_addr = uctx_addr - size_of::<SigInfo>();
+        let sig_sp = siginfo_addr;
+        let sig_size = sig_sp - (task_inner.ustack_top() - USER_STACK_SIZE);
+        // debug!("sig_size={:#x}", sig_size);
 
-//     // let trap_cx = task_inner.trap_cx();
-//     // let mut user_sp = trap_cx.gp.x[2];
+        *translated_refmut(token, uctx_addr as *mut UserContext) = UserContext {
+            flags: 0,
+            link: 0,
+            stack: SignalStack::new(sig_sp, sig_size),
+            sigmask: task_inner.sig_mask,
+            __pad: [0u8; 128],
+            mcontext: trap_cx.as_mctx(),
+        };
+        // a2
+        trap_cx.x[12] = uctx_addr;
+        //ata_flow!({ *(siginfo_addr as *mut SigInfo) = SigInfo::new(signo, 0, 0) });
+        *translated_refmut(token, siginfo_addr as *mut SigInfo) = SigInfo::new(signo, 0, 0);
+        // a1
+        trap_cx.x[11] = siginfo_addr;
 
-//     // let checkout = unsafe { *(user_sp as *const usize) };
-//     // assert!(checkout == 0xdeadbeef, "restore frame checkout error!");
-//     // user_sp += size_of::<usize>();
+        user_sp = sig_sp;
+        // 是 sigInfo
+        user_sp = user_sp - size_of::<usize>();
+        //data_flow!({ *(user_sp as *mut usize) = usize::MAX });
+        *translated_refmut(token, user_sp as *mut usize) = usize::MAX;
+    }
 
-//     // // sigInfo标志位
-//     // let sa_siginfo = unsafe { *(user_sp as *const usize) } == usize::MAX;
-//     // user_sp += size_of::<usize>();
+    // checkout(Magic Num)
+    user_sp -= size_of::<usize>();
+    //data_flow!({ *(user_sp as *mut usize) = 0xdeadbeef });
+    *translated_refmut(token, user_sp as *mut usize) = 0xdeadbeef;
+    // a0
+    trap_cx.x[10] = signo;
+    // sp
+    trap_cx.set_sp(user_sp);
+    // 修改Trap
+    trap_cx.sepc = sig_action.act.sa_handler;
+    // ra
+    trap_cx.x[1] = if sig_action
+        .act
+        .sa_flags
+        .contains(SigActionFlags::SA_RESTORER)
+    {
+        sig_action.act.sa_restore
+    } else {
+        sigreturn as usize
+    };
+    task_inner.sig_mask |= sig_action.act.sa_mask | SignalFlags::from_sig(signo);
+}
+/// 恢复栈帧
+pub fn restore_frame() -> isize {
+    let task = current_task().unwrap();
+    let token = task.get_user_token();
+    let mut task_inner = task.inner_exclusive_access();
 
-//     // if !sa_siginfo {
-//     //     // signal mask
-//     //     // task_inner.sig_mask = get_data(token, user_sp as *const SignalFlags);
-//     //     task_inner.sig_mask = unsafe { *(user_sp as *const SignalFlags) };
-//     //     user_sp += size_of::<SignalFlags>();
-//     //     // Trap cx
-//     //     let mctx = unsafe { *(user_sp as *const MachineContext) };
-//     //     trap_cx.copy_from_mctx(mctx);
-//     // } else {
-//     //     user_sp += size_of::<SigInfo>();
-//     //     task_inner.sig_mask = unsafe {
-//     //         *((user_sp + 2 * size_of::<usize>() + size_of::<SignalStack>()) as *const SignalFlags)
-//     //     };
-//     //     let mctx = unsafe {
-//     //         *((user_sp
-//     //             + 2 * size_of::<usize>()
-//     //             + size_of::<SignalStack>()
-//     //             + size_of::<SignalFlags>()
-//     //             + 128) as *mut MachineContext)
-//     //     };
-//     //     trap_cx.copy_from_mctx(mctx);
-//     // }
-//     // debug!("[restore_frame!] sepc= {:#x}", trap_cx.sepc);
-//     // Ok(trap_cx.gp.x[10])
-// }
+    let trap_cx = task_inner.get_trap_cx();
+    let mut user_sp = trap_cx.x[2];
 
-pub fn add_signal(process: Arc<ProcessControlBlock>, signal: SignalFlags) {
-    let mut inner = process.inner_exclusive_access();
-    inner.sig_pending |= signal;
+    //let checkout = unsafe { *(user_sp as *const usize) };
+    let checkout = *translated_ref(token, user_sp as *const usize);
+    assert!(checkout == 0xdeadbeef, "restore frame checkout error!");
+    user_sp += size_of::<usize>();
+
+    // sigInfo标志位
+    let sa_siginfo = *translated_ref(token, user_sp as *const usize) == usize::MAX;
+    user_sp += size_of::<usize>();
+
+    if !sa_siginfo {
+        // signal mask
+        // task_inner.sig_mask = get_data(token, user_sp as *const SignalFlags);
+        task_inner.sig_mask = *translated_ref(token, user_sp as *const SignalFlags);
+        user_sp += size_of::<SignalFlags>();
+        // Trap cx
+        let mctx = *translated_ref(token, user_sp as *const MachineContext);
+        trap_cx.copy_from_mctx(mctx);
+    } else {
+        user_sp += size_of::<SigInfo>();
+        task_inner.sig_mask = *translated_ref(
+            token,
+            (user_sp + 2 * size_of::<usize>() + size_of::<SignalStack>()) as *const SignalFlags,
+        );
+        let mctx = *translated_ref(
+            token,
+            (user_sp
+                + 2 * size_of::<usize>()
+                + size_of::<SignalStack>()
+                + size_of::<SignalFlags>()
+                + 128) as *mut MachineContext,
+        );
+        trap_cx.copy_from_mctx(mctx);
+    }
+
+    trap_cx.x[10] as isize
+}
+
+pub fn add_signal(task: Arc<TaskControlBlock>, signal: SignalFlags) {
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.sig_pending |= signal;
     // if task_inner.task_status == TaskStatus::Stopped {
     //     task_inner.task_status = TaskStatus::Ready
     // }
     // drop(task_inner);
-    // wakeup_stopped_task(task);
+    //wakeup_stopped_task(task);
 }
 
 pub fn send_signal_to_thread_group(pid: usize, sig: SignalFlags) {
     let thread_group = THREAD_GROUP.lock();
     if let Some(processes) = thread_group.get(&pid) {
         for process in processes.iter() {
-            add_signal(process.clone(), sig);
+            let inner = process.inner_exclusive_access();
+            for task in inner.tasks.iter() {
+                let t = task.as_ref().unwrap();
+                add_signal(t.clone(), sig);
+            }
         }
     }
 }
@@ -222,7 +243,7 @@ pub fn send_signal_to_thread_group(pid: usize, sig: SignalFlags) {
 pub fn send_signal_to_thread(tid: usize, sig: SignalFlags) {
     let tid2task = TID2TCB.exclusive_access();
     if let Some(task) = tid2task.get(&tid) {
-        add_signal(task.get_process(), sig);
+        add_signal(task.clone(), sig);
     }
 }
 
@@ -230,7 +251,7 @@ pub fn send_signal_to_thread_of_proc(pid: usize, tid: usize, sig: SignalFlags) {
     let tid2task = TID2TCB.exclusive_access();
     if let Some(task) = tid2task.get(&tid) {
         if task.pid() == pid {
-            add_signal(task.get_process(), sig);
+            add_signal(Arc::clone(task), sig);
         }
     }
 }

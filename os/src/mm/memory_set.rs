@@ -23,7 +23,8 @@ use crate::mm::page_fault_handler::{
 use crate::hal::{ebss, edata, ekernel, erodata, etext, sbss, sdata, srodata, stext};
 #[cfg(target_arch = "riscv64")]
 use crate::hal::{
-    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
+    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, sigreturn, srodata, stext,
+    strampoline,
 };
 use crate::mm::page_table::flush_tlb;
 use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
@@ -438,9 +439,17 @@ impl MemorySetInner {
     #[cfg(target_arch = "riscv64")]
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
+        use crate::config::SIGRETURN;
+
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
+            PTEFlags::R | PTEFlags::X,
+            false,
+        );
+        self.page_table.map(
+            VirtAddr::from(SIGRETURN).into(),
+            PhysAddr::from(sigreturn as usize).into(),
             PTEFlags::R | PTEFlags::X,
             false,
         );

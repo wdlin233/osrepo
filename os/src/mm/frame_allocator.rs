@@ -143,6 +143,7 @@ pub fn frame_alloc() -> Option<FrameTracker> {
 
 /// Deallocate a physical page frame with a given ppn
 pub fn frame_dealloc(ppn: PhysPageNum) {
+    // debug!("frame dealloc");
     FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
 }
 

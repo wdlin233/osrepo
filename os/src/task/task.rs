@@ -12,8 +12,10 @@ use crate::hal::trap::TrapContext;
 use crate::mm::{
     MapAreaType, MapPermission, PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum,
 };
+use crate::signal::SignalFlags;
 use crate::sync::UPSafeCell;
 use alloc::alloc::alloc;
+use alloc::string::ToString;
 use alloc::sync::{Arc, Weak};
 use core::cell::RefMut;
 use spin::MutexGuard;
@@ -50,8 +52,11 @@ pub struct TaskControlBlockInner {
     pub trap_va: VirtAddr,
 
     pub ustack_top: VirtAddr,
-}
 
+    pub sig_mask: SignalFlags,
+    /// signal pending
+    pub sig_pending: SignalFlags,
+}
 impl TaskControlBlock {
     /// Get the mutable reference of the inner TCB
     pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlockInner> {
@@ -62,11 +67,6 @@ impl TaskControlBlock {
         let process = self.process.upgrade().unwrap();
         let inner = process.inner_exclusive_access();
         inner.memory_set.token()
-    }
-
-    pub fn get_process(&self) -> Arc<ProcessControlBlock> {
-        let process = self.process.upgrade().unwrap();
-        Arc::clone(&process)
     }
 }
 
@@ -128,6 +128,8 @@ impl TaskControlBlock {
                 (Some(kstack), kstack_top)
             }
         };
+        let sig_mask = SignalFlags::empty();
+        let sig_pending = SignalFlags::empty();
         let mut new_task = TaskControlBlock {
             process: Arc::downgrade(&process),
             #[cfg(target_arch = "riscv64")]
@@ -136,6 +138,8 @@ impl TaskControlBlock {
                 UPSafeCell::new(TaskControlBlockInner {
                     tid,
                     ptid: parent_tid,
+                    sig_mask,
+                    sig_pending,
                     #[cfg(target_arch = "loongarch64")]
                     kstack: kstack.unwrap(),
                     #[cfg(target_arch = "riscv64")]
@@ -169,6 +173,11 @@ impl TaskControlBlock {
         new_task
     }
 
+    fn new_sig(&self) {
+        let mut inner = self.inner_exclusive_access();
+        inner.sig_mask = SignalFlags::empty();
+        inner.sig_pending = SignalFlags::empty();
+    }
     pub fn alloc_user_res(&self, alloc_ustack: bool) {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
@@ -217,6 +226,14 @@ impl TaskControlBlock {
     pub fn pid(&self) -> usize {
         let process = self.process.upgrade().unwrap();
         process.getpid()
+    }
+    pub fn get_sig_mask(&self) -> SignalFlags {
+        let inner = self.inner_exclusive_access();
+        inner.sig_mask
+    }
+    pub fn set_sig_mask(&self, sig_mask: SignalFlags) {
+        let mut inner = self.inner_exclusive_access();
+        inner.sig_mask = sig_mask;
     }
 }
 

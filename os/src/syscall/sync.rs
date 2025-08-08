@@ -1,33 +1,54 @@
-use crate::mm::translated_ref;
+use crate::mm::{is_bad_address, translated_ref, translated_refmut};
+use crate::signal::check_if_any_sig_for_current_task;
 use crate::sync::{
     alloc, dealloc, disable_banker_algo, enable_banker_algo, init_available_resource, request,
     Condvar, Mutex, MutexBlocking, MutexSpin, RequestResult, Semaphore,
 };
-use crate::task::{block_current_and_run_next, current_process, current_task, current_user_token};
-use crate::timer::TimeVal;
-use crate::timer::{add_timer, get_time_ms};
+use crate::task::{
+    current_process, current_task, current_user_token, suspend_current_and_run_next,
+};
+use crate::timer::{add_timer, calculate_left_timespec, get_time_ms, get_time_spec, TimeSpec};
+use crate::utils::SysErrNo;
 use alloc::sync::Arc;
 /// sleep syscall
-pub fn sys_sleep(req: *const TimeVal) -> isize {
-    // trace!(
-    //     "kernel:pid[{}] tid[{}] sys_sleep",
-    //     current_task().unwrap().process.upgrade().unwrap().getpid(),
-    //     current_task()
-    //         .unwrap()
-    //         .inner_exclusive_access()
-    //         .res
-    //         .as_ref()
-    //         .unwrap()
-    //         .tid
+pub fn sys_sleep(req_ptr: *const TimeSpec, rem: *mut TimeSpec) -> isize {
+    if (req_ptr as isize) <= 0 || is_bad_address(req_ptr as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    if (rem as isize) < 0 || is_bad_address(rem as usize) {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    drop(inner);
+    drop(process);
+    let req = *translated_ref(token, req_ptr);
+    let waittime = req.tv_sec * 1_000_000_000usize + req.tv_nsec;
+    let begin = get_time_ms() * 1_000_000usize;
+    let endtime = get_time_spec() + req;
+
+    if (req.tv_sec as isize) < 0 || (req.tv_nsec as isize) < 0 || req.tv_nsec >= 1000_000_000usize {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    // debug!(
+    //     "[sys_nanosleep] ready to sleep for {} sec, {} nsec",
+    //     req.tv_sec, req.tv_nsec
     // );
-    let re: TimeVal;
-    let token = current_user_token();
-    re = *translated_ref(token, req);
-    //debug!("the expected sec is:{}",re.sec);
-    let expire_ms = get_time_ms() + re.sec * 1000;
-    let task = current_task().unwrap();
-    add_timer(expire_ms, task);
-    block_current_and_run_next();
+
+    while get_time_ms() * 1_000_000usize - begin < waittime {
+        if let Some(_) = check_if_any_sig_for_current_task() {
+            //被信号唤醒
+            if rem as usize != 0 {
+                *translated_refmut(token, rem) = calculate_left_timespec(endtime);
+            }
+            return SysErrNo::EINTR as isize;
+        }
+        suspend_current_and_run_next();
+    }
     0
 }
 /// mutex create syscall

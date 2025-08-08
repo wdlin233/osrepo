@@ -20,7 +20,8 @@ use crate::{
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
         exit_current_and_run_next, futex_requeue, futex_wait, futex_wake_up, mmap, munmap,
-        pid2process, process_num, suspend_current_and_run_next, CloneFlags, FutexKey, TmsInner,
+        pid2process, process_num, remove_all_from_thread_group, suspend_current_and_run_next,
+        CloneFlags, FutexKey, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -102,10 +103,7 @@ pub fn sys_futex(
                     tv_sec: time / 1000,
                     tv_nsec: (time % 1000) * 1000000,
                 };
-                add_timer(
-                    (timespec.tv_sec + timeout.tv_sec) * 1000,
-                    current_task().unwrap(),
-                );
+                add_timer(timespec, current_task().unwrap());
             }
             drop(inner);
             drop(process);
@@ -425,8 +423,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
             });
             if let Some((idx, _)) = pair {
                 let child = inner.children.remove(idx);
-                // confirm that child will be deallocated after being removed from children list
-                assert_eq!(Arc::strong_count(&child), 1);
+
                 let found_pid = child.getpid();
                 // ++++ temporarily access child PCB exclusively
                 let exit_code = child.inner_exclusive_access().exit_code;
@@ -434,8 +431,20 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
                     "sys_waitpid: found child pid {}, exit_code {}",
                     found_pid, exit_code
                 );
+                if exit_code_ptr as usize != 0x0 {
+                    if exit_code >= 128 && exit_code <= 255 {
+                        //表示由于信号而退出的
+                        *translated_refmut(inner.get_user_token(), exit_code_ptr) = exit_code;
+                    } else {
+                        *translated_refmut(inner.get_user_token(), exit_code_ptr) = exit_code << 8;
+                    }
+                }
                 // ++++ release child PCB
-                *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
+                drop(inner);
+                drop(process);
+                remove_all_from_thread_group(found_pid);
+                // confirm that child will be deallocated after being removed from children list
+                assert_eq!(Arc::strong_count(&child), 1);
                 return found_pid as isize;
             } else {
                 drop(inner);

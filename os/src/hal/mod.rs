@@ -1,6 +1,6 @@
-pub mod utils;
-pub mod arch; 
+pub mod arch;
 pub mod trap;
+pub mod utils;
 
 pub fn clear_bss() {
     extern "C" {
@@ -27,9 +27,14 @@ extern "C" {
     pub fn erodata();
     pub fn sdata();
     pub fn edata();
-    #[cfg(target_arch = "riscv64")] pub fn sbss_with_stack();
-    #[cfg(target_arch = "loongarch64")] pub fn sbss();
+    #[cfg(target_arch = "riscv64")]
+    pub fn sbss_with_stack();
+    #[cfg(target_arch = "loongarch64")]
+    pub fn sbss();
     pub fn ebss();
     pub fn ekernel();
-   #[cfg(target_arch = "riscv64")] pub fn strampoline();
+    #[cfg(target_arch = "riscv64")]
+    pub fn strampoline();
+    pub fn sigreturn();
+
 }
