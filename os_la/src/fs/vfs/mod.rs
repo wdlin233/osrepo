@@ -122,6 +122,9 @@ pub trait Inode: Send + Sync {
 
 /// 文件接口
 pub trait File: Send + Sync {
+    fn as_any(&self) -> &dyn core::any::Any {
+        unimplemented!()
+    }
     fn readable(&self) -> bool {
         unimplemented!()
     }

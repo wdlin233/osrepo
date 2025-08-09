@@ -33,6 +33,9 @@ impl OSInode {
 
 // 为 OSInode 实现 File Trait
 impl File for OSInode {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
     fn readable(&self) -> bool {
         self.readable
     }

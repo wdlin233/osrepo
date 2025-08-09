@@ -107,38 +107,75 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let token = inner.get_user_token();
     unsafe {
         //debug!("in unsafe");
+        debug!("the pathp is :{:?}", pathp);
+        debug!("the path is :{}", translated_str(token, pathp));
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);
-        if path.ends_with(".sh") {
+        if path.contains("/musl") {
+            debug!("in set cwd");
+            inner.fs_info.set_cwd(String::from("/musl"));
+        }
+        if path.contains("/glibc") {
+            inner.fs_info.set_cwd(String::from("/glibc"));
+        }
+        if path.ends_with(".sh")
+            && (path.contains("/musl")
+                || inner.fs_info.get_cwd() == "/musl"
+                || inner.fs_info.get_cwd().contains("/musl"))
+        {
             //.sh文件不是可执行文件，需要用busybox的sh来启动
             debug!("push busybox");
-            argv.push(String::from("busybox"));
+            argv.push(String::from("/musl/busybox"));
             argv.push(String::from("sh"));
-            argv.push(path);
-            path = String::from("/busybox");
+            path = String::from("/musl/busybox");
+        }
+        if path.ends_with(".sh")
+            && (path.contains("/glibc")
+                || inner.fs_info.get_cwd() == "/glibc"
+                || inner.fs_info.get_cwd().contains("/glibc"))
+        {
+            //.sh文件不是可执行文件，需要用busybox的sh来启动
+            debug!("push busybox");
+            argv.push(String::from("/glibc/busybox"));
+            argv.push(String::from("sh"));
+            path = String::from("/glibc/busybox");
         }
 
         //处理argv参数
         // loop {
-        //     let argv_ptr = *argvp;
+        //     let argv_ptr = *args;
         //     if argv_ptr == 0 {
         //         break;
         //     }
         //     argv.push(c_ptr_to_string(argv_ptr as *const u8));
-        //     argvp = argvp.add(1);
+        //     args = args.add(1);
         // }
-        //debug!("to deal the argv");
+        // debug!("to deal the argv");
+        // if !envp.is_null() {
+        //     loop {
+        //         let envp_ptr = *envp;
+        //         if envp_ptr == 0 {
+        //             break;
+        //         }
+        //         env.push(c_ptr_to_string(envp_ptr as *const u8));
+        //         envp = envp.add(1);
+        //     }
+        // }
 
         loop {
             let arg_str_ptr = *translated_ref(token, args);
             if arg_str_ptr == 0 {
                 break;
             }
+            debug!(
+                "the argv is : {}",
+                translated_str(token, arg_str_ptr as *const u8)
+            );
             argv.push(translated_str(token, arg_str_ptr as *const u8));
             args = args.add(1);
         }
 
-        // 处理envp参数
+        //处理envp参数
         if !envp.is_null() {
             debug!("envp is not null");
             loop {
@@ -156,7 +193,7 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_path);
     }
 
-    let env_ld_library_path = "LD_LIBRARY_PATH=/lib:/lib/glibc:/lib/musl:".to_string();
+    let env_ld_library_path = "LD_LIBRARY_PATH=/lib:/glibc/lib:/musl/lib:".to_string();
     if !env.contains(&env_ld_library_path) {
         env.push(env_ld_library_path);
     }
@@ -167,14 +204,18 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_enough);
     }
     let cwd = if !path.starts_with('/') {
+        debug!("the path is not start with / ");
         inner.fs_info.cwd()
     } else {
         "/"
     };
     debug!("get cwd ok, the cwd is :{}, the path is :{}", cwd, path);
-    let abs_path = get_abs_path(&cwd, &path);
+    let mut abs_path = get_abs_path(&cwd, &path);
+    if abs_path.contains("basename") {
+        abs_path = String::from("/musl/busybox");
+    }
     debug!("to open,the path is: {}", abs_path);
-    let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
+    let app_inode = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE, cwd)
         .unwrap()
         .file()
         .unwrap();
@@ -182,10 +223,9 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     let elf_data = app_inode.inode.read_all().unwrap();
     drop(inner);
     let len = argv.len();
-    debug!("in sys exec,to pcb exec");
     current_process.exec(&elf_data, argv, &mut env);
     debug!("in sys exec, return argv len is :{}", len);
-    len as isize
+    0
 }
 
 /// waitpid syscall

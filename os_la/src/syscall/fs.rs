@@ -136,7 +136,7 @@ pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     if abs_path == "/proc/self/stat" {
         abs_path = format!("/proc/{}/stat", process.getpid());
     }
-    let inode = match open(&abs_path, flags, mode) {
+    let inode = match open(&abs_path, flags, mode, "") {
         Ok(i) => i,
         Err(_) => {
             return -1;
@@ -414,7 +414,7 @@ pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
         return -1;
     }
     debug!("to open,the abs path is :{}", abs_path);
-    let osfile = open(&abs_path, OpenFlags::O_ASK_SYMLINK, NONE_MODE)
+    let osfile = open(&abs_path, OpenFlags::O_ASK_SYMLINK, NONE_MODE, "")
         .unwrap()
         .file()
         .unwrap();
@@ -448,7 +448,7 @@ pub fn sys_chdir(path: *const u8) -> isize {
         return -1;
     }
     let abs_path = get_abs_path(inner.fs_info.cwd(), &path);
-    let osfile = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE)
+    let osfile = open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE, "")
         .unwrap()
         .file()
         .unwrap();
@@ -500,13 +500,14 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
         return -1;
     }
     let abs_path = inner.get_abs_path(dirfd, &path);
-    if let Ok(_) = open(&abs_path, OpenFlags::O_RDWR, NONE_MODE) {
+    if let Ok(_) = open(&abs_path, OpenFlags::O_RDWR, NONE_MODE, "") {
         return -1;
     }
     if let Ok(_) = open(
         &abs_path,
         OpenFlags::O_RDWR | OpenFlags::O_CREATE | OpenFlags::O_DIRECTORY,
         mode,
+        ""
     ) {
         return 0;
     }
@@ -606,7 +607,7 @@ pub fn sys_statx(
     }
     
     // 打开文件获取元数据
-    match open(&abs_path, open_flags, NONE_MODE) {
+    match open(&abs_path, open_flags, NONE_MODE, "") {
         Ok(file) => {
             let kstat = file.fstat();
             let statx = convert_kstat_to_statx(&kstat, mask);
