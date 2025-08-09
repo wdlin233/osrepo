@@ -1,0 +1,137 @@
+use super::{File, Kstat, StMode};
+use crate::hal::utils::console_getchar;
+use crate::mm::UserBuffer;
+use crate::print;
+use crate::syscall::PollEvents;
+use crate::task::suspend_current_and_run_next;
+
+use crate::utils::{SysErrNo, SyscallRet};
+use alloc::vec::Vec;
+#[cfg(target_arch = "riscv64")]
+use riscv::register::sstatus;
+
+/// stdin file for getting chars from console
+pub struct Stdin;
+
+/// stdout file for putting chars to console
+pub struct Stdout;
+
+const LF: usize = 0x0a;
+const CR: usize = 0x0d;
+
+impl File for Stdin {
+    fn readable(&self) -> bool {
+        true
+    }
+    fn writable(&self) -> bool {
+        false
+    }
+    fn read(&self, mut user_buf: UserBuffer) -> SyscallRet {
+        /*
+        //一次读取单个字符
+        assert_eq!(user_buf.len(), 1);
+        // busy loop
+        let mut c: usize;
+        loop {
+            c = console_getchar();
+            if c == 0 {
+                suspend_current_and_run_next();
+                continue;
+            } else {
+                break;
+            }
+        }
+        let ch = c as u8;
+        unsafe {
+            user_buf.buffers[0].as_mut_ptr().write_volatile(ch);
+        }
+        1
+        */
+        //一次读取多个字符
+        //debug!("in stdin read, the user buf len is :{}", user_buf.len());
+        let mut c: usize;
+        let mut count: usize = 0;
+        let mut buf = Vec::new();
+        while count < user_buf.len() {
+            c = console_getchar();
+            match c {
+                // `c > 255`是为了兼容OPENSBI，OPENSBI未获取字符时会返回-1
+                0 | 256.. => {
+                    //debug!("to susupend");
+                    suspend_current_and_run_next();
+                    continue;
+                }
+                CR => {
+                    buf.push(LF as u8);
+                    count += 1;
+                    break;
+                }
+                LF => {
+                    buf.push(LF as u8);
+                    count += 1;
+                    break;
+                }
+                _ => {
+                    buf.push(c as u8);
+                    count += 1;
+                }
+            }
+        }
+        user_buf.write(buf.as_slice());
+        Ok(count)
+    }
+    fn write(&self, _user_buf: UserBuffer) -> SyscallRet {
+        Err(SysErrNo::EINVAL)
+        // panic!("Cannot write to stdin!");
+    }
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let mut revents = PollEvents::empty();
+        if events.contains(PollEvents::IN) {
+            revents |= PollEvents::IN;
+        }
+        revents
+    }
+    fn fstat(&self) -> Kstat {
+        Kstat {
+            st_mode: StMode::FCHR.bits(),
+            st_nlink: 1,
+            ..Kstat::default()
+        }
+    }
+}
+
+impl File for Stdout {
+    fn readable(&self) -> bool {
+        false
+    }
+    fn writable(&self) -> bool {
+        true
+    }
+    fn read(&self, _user_buf: UserBuffer) -> SyscallRet {
+        panic!("Cannot read from stdout!");
+    }
+    fn write(&self, user_buf: UserBuffer) -> SyscallRet {
+        info!("kernel: write to stdout");
+        for buffer in user_buf.buffers.iter() {
+            //info!("kernel: write to stdout buffer: {:?}", buffer);
+            print!("{}", core::str::from_utf8(*buffer).unwrap());
+        }
+        info!("kernel: write to stdout done");
+        Ok(user_buf.len())
+    }
+    fn poll(&self, _events: PollEvents) -> PollEvents {
+        unimplemented!()
+        // let mut revents = PollEvents::empty();
+        // if events.contains(PollEvents::OUT) {
+        //     revents |= PollEvents::OUT;
+        // }
+        // revents
+    }
+    fn fstat(&self) -> Kstat {
+        Kstat {
+            st_mode: StMode::FCHR.bits(),
+            st_nlink: 1,
+            ..Kstat::default()
+        }
+    }
+}
