@@ -57,7 +57,7 @@ impl TrapContext {
         }
         #[cfg(target_arch = "loongarch64")]
         {
-            self.x[3] = sp - 8; // loongarch64 uses x3 as stack pointer
+            self.x[3] = sp; // loongarch64 uses x3 as stack pointer
         }
     }
 

@@ -264,6 +264,10 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     unsafe {
         //debug!("in unsafe");
         debug!("the pathp is :{:?}", pathp);
+        if pathp.is_null() {
+            debug!("pathp is null, returning error");
+            return -1;
+        }
         debug!("the path is :{}", translated_str(token, pathp));
         path = trim_start_slash(translated_str(token, pathp));
         debug!("trim path ok,the path is :{}", path);

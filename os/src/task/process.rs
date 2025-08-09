@@ -733,7 +733,7 @@ impl ProcessControlBlock {
             // create main thread of child process
             let task = Arc::new(TaskControlBlock::new(
                 Arc::clone(&child),
-                false,
+                true,  // alloc_user_res = true for fork
                 stack == 0,
                 ptid,
             ));
@@ -742,12 +742,14 @@ impl ProcessControlBlock {
 
             let trap_cx_bottom = task.trap_cx_user_va();
             debug!("fork, new task trap va is : {:#x}", trap_cx_bottom);
+            #[cfg(target_arch = "riscv64")]
             child_inner.memory_set.clone_area(
                 VirtAddr::from(trap_cx_bottom).floor(),
                 parent.memory_set.get_ref(),
             );
 
             let ustack_top = task.user_stack_top();
+            #[cfg(target_arch = "riscv64")]
             child_inner.memory_set.clone_area(
                 VirtAddr::from(ustack_top - USER_STACK_SIZE).floor(),
                 parent.memory_set.get_ref(),

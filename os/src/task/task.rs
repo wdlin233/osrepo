@@ -165,8 +165,9 @@ impl TaskControlBlock {
         //     new_task.alloc_user_res(alloc_ustack);
         //     //new_task.alloc_user_trap();
         // }
-        #[cfg(target_arch = "riscv64")]
-        new_task.alloc_user_res(alloc_ustack);
+        if alloc_user_res {
+            new_task.alloc_user_res(alloc_ustack);
+        }
         // #[cfg(target_arch = "riscv64")]
         // {
         //     //new_task.alloc_user_trap();
