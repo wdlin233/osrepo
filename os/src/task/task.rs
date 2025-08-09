@@ -1,6 +1,6 @@
 //! Types related to task management & Functions for completely changing TCB
 
-use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid};
+use super::id::{ustack_bottom_from_tid};
 #[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
@@ -75,11 +75,17 @@ impl TaskControlBlockInner {
         self.ustack_top.0
     }
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
+        #[cfg(target_arch = "riscv64")]
         debug!(
             "in tcb inner, get trap cx, trap cx ppn is : {}",
             self.trap_cx_ppn.0
         );
-        self.trap_cx_ppn.get_mut()
+         #[cfg(target_arch = "riscv64")] {
+            self.trap_cx_ppn.get_mut()
+        }
+        #[cfg(target_arch = "loongarch64")] {
+            self.kstack.get_trap_cx()
+        }
     }
     pub fn trap_cx_bottom(&self) -> VirtAddr {
         self.trap_va
@@ -127,6 +133,13 @@ impl TaskControlBlock {
                 let kstack_top = kstack.get_top();
                 (Some(kstack), kstack_top)
             }
+            #[cfg(target_arch = "loongarch64")] {
+                // info!("Finish TaskUserRes::new!");
+                let kstack = KernelStack::new();
+                let kstack_top = kstack.get_trap_addr(); //存放了trap上下文后的地址
+                // debug!("create task: kstack_top={:#x}", kstack_top);
+                (Some(kstack), kstack_top) // Some(0) as None to avoid gerneric type
+            }
         };
         let mut new_task = TaskControlBlock {
             process: Arc::downgrade(&process),
@@ -152,6 +165,7 @@ impl TaskControlBlock {
         //     new_task.alloc_user_res(alloc_ustack);
         //     //new_task.alloc_user_trap();
         // }
+        #[cfg(target_arch = "riscv64")]
         new_task.alloc_user_res(alloc_ustack);
         // #[cfg(target_arch = "riscv64")]
         // {
@@ -183,14 +197,16 @@ impl TaskControlBlock {
                 MapAreaType::Stack,
             );
         }
-
+        #[cfg(target_arch = "riscv64")]
         let (trap_cx_bottom, _) = process_inner.memory_set.insert_framed_area_with_hint(
             USER_TRAP_CONTEXT_TOP,
             PAGE_SIZE,
             MapPermission::R | MapPermission::W,
             MapAreaType::Trap,
         );
+        #[cfg(target_arch = "riscv64")]
         debug!("alloc res, trap bottom is : {:#x}", trap_cx_bottom);
+        #[cfg(target_arch = "riscv64")]
         let trap_cx_ppn = process_inner
             .memory_set
             .translate(VirtAddr::from(trap_cx_bottom).floor())
@@ -198,8 +214,10 @@ impl TaskControlBlock {
             .ppn();
 
         let mut inner = self.inner_exclusive_access();
-        inner.trap_va = trap_cx_bottom.into();
-        inner.trap_cx_ppn = trap_cx_ppn;
+        #[cfg(target_arch = "riscv64")] {
+            inner.trap_va = trap_cx_bottom.into();
+            inner.trap_cx_ppn = trap_cx_ppn;
+        }
         inner.ustack_top = VirtAddr::from(ustack_top);
     }
 

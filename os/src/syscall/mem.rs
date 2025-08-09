@@ -74,7 +74,9 @@ pub fn sys_shmget(key: i32, size: usize, shmflag: i32) -> isize {
 }
 
 pub fn sys_shmat(shmid: i32, shmaddr: usize, shmflag: i32) -> isize {
+    #[cfg(target_arch = "riscv64")]
     let mut permission = MapPermission::U | MapPermission::R;
+    #[cfg(target_arch = "riscv64")]
     if shmflag == 0 {
         permission |= MapPermission::W | MapPermission::X
     } else {
@@ -84,6 +86,23 @@ pub fn sys_shmat(shmid: i32, shmaddr: usize, shmflag: i32) -> isize {
         }
         if !shmflg.contains(ShmFlags::SHM_RDONLY) {
             permission |= MapPermission::W;
+        }
+    }
+
+    #[cfg(target_arch = "loongarch64")]
+    warn!("shmat in loongarch64");
+    #[cfg(target_arch = "loongarch64")]
+    let mut permission = MapPermission::PLVH | MapPermission::PLVL;
+    #[cfg(target_arch = "loongarch64")]
+    if shmflag == 0 {
+        permission |= MapPermission::W
+    } else {
+        let shmflg = ShmFlags::from_bits(shmflag).unwrap();
+        if shmflg.contains(ShmFlags::SHM_EXEC) {
+            permission |= MapPermission::NR;
+        }
+        if !shmflg.contains(ShmFlags::SHM_RDONLY) {
+            permission |= MapPermission::W | MapPermission::NX;
         }
     }
 

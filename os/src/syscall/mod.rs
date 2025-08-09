@@ -265,9 +265,9 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
-        SYSCALL_GETSOCKETOPT => {
-            sys_getsocketopt(args[0], args[1], args[2], args[3] as *mut u8, args[4])
-        }
+        // SYSCALL_GETSOCKETOPT => {
+        //     sys_getsocketopt(args[0], args[1], args[2], args[3] as *mut u8, args[4])
+        // }
         SYSCALL_CONNECT => sys_connect(args[0], args[1] as *const u8, args[2] as u32),
         SYSCALL_SETTIMER => sys_set_timer(
             args[0] as usize,

@@ -56,7 +56,8 @@ pub fn sys_fork(
     //     "kernel:pid[{}] sys_fork",
     //     current_task().unwrap().process.upgrade().unwrap().getpid()
     // );
-    debug!("in sys fork");
+    debug!("(sys_fork) flags: {}, stack_ptr: {:#x}, parent_tid_ptr: {:#x}, tls_ptr: {:#x}, child_tid_ptr: {:#x}",
+        flags, stack_ptr, parent_tid_ptr, tls_ptr, child_tid_ptr);
     let flags = CloneFlags::from_bits(flags as u32).unwrap();
     let current_process = current_process();
     //current_process.inner_exclusive_access().is_blocked+=1;
@@ -69,21 +70,8 @@ pub fn sys_fork(
     );
     //debug!("sys_fork: current process pid is : {}",current_process.getpid());
     let new_pid = new_process.getpid();
-    debug!("the new pid is :{}", new_pid);
-    // modify trap context of new_task, because it returns immediately after switching
-    let new_process_inner = new_process.inner_exclusive_access();
-    let task = new_process_inner.tasks[0].as_ref().unwrap();
-    let trap_cx = task.inner_exclusive_access().get_trap_cx();
-    // we do not have to move to next instruction since we have done it before
-    // for child process, fork returns 0
-    #[cfg(target_arch = "riscv64")]
-    {
-        trap_cx.x[10] = 0;
-    }
-    #[cfg(target_arch = "loongarch64")]
-    {
-        trap_cx.x[4] = 0;
-    }
+    debug!("(sys_fork) the new pid is :{}", new_pid);
+
     //debug!("sys_fork: the new pid is : {}",new_pid);
     new_pid as isize
 }

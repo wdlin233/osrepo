@@ -25,7 +25,7 @@ use crate::mm::{
 use crate::signal::{SigTable, SignalFlags};
 use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
 use crate::task::heap_bottom_from_id;
-use crate::task::id::{tid_dealloc, trap_cx_bottom_from_tid};
+use crate::task::id::{tid_dealloc};
 use crate::task::manager::{insert_into_thread_group, insert_into_tid2task};
 use crate::timer::{get_time, Timer};
 use crate::users::{current_user, User};
@@ -652,6 +652,16 @@ impl ProcessControlBlock {
                 trap_cx = task_inner.get_trap_cx();
                 *trap_cx = *main_task.inner_exclusive_access().get_trap_cx();
                 trap_cx.kernel_sp = task.kstack.get_top();
+            }
+            #[cfg(target_arch = "loongarch64")]
+            {
+                // 修改trap_cx的内容，使其保持与父进程相同
+                // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
+                let mut task_inner = task.inner_exclusive_access();
+                task_inner
+                    .kstack
+                    .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+                trap_cx = task_inner.get_trap_cx();
             }
             if stack != 0 {
                 // 设置运行的起始地址和参数以及stack

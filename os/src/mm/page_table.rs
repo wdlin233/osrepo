@@ -88,7 +88,7 @@ impl fmt::Debug for PageTableEntry {
             self.bits.get_bit(63),
             self.bits.get_bit(62),
             self.bits.get_bit(61),
-            self.bits.get_bits(14..PALEN),
+            self.bits.get_bits(12..PALEN),
             self.bits.get_bit(8),
             self.bits.get_bit(7),
             self.bits.get_bit(6),
@@ -112,7 +112,7 @@ impl PageTableEntry {
         {
             //debug!("ppn:{:#x}, flags:{:?}", ppn.0, flags);
             let mut bits = 0usize;
-            bits.set_bits(14..PALEN, ppn.0); //采用16kb大小的页
+            bits.set_bits(12..PALEN, ppn.0); //采用16kb大小的页
             bits = bits | flags.bits;
             PageTableEntry { bits }
         }
@@ -128,7 +128,7 @@ impl PageTableEntry {
         #[cfg(target_arch = "riscv64")]
         return (self.bits >> 10 & ((1usize << 44) - 1)).into();
         #[cfg(target_arch = "loongarch64")]
-        return self.bits.get_bits(14..PALEN).into();
+        return self.bits.get_bits(12..PALEN).into();
     }
     /// Get the flags from the page table entry
     /// 返回标志位

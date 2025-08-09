@@ -41,8 +41,8 @@ build_docker:
 
 all:
 	@cd user && make build ARCH=loongarch64
-	@cd os_la && make build ARCH=loongarch64
-	@cp ./os_la/target/loongarch64-unknown-none/release/os ./kernel-la
+	@cd os && make build ARCH=loongarch64
+	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
 
 clean:
 	@cd ./os && make clean

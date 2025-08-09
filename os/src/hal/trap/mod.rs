@@ -86,16 +86,16 @@ pub fn init() {
         // 设置重填tlb地址
         tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize);
         // 设置TLB的页面大小为16KiB
-        stlbps::set_ps(0xe);
+        stlbps::set_ps(0xc);
         // 设置TLB的页面大小为16KiB
-        tlbrehi::set_ps(0xe);
-        pwcl::set_ptbase(0xe);
-        pwcl::set_ptwidth(0xb); //16KiB的页大小
-        pwcl::set_dir1_base(25); //页目录表起始位置
-        pwcl::set_dir1_width(0xb); //页目录表宽度为11位
+        tlbrehi::set_ps(0xc);
+        pwcl::set_ptbase(0xc);
+        pwcl::set_ptwidth(0x9); //16KiB的页大小
+        pwcl::set_dir1_base(21); //页目录表起始位置
+        pwcl::set_dir1_width(0x9); //页目录表宽度为11位
 
-        pwch::set_dir3_base(36); //第三级页目录表
-        pwch::set_dir3_width(0xb); //页目录表宽度为11位
+        pwch::set_dir3_base(30); //第三级页目录表
+        pwch::set_dir3_width(0x9); //页目录表宽度为9位
 
         // make sure that the interrupt is enabled when first task returns user mode
         prmd::set_pie(true);

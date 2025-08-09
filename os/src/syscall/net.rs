@@ -257,7 +257,7 @@ pub fn sys_sendmsg(_sockfd: usize, _addr: *const u8, _flags: u32) -> isize {
 //         }
 //         _ => SysErrNo::ENOPROTOOPT as isize,
 //     }
-// }
+}
 
 pub fn sys_socketpair(domain: u32, stype: u32, protocol: u32, sv: *mut u32) -> isize {
     let process = current_process();

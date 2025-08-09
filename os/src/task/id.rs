@@ -172,7 +172,7 @@ pub fn kstack_alloc() -> KernelStack {
     KernelStack(kstack_id)
 }
 
-//#[cfg(target_arch = "riscv64")]
+#[cfg(target_arch = "riscv64")]
 impl Drop for KernelStack {
     fn drop(&mut self) {
         debug!("to drop kernel stack");
