@@ -210,15 +210,9 @@ impl VirtPageNum {
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
-        #[cfg(target_arch = "riscv64")]
         for i in (0..3).rev() {
             idx[i] = vpn & 511; // 2^9-1
             vpn >>= 9;
-        }
-        #[cfg(target_arch = "loongarch64")]
-        for i in (0..3).rev() {
-            idx[i] = vpn & 2047; //2^11-1, 每页包含2048个页表项
-            vpn >>= 11;
         }
         idx
     }
@@ -271,12 +265,12 @@ impl PhysPageNum {
         let pa: PhysAddr = self.clone().into();
         let va = phys_to_virt!(pa.0);
         // 每一个页有2048个项目 : 16kb/8 = 2048
-        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 2048) }
+        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 512) }
     }
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = self.clone().into();
         let va = phys_to_virt!(pa.0);
-        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 16 * 1024) }
+        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 4 * 1024) }
     }
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = self.clone().into();

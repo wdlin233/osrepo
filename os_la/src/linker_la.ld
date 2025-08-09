@@ -14,28 +14,28 @@ SECTIONS
     *(tlb_handler)
     PROVIDE(etext = .);
   }
-  . = ALIGN(4K);
+  . = ALIGN(1K);
 
 
   .rodata : {
     PROVIDE(srodata = .);
-    . = ALIGN(16);
+    . = ALIGN(4);
     *(.srodata .srodata.*)
-    . = ALIGN(16);
+    . = ALIGN(4);
     *(.rodata .rodata.*)
     PROVIDE(erodata = .);
   }
-  . = ALIGN(4K);
+  . = ALIGN(1K);
 
   .data : {
     PROVIDE(sdata = .);
-    . = ALIGN(16);
+    . = ALIGN(4);
     *(.sdata .sdata.*)
-    . = ALIGN(16);
+    . = ALIGN(4);
     *(.data .data.*)
     *(.got .got.*)
   }
-  . = ALIGN(4K);
+  . = ALIGN(1K);
   PROVIDE(edata = .);
 
   .bss : {
@@ -45,7 +45,7 @@ SECTIONS
     *(.bss .bss.*)
     ebss = .;
   }
-  . = ALIGN(4K);
+  . = ALIGN(1K);
 
 
   ekernel = .;
