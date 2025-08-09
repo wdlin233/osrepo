@@ -46,6 +46,7 @@ pub mod hal;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
+pub mod net;
 pub mod signal;
 pub mod sync;
 pub mod syscall;

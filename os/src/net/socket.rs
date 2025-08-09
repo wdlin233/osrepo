@@ -1,5 +1,24 @@
 use super::SocketAddrIn;
 
+pub struct Socket {
+    domain: u32,   // 地址族
+    typ: u32,      // socket类型
+    protocol: u32, // 具体协议号
+    inner: SocketInner,
+}
+
+enum SocketInner {
+    Tcp(TcpSocket),
+    Udp(UdpSocket),
+}
+
+////Socket type
+//tcp
+pub const SOCK_STREAM: usize = 1;
+//udp
+pub const SOCK_DFRAM: usize = 2;
+
+//////////////////////////////////////////////////////////////////////////
 #[repr(C)]
 pub struct SockAddr {
     sa_family: u16,    // 地址族
@@ -25,7 +44,9 @@ impl SockAddrIn {
     }
 }
 
-/// 地址族常量
-pub const AF_UNSPEC: u16 = 0; // 未指定
-pub const AF_INET: u16 = 2; // IPv4
-pub const AF_INET6: u16 = 10; // IPv6
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SocketFamily {
+    Inet,  // AF_INET
+    Inet6, // AF_INET6
+    Unix,  // AF_UNIX
+}

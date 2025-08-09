@@ -299,7 +299,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[4] as *const u8,
             args[5] as u32,
         ),
-        SYSCALL_GETSOCKNAME => sys_getsockname(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_GETSOCKNAME => sys_getsockname(args[0], args[1], args[2]),
         SYSCALL_PSELECT6 => sys_pselect6(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYSCALL_LISTEN => sys_listen(args[0], args[1] as u32),
         SYSCALL_BIND => sys_bind(args[0], args[1], args[2] as u32),

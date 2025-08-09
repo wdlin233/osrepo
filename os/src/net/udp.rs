@@ -12,18 +12,18 @@ use alloc::vec::Vec;
 use alloc::{collections::VecDeque, sync::Arc};
 use spin::Mutex;
 
-struct UdpBuffer {
-    rx: VecDeque<u8>,                 // 接收队列
-    tx: VecDeque<u8>,                 // 发送队列（loopback 用）
-    bound_addr: Option<SocketAddrIn>, // 绑定地址 (IP, port)
-    peer_addr: Option<SocketAddrIn>,  // 记录远端，简化处理
+pub struct UdpBuffer {
+    rx: VecDeque<u8>,                     // 接收队列
+    tx: VecDeque<u8>,                     // 发送队列（loopback 用）
+    pub bound_addr: Option<SocketAddrIn>, // 绑定地址 (IP, port)
+    peer_addr: Option<SocketAddrIn>,      // 记录远端，简化处理
     //  IP 层选项
     ip_tos: u8, // IP 服务类型
     ip_ttl: u8, // IP 生存时间
 }
 
 pub struct UdpSocket {
-    inner: Arc<Mutex<UdpBuffer>>,
+    pub inner: Arc<Mutex<UdpBuffer>>,
 }
 
 impl UdpSocket {

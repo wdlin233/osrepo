@@ -87,7 +87,7 @@ pub const UART: usize = 0x1FE001E0 + VIRT_BIAS;
 
 #[cfg(target_arch = "riscv64")]
 /// physical memory end address
-pub const MEMORY_END: usize = 0x8800_0000;
+pub const MEMORY_END: usize = 0x9800_0000;
 #[cfg(target_arch = "riscv64")]
 /// page size : 4KB
 pub const PAGE_SIZE: usize = 0x1000;

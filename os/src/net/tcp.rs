@@ -32,14 +32,14 @@ pub struct TcpSocket {
     pub inner: Arc<Mutex<TcpInner>>,
 }
 
-struct TcpInner {
+pub struct TcpInner {
     rx: VecDeque<u8>,
     tx: VecDeque<u8>,
-    state: TcpState,                  // CLOSED / LISTEN / ESTAB 等
-    peer_addr: Option<SocketAddrIn>,  // 对端地址 (IP, port)
-    local_addr: Option<SocketAddrIn>, // 本地地址
-    bound_port: Option<u16>,          // 绑定的本地端口（用于资源释放）
-    tcp_nodelay: bool,                // TCP_NODELAY 选项
+    state: TcpState,                      // CLOSED / LISTEN / ESTAB 等
+    peer_addr: Option<SocketAddrIn>,      // 对端地址 (IP, port)
+    pub local_addr: Option<SocketAddrIn>, // 本地地址
+    bound_port: Option<u16>,              // 绑定的本地端口（用于资源释放）
+    tcp_nodelay: bool,                    // TCP_NODELAY 选项
     //IP 层选项
     ip_tos: u8, // IP 服务类型 (0-255)
     ip_ttl: u8, // IP 生存时间 (1-255)

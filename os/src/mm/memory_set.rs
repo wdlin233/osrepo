@@ -44,6 +44,7 @@ use core::iter::Map;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::*;
+use riscv::register::hpmcounter13h::read;
 #[cfg(target_arch = "riscv64")]
 use riscv::register::{
     satp,
@@ -237,6 +238,17 @@ impl MemorySet {
     pub fn copy_to_user(&self, src: &[u8], dst: usize) -> Result<(), SysErrNo> {
         self.get_mut().copy_to_user(src, dst)
     }
+    #[inline(always)]
+    pub fn check_user_memory_range(
+        &self,
+        addr: *const u8,
+        len: usize,
+        writable: bool,
+        readable: bool,
+    ) -> bool {
+        self.get_mut()
+            .check_user_memory_range(addr, len, writable, readable)
+    }
 }
 
 /// address space
@@ -300,6 +312,64 @@ impl MemorySetInner {
             bytes_copied += copy_size;
         }
         Ok(())
+    }
+
+    pub fn check_user_memory_range(
+        &self,
+        addr: *const u8,
+        len: usize,
+        writable: bool,
+        readable: bool,
+    ) -> bool {
+        const USER_END: usize = 0xFFFF_FFFF_FFFF_FFFF;
+        const USER_START: usize = 0x1000; // 用户空间起始地址（避免0地址）
+
+        let start = addr as usize;
+        // 计算结束地址（注意溢出）
+        let end = match start.checked_add(len) {
+            Some(end) => end,
+            None => return false,
+        };
+
+        // 1. 检查空指针和零长度
+        if start == 0 && len > 0 {
+            return false;
+        }
+        if len == 0 {
+            return true; // 零长度总是"有效"
+        }
+
+        // 2. 检查用户地址空间范围
+        if start < USER_START || end > USER_END {
+            return false;
+        }
+
+        // 3. 检查整个范围是否在同一个内存区域
+        let mut current = start;
+        while current < end {
+            let vpn = VirtPageNum::from(VirtAddr::from(current).floor());
+
+            // 3.1 检查页表映射是否存在
+            let pte = match self.page_table.translate(vpn) {
+                Some(pte) => pte,
+                None => return false, // 未映射的页
+            };
+
+            // 3.2 检查物理页帧是否有效
+            if !pte.is_valid() {
+                return false;
+            }
+
+            // 3.3 检查权限标志
+            if (readable && !pte.readable()) || (writable && !pte.writable()) {
+                return false;
+            }
+
+            // 3.4 跳到下一页起始位置
+            current = (current & !(PAGE_SIZE - 1)) + PAGE_SIZE;
+        }
+
+        true
     }
 
     pub fn insert_framed_area_with_hint(
