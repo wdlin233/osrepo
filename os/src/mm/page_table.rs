@@ -101,6 +101,9 @@ impl fmt::Debug for PageTableEntry {
 }
 
 impl PageTableEntry {
+    pub fn set(&mut self, flag: usize) {
+        self.bits = flag;
+    }
     /// Create a new page table entry
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
         //info!("PageTableEntry::new: ppn: {:?}, flags: {:?}", ppn, flags);

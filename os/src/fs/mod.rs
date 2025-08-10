@@ -12,6 +12,7 @@ pub mod vfs;
 
 use crate::mm::UserBuffer;
 use crate::println;
+use crate::syscall::SYSCALL_BIND;
 use crate::task::current_uid;
 use crate::timer::get_time;
 use crate::timer::get_time_ms;
@@ -103,6 +104,7 @@ pub const NONE_MODE: u32 = 0;
 pub enum FileClass {
     File(Arc<OSInode>),
     Abs(Arc<dyn File>),
+    Socket(Arc<dyn Socket>),
 }
 
 impl FileClass {
@@ -110,24 +112,35 @@ impl FileClass {
         match self {
             FileClass::File(f) => Ok(f.clone()),
             FileClass::Abs(_) => Err(SysErrNo::EINVAL),
+            FileClass::Socket(_) => Err(SysErrNo::EINVAL),
         }
     }
     pub fn abs(&self) -> Result<Arc<dyn File>, SysErrNo> {
         match self {
             FileClass::File(_) => Err(SysErrNo::EINVAL),
             FileClass::Abs(f) => Ok(f.clone()),
+            FileClass::Socket(_) => Err(SysErrNo::EINVAL),
+        }
+    }
+    pub fn socket(&self) -> Result<Arc<dyn Socket>, SysErrNo> {
+        match self {
+            FileClass::File(_) => Err(SysErrNo::EINVAL),
+            FileClass::Abs(_) => Err(SysErrNo::EINVAL),
+            FileClass::Socket(f) => Ok(f.clone()),
         }
     }
     pub fn any(&self) -> Arc<dyn File> {
         match self {
             FileClass::File(f) => f.clone(),
             FileClass::Abs(f) => f.clone(),
+            FileClass::Socket(f) => f.clone(),
         }
     }
     pub fn fstat(&self) -> Kstat {
         match self {
             FileClass::File(f) => f.inode.fstat(),
             FileClass::Abs(f) => f.fstat(),
+            FileClass::Socket(f) => f.inode.fstat(),
         }
     }
 }

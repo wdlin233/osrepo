@@ -1,13 +1,16 @@
 mod inode;
+mod sockfs;
 
 use super::{InodeType, Kstat, Statfs};
 use crate::{
     fs::{OpenFlags, String},
     mm::UserBuffer,
+    net::connection::ConnectionResult,
     syscall::PollEvents,
     utils::{SysErrNo, SyscallRet},
 };
 use alloc::{sync::Arc, vec::Vec};
+use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
 pub use inode::*;
 ///
@@ -148,5 +151,18 @@ pub trait File: Send + Sync {
     /// 设置偏移量,并非所有文件都支持
     fn lseek(&self, _offset: isize, _whence: usize) -> SyscallRet {
         unimplemented!("not support!");
+    }
+}
+
+pub trait Socket: File {
+    // 基础 socket 操作，先放三个占位
+    fn bind(&self, local: IpEndPoint) -> ConnectionResult {
+        unimplemented!()
+    }
+    fn listen(&self) -> ConnectionResult {
+        unimplemented!()
+    }
+    fn connect(&self, remote: IpEndpoint) -> ConnectionResult {
+        unimplemented!()
     }
 }
