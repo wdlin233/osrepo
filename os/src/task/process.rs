@@ -663,6 +663,7 @@ impl ProcessControlBlock {
                     .copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
                 trap_cx = task_inner.get_trap_cx();
             }
+            #[cfg(target_arch = "riscv64")]
             if stack != 0 {
                 // 设置运行的起始地址和参数以及stack
                 let (entry_point, arg) = (
@@ -677,9 +678,30 @@ impl ProcessControlBlock {
                 //sp
                 trap_cx.set_sp(stack);
             }
+            #[cfg(target_arch = "loongarch64")]
+            if stack != 0 {
+                // 设置运行的起始地址和参数以及stack
+                let (entry_point, arg) = (
+                    *translated_ref(token, stack as *const usize),
+                    *translated_ref(token, (stack + 8) as *const usize),
+                );
+                // sepc/entry
+                // debug!("[new thread] entry_point:{:#x}", entry_point);
+                trap_cx.sepc = entry_point;
+                //a0
+                trap_cx.x[4] = arg;
+                //sp
+                trap_cx.set_sp(stack);
+            }
+            #[cfg(target_arch = "riscv64")]
             if flags.contains(CloneFlags::CLONE_SETTLS) {
                 debug!("tls");
                 trap_cx.x[4] = tls;
+            }
+            #[cfg(target_arch = "loongarch64")]
+            if flags.contains(CloneFlags::CLONE_SETTLS) {
+                debug!("tls");
+                trap_cx.x[2] = tls;
             }
             insert_into_tid2task(task.tid(), Arc::clone(&task));
             add_task(task);
@@ -749,14 +771,6 @@ impl ProcessControlBlock {
             );
 
             let ustack_top = task.user_stack_top();
-            #[cfg(target_arch = "riscv64")]
-            child_inner.memory_set.clone_area(
-                VirtAddr::from(ustack_top - USER_STACK_SIZE).floor(),
-                parent.memory_set.get_ref(),
-            );
-            
-            // For LoongArch, we need to clone the user stack area as well
-            #[cfg(target_arch = "loongarch64")]
             child_inner.memory_set.clone_area(
                 VirtAddr::from(ustack_top - USER_STACK_SIZE).floor(),
                 parent.memory_set.get_ref(),
@@ -789,7 +803,7 @@ impl ProcessControlBlock {
                 trap_cx = kstack.get_trap_cx();
                 trap_cx.x[4] = 0; // a0, set child's fork return value to 0
             }
-
+            #[cfg(target_arch = "riscv64")]
             if stack != 0 {
                 // 设置运行的起始地址和参数以及stack
                 let (entry_point, arg) = (
@@ -804,8 +818,28 @@ impl ProcessControlBlock {
                 //sp
                 trap_cx.set_sp(stack);
             }
+            #[cfg(target_arch = "riscv64")]
             if flags.contains(CloneFlags::CLONE_SETTLS) {
                 trap_cx.x[4] = tls;
+            }
+            #[cfg(target_arch = "loongarch64")]
+            if stack != 0 {
+                // 设置运行的起始地址和参数以及stack
+                let (entry_point, arg) = (
+                    *translated_ref(token, stack as *const usize),
+                    *translated_ref(token, (stack + 8) as *const usize),
+                );
+                // sepc/entry
+                // debug!("[new thread] entry_point:{:#x}", entry_point);
+                trap_cx.sepc = entry_point;
+                //a0
+                trap_cx.x[4] = arg;
+                //sp
+                trap_cx.set_sp(stack);
+            }
+            #[cfg(target_arch = "loongarch64")]
+            if flags.contains(CloneFlags::CLONE_SETTLS) {
+                trap_cx.x[2] = tls;
             }
             insert_into_tid2task(task.tid(), Arc::clone(&task));
             insert_into_pid2process(child.getpid(), Arc::clone(&child));

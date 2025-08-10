@@ -948,20 +948,6 @@ impl MemorySetInner {
                         area.mmap_file.file = file.clone();
                     }
                 }
-                // self.munmap(addr, len);
-                // self.push(
-                //     MapArea::new_mmap(
-                //         VirtAddr::from(addr),
-                //         VirtAddr::from(addr + len),
-                //         MapType::Framed,
-                //         map_perm,
-                //         MapAreaType::Mmap,
-                //         file.clone(),
-                //         off,
-                //         flags,
-                //     ),
-                //     None,
-                // );
             } else {
                 #[cfg(target_arch = "riscv64")]
                 self.push(
@@ -978,15 +964,18 @@ impl MemorySetInner {
                     None,
                 );
                 #[cfg(target_arch = "loongarch64")]
-                self.push_lazily(MapArea::new_mmap(
-                    VirtAddr::from(addr),
-                    VirtAddr::from(addr + len),
-                    map_perm,
-                    MapAreaType::Mmap,
-                    file.clone(),
-                    off,
-                    flags,
-                ));
+                self.push(
+                    MapArea::new_mmap(
+                        VirtAddr::from(addr),
+                        VirtAddr::from(addr + len),
+                        map_perm,
+                        MapAreaType::Mmap,
+                        file.clone(),
+                        off,
+                        flags,
+                    ),
+                    None
+                );
             }
             return addr;
         }
@@ -1019,15 +1008,18 @@ impl MemorySetInner {
             None,
         );
         #[cfg(target_arch = "loongarch64")]
-        self.push_lazily(MapArea::new_mmap(
-            VirtAddr::from(addr),
-            VirtAddr::from(addr + len),
-            map_perm,
-            area_type,
-            file,
-            off,
-            flags,
-        ));
+        self.push(
+            MapArea::new_mmap(
+                VirtAddr::from(addr),
+                VirtAddr::from(addr + len),
+                map_perm,
+                area_type,
+                file,
+                off,
+                flags,
+            ),
+            None,
+        );
         addr
     }
 

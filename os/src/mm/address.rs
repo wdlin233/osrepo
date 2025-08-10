@@ -262,18 +262,18 @@ impl PhysPageNum {
 #[cfg(target_arch = "loongarch64")]
 impl PhysPageNum {
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
-        let pa: PhysAddr = self.clone().into();
+        let pa: PhysAddr = (*self).into();
         let va = phys_to_virt!(pa.0);
         // 每一个页有2048个项目 : 16kb/8 = 2048
         unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 512) }
     }
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
-        let pa: PhysAddr = self.clone().into();
+        let pa: PhysAddr = (*self).into();
         let va = phys_to_virt!(pa.0);
         unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 4 * 1024) }
     }
     pub fn get_mut<T>(&self) -> &'static mut T {
-        let pa: PhysAddr = self.clone().into();
+        let pa: PhysAddr = (*self).into();
         pa.get_mut()
     }
 }

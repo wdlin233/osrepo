@@ -187,7 +187,7 @@ impl TaskControlBlock {
     pub fn alloc_user_res(&self, alloc_ustack: bool) {
         let process = self.process.upgrade().unwrap();
         let process_inner = process.inner_exclusive_access();
-        debug!("in alloc , give tid, tid is : {}", self.tid());
+        debug!("(alloc_user_res) give tid, tid is : {}", self.tid());
         let mut ustack_bottom: usize = 0;
         let mut ustack_top: usize = 0;
         if alloc_ustack {
