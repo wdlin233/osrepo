@@ -754,6 +754,13 @@ impl ProcessControlBlock {
                 VirtAddr::from(ustack_top - USER_STACK_SIZE).floor(),
                 parent.memory_set.get_ref(),
             );
+            
+            // For LoongArch, we need to clone the user stack area as well
+            #[cfg(target_arch = "loongarch64")]
+            child_inner.memory_set.clone_area(
+                VirtAddr::from(ustack_top - USER_STACK_SIZE).floor(),
+                parent.memory_set.get_ref(),
+            );
 
             if flags.contains(CloneFlags::CLONE_PARENT_SETTID) {
                 put_data(parent_token, parent_tid, task.tid() as u32);
@@ -778,9 +785,9 @@ impl ProcessControlBlock {
                 let mut kstack = &mut task.inner_exclusive_access().kstack;
                 // 修改trap_cx的内容，使其保持与父进程相同
                 // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
-                trap_cx = kstack.get_trap_cx();
-                trap_cx.x[4] = 0; // a0, the same with
                 kstack.copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+                trap_cx = kstack.get_trap_cx();
+                trap_cx.x[4] = 0; // a0, set child's fork return value to 0
             }
 
             if stack != 0 {

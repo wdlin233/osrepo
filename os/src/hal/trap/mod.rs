@@ -412,7 +412,8 @@ pub fn trap_return() -> ! {
 pub fn trap_return() {
     set_user_trap_entry();
     let trap_addr = current_trap_addr();
-    debug!("trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}", trap_addr, current_trap_cx().x[3]);
+    let trap_cx = current_trap_cx();
+    debug!("trap_cx_ptr(a0): {:#x}, cx.sp: {:#x}, cx.sepc: {:#x}", trap_addr, trap_cx.x[3], trap_cx.sepc);
     unsafe {
         asm!("move $a0,{}",in(reg)trap_addr);
         __restore();

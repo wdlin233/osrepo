@@ -235,6 +235,7 @@ impl KernelStack {
     pub fn copy_from_other(&mut self, kernel_stack: &KernelStack) -> &mut Self {
         //需要从kernel_stack复制到self
         let trap_context = kernel_stack.get_trap_cx().clone();
+        // 首先在当前栈顶推送一个trap context，然后修改其内容
         self.push_on_top(trap_context);
         self
     }
