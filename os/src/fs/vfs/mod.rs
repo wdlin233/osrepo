@@ -3,9 +3,8 @@ mod sockfs;
 
 use super::{InodeType, Kstat, Statfs};
 use crate::{
-    fs::{OpenFlags, String},
+    fs::{OpenFlags, StMode, String},
     mm::UserBuffer,
-    net::connection::ConnectionResult,
     syscall::PollEvents,
     utils::{SysErrNo, SyscallRet},
 };
@@ -13,6 +12,7 @@ use alloc::{sync::Arc, vec::Vec};
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
 pub use inode::*;
+pub use sockfs::*;
 ///
 pub trait SuperBlock: Send + Sync {
     fn root_inode(&self) -> Arc<dyn Inode>;
@@ -154,15 +154,33 @@ pub trait File: Send + Sync {
     }
 }
 
-pub trait Socket: File {
+pub trait Socket: Send + Sync {
+    fn read(&self, _buf: UserBuffer) -> SyscallRet {
+        unimplemented!()
+    }
+    /// 将缓冲区中的数据写入文件，最多将缓冲区中的数据全部写入，并返回直接写入的字节数
+    fn write(&self, _buf: UserBuffer) -> SyscallRet {
+        unimplemented!()
+    }
+    /// 获得文件信息
+    fn fstat(&self) -> Kstat {
+        Kstat {
+            st_mode: StMode::FSOCK.bits() | 0o666,
+            ..Default::default()
+        }
+    }
+    /// ppoll处理
+    fn poll(&self, _events: PollEvents) -> PollEvents {
+        unimplemented!()
+    }
     // 基础 socket 操作，先放三个占位
-    fn bind(&self, local: IpEndPoint) -> ConnectionResult {
+    fn bind(&self, local: IpEndpoint) {
         unimplemented!()
     }
-    fn listen(&self) -> ConnectionResult {
+    fn listen(&self) {
         unimplemented!()
     }
-    fn connect(&self, remote: IpEndpoint) -> ConnectionResult {
+    fn connect(&self, remote: IpEndpoint) {
         unimplemented!()
     }
 }

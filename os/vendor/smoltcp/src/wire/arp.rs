@@ -2,6 +2,7 @@ use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
 use super::{Error, Result};
+use super::{EthernetAddress, Ipv4Address, Ipv4AddressExt};
 
 pub use super::EthernetProtocol as Protocol;
 
@@ -250,8 +251,6 @@ impl<T: AsRef<[u8]>> AsRef<[u8]> for Packet<T> {
     }
 }
 
-use crate::wire::{EthernetAddress, Ipv4Address};
-
 /// A high-level representation of an Address Resolution Protocol packet.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -271,6 +270,8 @@ impl Repr {
     /// Parse an Address Resolution Protocol packet and return a high-level representation,
     /// or return `Err(Error)` if the packet is not recognized.
     pub fn parse<T: AsRef<[u8]>>(packet: &Packet<T>) -> Result<Repr> {
+        packet.check_len()?;
+
         match (
             packet.hardware_type(),
             packet.protocol_type(),
@@ -311,9 +312,9 @@ impl Repr {
                 packet.set_protocol_len(4);
                 packet.set_operation(operation);
                 packet.set_source_hardware_addr(source_hardware_addr.as_bytes());
-                packet.set_source_protocol_addr(source_protocol_addr.as_bytes());
+                packet.set_source_protocol_addr(&source_protocol_addr.octets());
                 packet.set_target_hardware_addr(target_hardware_addr.as_bytes());
-                packet.set_target_protocol_addr(target_protocol_addr.as_bytes());
+                packet.set_target_protocol_addr(&target_protocol_addr.octets());
             }
         }
     }

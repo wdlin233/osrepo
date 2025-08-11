@@ -1,5 +1,4 @@
 use crate::{
-    fs::{TcpSocket, UdpSocket},
     sync::UPSafeCell,
     utils::{GeneralRet, SysErrNo, SyscallRet},
 };
@@ -60,22 +59,6 @@ impl FileDescriptor {
     }
     pub fn set_nonblock(&mut self) {
         self.flags |= OpenFlags::O_NONBLOCK;
-    }
-
-    pub fn is_socket(&self) -> bool {
-        match &self.file {
-            FileClass::Abs(file) => {
-                file.as_any().is::<TcpSocket>() || file.as_any().is::<UdpSocket>()
-            }
-            _ => false,
-        }
-    }
-
-    pub fn as_socket<T: Any>(&self) -> Option<&T> {
-        match &self.file {
-            FileClass::Abs(file) => file.as_any().downcast_ref::<T>(),
-            _ => None,
-        }
     }
 }
 

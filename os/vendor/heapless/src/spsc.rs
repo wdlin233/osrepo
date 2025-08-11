@@ -2,8 +2,13 @@
 //!
 //! Implementation based on <https://www.codeproject.com/Articles/43510/Lock-Free-Single-Producer-Single-Consumer-Circular>
 //!
-//! NOTE: This module is not available on targets that do *not* support atomic loads and are not
-//! supported by [`atomic_polyfill`](https://crates.io/crates/atomic-polyfill). (e.g., MSP430).
+//! # Portability
+//!
+//! This module requires CAS atomic instructions which are not available on all architectures
+//! (e.g.  ARMv6-M (`thumbv6m-none-eabi`) and MSP430 (`msp430-none-elf`)). These atomics can be
+//! emulated however with [`portable-atomic`](https://crates.io/crates/portable-atomic), which is
+//! enabled with the `cas` feature and is enabled by default for `thumbv6m-none-eabi` and `riscv32`
+//! targets.
 //!
 //! # Examples
 //!
@@ -22,23 +27,30 @@
 //! assert_eq!(rb.dequeue(), Some(0));
 //! ```
 //!
-//! - `Queue` can be `split` and then be used in Single Producer Single Consumer mode
+//! - `Queue` can be `split` and then be used in Single Producer Single Consumer mode.
+//!
+//! "no alloc" applications can create a `&'static mut` reference to a `Queue` -- using a static
+//! variable -- and then `split` it: this consumes the static reference. The resulting `Consumer`
+//! and `Producer` can then be moved into different execution contexts (threads, interrupt handlers,
+//! etc.)
 //!
 //! ```
-//! use heapless::spsc::Queue;
-//!
-//! // Notice, type signature needs to be explicit for now.
-//! // (min_const_eval, does not allow for default type assignments)
-//! static mut Q: Queue<Event, 4> = Queue::new();
+//! use heapless::spsc::{Producer, Queue};
 //!
 //! enum Event { A, B }
 //!
 //! fn main() {
-//!     // NOTE(unsafe) beware of aliasing the `consumer` end point
-//!     let mut consumer = unsafe { Q.split().1 };
+//!     let queue: &'static mut Queue<Event, 4> = {
+//!         static mut Q: Queue<Event, 4> = Queue::new();
+//!         unsafe { &mut Q }
+//!     };
+//!
+//!     let (producer, mut consumer) = queue.split();
+//!
+//!     // `producer` can be moved into `interrupt_handler` using a static mutex or the mechanism
+//!     // provided by the concurrency framework you are using (e.g. a resource in RTIC)
 //!
 //!     loop {
-//!         // `dequeue` is a lockless operation
 //!         match consumer.dequeue() {
 //!             Some(Event::A) => { /* .. */ },
 //!             Some(Event::B) => { /* .. */ },
@@ -49,9 +61,7 @@
 //! }
 //!
 //! // this is a different execution context that can preempt `main`
-//! fn interrupt_handler() {
-//!     // NOTE(unsafe) beware of aliasing the `producer` end point
-//!     let mut producer = unsafe { Q.split().0 };
+//! fn interrupt_handler(producer: &mut Producer<'static, Event, 4>) {
 //! #   let condition = true;
 //!
 //!     // ..
@@ -86,10 +96,12 @@
 
 use core::{cell::UnsafeCell, fmt, hash, mem::MaybeUninit, ptr};
 
-#[cfg(full_atomic_polyfill)]
-use atomic_polyfill::{AtomicUsize, Ordering};
-#[cfg(not(full_atomic_polyfill))]
-use core::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(not(feature = "portable-atomic"))]
+use core::sync::atomic;
+#[cfg(feature = "portable-atomic")]
+use portable_atomic as atomic;
+
+use atomic::{AtomicUsize, Ordering};
 
 /// A statically allocated single producer single consumer queue with a capacity of `N - 1` elements
 ///
@@ -451,18 +463,6 @@ where
     }
 }
 
-impl<T, const N: usize> hash32::Hash for Queue<T, N>
-where
-    T: hash32::Hash,
-{
-    fn hash<H: hash32::Hasher>(&self, state: &mut H) {
-        // iterate over self in order
-        for t in self.iter() {
-            hash32::Hash::hash(t, state);
-        }
-    }
-}
-
 impl<'a, T, const N: usize> IntoIterator for &'a Queue<T, N> {
     type Item = &'a T;
     type IntoIter = Iter<'a, T, N>;
@@ -590,8 +590,9 @@ impl<'a, T, const N: usize> Producer<'a, T, N> {
 
 #[cfg(test)]
 mod tests {
+    use std::hash::{Hash, Hasher};
+
     use crate::spsc::Queue;
-    use hash32::Hasher;
 
     #[test]
     fn full() {
@@ -892,13 +893,13 @@ mod tests {
         };
         let hash1 = {
             let mut hasher1 = hash32::FnvHasher::default();
-            hash32::Hash::hash(&rb1, &mut hasher1);
+            rb1.hash(&mut hasher1);
             let hash1 = hasher1.finish();
             hash1
         };
         let hash2 = {
             let mut hasher2 = hash32::FnvHasher::default();
-            hash32::Hash::hash(&rb2, &mut hasher2);
+            rb2.hash(&mut hasher2);
             let hash2 = hasher2.finish();
             hash2
         };

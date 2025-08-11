@@ -10,9 +10,9 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
 name = "heapless"
-version = "0.7.17"
+version = "0.8.0"
 authors = [
     "Jorge Aparicio <jorge@japaric.io>",
     "Per Lindgren <per.lindgren@ltu.se>",
@@ -30,17 +30,32 @@ categories = [
     "no-std",
 ]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/japaric/heapless"
+repository = "https://github.com/rust-embedded/heapless"
 
 [package.metadata.docs.rs]
-all-features = true
+features = [
+    "ufmt",
+    "serde",
+    "defmt-03",
+    "mpmc_large",
+    "portable-atomic-critical-section",
+]
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
+targets = ["i686-unknown-linux-gnu"]
 
 [dependencies.defmt]
 version = ">=0.2.0,<0.4"
 optional = true
 
 [dependencies.hash32]
-version = "0.2.1"
+version = "0.3.0"
+
+[dependencies.portable-atomic]
+version = "1.0"
+optional = true
 
 [dependencies.serde]
 version = "1"
@@ -56,36 +71,21 @@ version = "0.1"
 optional = true
 
 [dev-dependencies.ufmt]
-version = "0.1"
-
-[build-dependencies.rustc_version]
-version = "0.4.0"
+version = "0.2"
 
 [features]
-__trybuild = []
-cas = ["atomic-polyfill"]
-default = ["cas"]
-defmt-impl = ["defmt"]
+defmt-03 = ["dep:defmt"]
 mpmc_large = []
-ufmt-impl = ["ufmt-write"]
-x86-sync-pool = []
-
-[target."cfg(target_arch = \"avr\")".dependencies.atomic-polyfill]
-version = "1"
-optional = true
-
-[target."cfg(target_arch = \"x86_64\")".dependencies.spin]
-version = "0.9.2"
-
-[target.riscv32i-unknown-none-elf.dependencies.atomic-polyfill]
-version = "1"
-
-[target.riscv32imc-unknown-none-elf.dependencies.atomic-polyfill]
-version = "1"
-
-[target.thumbv6m-none-eabi.dependencies.atomic-polyfill]
-version = "1"
-optional = true
-
-[target.xtensa-esp32s2-none-elf.dependencies.atomic-polyfill]
-version = "1"
+portable-atomic = ["dep:portable-atomic"]
+portable-atomic-critical-section = [
+    "dep:portable-atomic",
+    "portable-atomic",
+    "portable-atomic?/critical-section",
+]
+portable-atomic-unsafe-assume-single-core = [
+    "dep:portable-atomic",
+    "portable-atomic",
+    "portable-atomic?/unsafe-assume-single-core",
+]
+serde = ["dep:serde"]
+ufmt = ["dep:ufmt-write"]

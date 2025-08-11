@@ -1,21 +1,11 @@
-use super::check;
-use super::DispatchError;
-use super::EthernetPacket;
-use super::FragmentsBuffer;
-use super::InterfaceInner;
-use super::SocketSet;
-use core::result::Result;
-
-use crate::phy::TxToken;
-use crate::wire::*;
+use super::*;
 
 impl InterfaceInner {
-    #[cfg(feature = "medium-ethernet")]
-    pub(super) fn process_ethernet<'frame, T: AsRef<[u8]>>(
+    pub(super) fn process_ethernet<'frame>(
         &mut self,
         sockets: &mut SocketSet,
         meta: crate::phy::PacketMeta,
-        frame: &'frame T,
+        frame: &'frame [u8],
         fragments: &'frame mut FragmentsBuffer,
     ) -> Option<EthernetPacket<'frame>> {
         let eth_frame = check!(EthernetFrame::new_checked(frame));
@@ -35,13 +25,19 @@ impl InterfaceInner {
             EthernetProtocol::Ipv4 => {
                 let ipv4_packet = check!(Ipv4Packet::new_checked(eth_frame.payload()));
 
-                self.process_ipv4(sockets, meta, &ipv4_packet, fragments)
-                    .map(EthernetPacket::Ip)
+                self.process_ipv4(
+                    sockets,
+                    meta,
+                    eth_frame.src_addr().into(),
+                    &ipv4_packet,
+                    fragments,
+                )
+                .map(EthernetPacket::Ip)
             }
             #[cfg(feature = "proto-ipv6")]
             EthernetProtocol::Ipv6 => {
                 let ipv6_packet = check!(Ipv6Packet::new_checked(eth_frame.payload()));
-                self.process_ipv6(sockets, meta, &ipv6_packet)
+                self.process_ipv6(sockets, meta, eth_frame.src_addr().into(), &ipv6_packet)
                     .map(EthernetPacket::Ip)
             }
             // Drop all other traffic.
@@ -49,7 +45,6 @@ impl InterfaceInner {
         }
     }
 
-    #[cfg(feature = "medium-ethernet")]
     pub(super) fn dispatch_ethernet<Tx, F>(
         &mut self,
         tx_token: Tx,

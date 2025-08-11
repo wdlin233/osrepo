@@ -1,3 +1,4 @@
+use core::cmp::min;
 #[cfg(feature = "async")]
 use core::task::Waker;
 
@@ -20,12 +21,14 @@ const MAX_RETRANSMIT_DELAY: Duration = Duration::from_millis(10_000);
 const RETRANSMIT_TIMEOUT: Duration = Duration::from_millis(10_000); // Should generally be 2-10 secs
 
 #[cfg(feature = "proto-ipv6")]
-const MDNS_IPV6_ADDR: IpAddress = IpAddress::Ipv6(crate::wire::Ipv6Address([
-    0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfb,
-]));
+#[allow(unused)]
+const MDNS_IPV6_ADDR: IpAddress = IpAddress::Ipv6(crate::wire::Ipv6Address::new(
+    0xff02, 0, 0, 0, 0, 0, 0, 0xfb,
+));
 
 #[cfg(feature = "proto-ipv4")]
-const MDNS_IPV4_ADDR: IpAddress = IpAddress::Ipv4(crate::wire::Ipv4Address([224, 0, 0, 251]));
+#[allow(unused)]
+const MDNS_IPV4_ADDR: IpAddress = IpAddress::Ipv4(crate::wire::Ipv4Address::new(224, 0, 0, 251));
 
 /// Error returned by [`Socket::start_query`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -147,15 +150,15 @@ pub struct Socket<'a> {
 impl<'a> Socket<'a> {
     /// Create a DNS socket.
     ///
-    /// # Panics
-    ///
-    /// Panics if `servers.len() > MAX_SERVER_COUNT`
+    /// Truncates the server list if `servers.len() > MAX_SERVER_COUNT`
     pub fn new<Q>(servers: &[IpAddress], queries: Q) -> Socket<'a>
     where
         Q: Into<ManagedSlice<'a, Option<DnsQuery>>>,
     {
+        let truncated_servers = &servers[..min(servers.len(), DNS_MAX_SERVER_COUNT)];
+
         Socket {
-            servers: Vec::from_slice(servers).unwrap(),
+            servers: Vec::from_slice(truncated_servers).unwrap(),
             queries: queries.into(),
             hop_limit: None,
         }
@@ -163,11 +166,14 @@ impl<'a> Socket<'a> {
 
     /// Update the list of DNS servers, will replace all existing servers
     ///
-    /// # Panics
-    ///
-    /// Panics if `servers.len() > MAX_SERVER_COUNT`
+    /// Truncates the server list if `servers.len() > MAX_SERVER_COUNT`
     pub fn update_servers(&mut self, servers: &[IpAddress]) {
-        self.servers = Vec::from_slice(servers).unwrap();
+        if servers.len() > DNS_MAX_SERVER_COUNT {
+            net_trace!("Max DNS Servers exceeded. Increase MAX_SERVER_COUNT");
+            self.servers = Vec::from_slice(&servers[..DNS_MAX_SERVER_COUNT]).unwrap();
+        } else {
+            self.servers = Vec::from_slice(servers).unwrap();
+        }
     }
 
     /// Return the time-to-live (IPv4) or hop limit (IPv6) value used in outgoing packets.
@@ -610,7 +616,15 @@ impl<'a> Socket<'a> {
                 };
 
                 let dst_addr = servers[pq.server_idx];
-                let src_addr = cx.get_source_address(dst_addr).unwrap(); // TODO remove unwrap
+                let src_addr = match cx.get_source_address(&dst_addr) {
+                    Some(src_addr) => src_addr,
+                    None => {
+                        net_trace!("no source address for destination {}", dst_addr);
+                        q.set_state(State::Failure);
+                        continue;
+                    }
+                };
+
                 let ip_repr = IpRepr::new(
                     src_addr,
                     dst_addr,

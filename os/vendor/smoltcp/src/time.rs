@@ -184,6 +184,8 @@ pub struct Duration {
 
 impl Duration {
     pub const ZERO: Duration = Duration::from_micros(0);
+    /// The longest possible duration we can encode.
+    pub const MAX: Duration = Duration::from_micros(u64::MAX);
     /// Create a new `Duration` from a number of microseconds.
     pub const fn from_micros(micros: u64) -> Duration {
         Duration { micros }
@@ -196,7 +198,7 @@ impl Duration {
         }
     }
 
-    /// Create a new `Instant` from a number of seconds.
+    /// Create a new `Duration` from a number of seconds.
     pub const fn from_secs(secs: u64) -> Duration {
         Duration {
             micros: secs * 1000000,

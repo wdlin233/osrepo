@@ -6,7 +6,7 @@ use byteorder::{ByteOrder, NetworkEndian};
 
 use super::{Error, Result};
 use crate::wire::icmpv6::Packet;
-use crate::wire::ipv6::Address;
+use crate::wire::ipv6::{Address, AddressExt};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -57,7 +57,7 @@ impl InstanceId {
 
     /// Returns `true` when the DODAG ID is the source address of the IPv6 packet.
     ///
-    /// *NOTE*: this only makes sence when using a local RPL Instance ID and the packet is not a
+    /// *NOTE*: this only makes sense when using a local RPL Instance ID and the packet is not a
     /// RPL control message.
     #[inline]
     pub fn dodag_is_source(&self) -> bool {
@@ -85,7 +85,7 @@ mod field {
     //pub const DIO_RESERVED: usize = 11;
     pub const DIO_DODAG_ID: Field = 12..12 + 16;
 
-    // Destination advertisment object (DAO)
+    // Destination advertisement object (DAO)
     pub const DAO_K: usize = 5;
     pub const DAO_D: usize = 5;
     //pub const DAO_FLAGS: usize = 5;
@@ -93,7 +93,7 @@ mod field {
     pub const DAO_SEQUENCE: usize = 7;
     pub const DAO_DODAG_ID: Field = 8..8 + 16;
 
-    // Destination advertisment object ack (DAO-ACK)
+    // Destination advertisement object ack (DAO-ACK)
     pub const DAO_ACK_D: usize = 5;
     //pub const DAO_ACK_RESERVED: usize = 5;
     pub const DAO_ACK_SEQUENCE: usize = 6;
@@ -110,7 +110,7 @@ enum_with_unknown! {
         DestinationAdvertisementObjectAck = 0x03,
         SecureDodagInformationSolicitation = 0x80,
         SecureDodagInformationObject = 0x81,
-        SecureDesintationAdvertismentObject = 0x82,
+        SecureDestinationAdvertisementObject = 0x82,
         SecureDestinationAdvertisementObjectAck = 0x83,
         ConsistencyCheck = 0x8a,
     }
@@ -126,11 +126,11 @@ impl core::fmt::Display for RplControlMessage {
                 write!(f, "DODAG information object (DIO)")
             }
             RplControlMessage::DestinationAdvertisementObject => {
-                write!(f, "destination advertisment object (DAO)")
+                write!(f, "destination advertisement object (DAO)")
             }
             RplControlMessage::DestinationAdvertisementObjectAck => write!(
                 f,
-                "destination advertisment object acknowledgement (DAO-ACK)"
+                "destination advertisement object acknowledgement (DAO-ACK)"
             ),
             RplControlMessage::SecureDodagInformationSolicitation => {
                 write!(f, "secure DODAG information solicitation (DIS)")
@@ -138,12 +138,12 @@ impl core::fmt::Display for RplControlMessage {
             RplControlMessage::SecureDodagInformationObject => {
                 write!(f, "secure DODAG information object (DIO)")
             }
-            RplControlMessage::SecureDesintationAdvertismentObject => {
-                write!(f, "secure destination advertisment object (DAO)")
+            RplControlMessage::SecureDestinationAdvertisementObject => {
+                write!(f, "secure destination advertisement object (DAO)")
             }
             RplControlMessage::SecureDestinationAdvertisementObjectAck => write!(
                 f,
-                "secure destination advertisment object acknowledgement (DAO-ACK)"
+                "secure destination advertisement object acknowledgement (DAO-ACK)"
             ),
             RplControlMessage::ConsistencyCheck => write!(f, "consistency check (CC)"),
             RplControlMessage::Unknown(id) => write!(f, "{}", id),
@@ -179,7 +179,7 @@ impl<'p, T: AsRef<[u8]> + ?Sized> Packet<&'p T> {
                 return Err(Error)
             }
             RplControlMessage::DestinationAdvertisementObjectAck
-                if self.dao_dodag_id_present() && len < field::DAO_ACK_DODAG_ID.end =>
+                if self.dao_ack_dodag_id_present() && len < field::DAO_ACK_DODAG_ID.end =>
             {
                 return Err(Error)
             }
@@ -190,7 +190,7 @@ impl<'p, T: AsRef<[u8]> + ?Sized> Packet<&'p T> {
             }
             RplControlMessage::SecureDodagInformationSolicitation
             | RplControlMessage::SecureDodagInformationObject
-            | RplControlMessage::SecureDesintationAdvertismentObject
+            | RplControlMessage::SecureDestinationAdvertisementObject
             | RplControlMessage::SecureDestinationAdvertisementObjectAck
             | RplControlMessage::ConsistencyCheck => return Err(Error),
             RplControlMessage::Unknown(_) => return Err(Error),
@@ -205,7 +205,9 @@ impl<'p, T: AsRef<[u8]> + ?Sized> Packet<&'p T> {
                 &buffer[field::DAO_DODAG_ID.end..]
             }
             RplControlMessage::DestinationAdvertisementObject => &buffer[field::DAO_SEQUENCE + 1..],
-            RplControlMessage::DestinationAdvertisementObjectAck if self.dao_dodag_id_present() => {
+            RplControlMessage::DestinationAdvertisementObjectAck
+                if self.dao_ack_dodag_id_present() =>
+            {
                 &buffer[field::DAO_ACK_DODAG_ID.end..]
             }
             RplControlMessage::DestinationAdvertisementObjectAck => {
@@ -213,7 +215,7 @@ impl<'p, T: AsRef<[u8]> + ?Sized> Packet<&'p T> {
             }
             RplControlMessage::SecureDodagInformationSolicitation
             | RplControlMessage::SecureDodagInformationObject
-            | RplControlMessage::SecureDesintationAdvertismentObject
+            | RplControlMessage::SecureDestinationAdvertisementObject
             | RplControlMessage::SecureDestinationAdvertisementObjectAck
             | RplControlMessage::ConsistencyCheck => unreachable!(),
             RplControlMessage::Unknown(_) => unreachable!(),
@@ -247,7 +249,7 @@ impl<'p, T: AsRef<[u8]> + AsMut<[u8]> + ?Sized> Packet<&'p mut T> {
                 }
             }
             RplControlMessage::DestinationAdvertisementObjectAck => {
-                if self.dao_dodag_id_present() {
+                if self.dao_ack_dodag_id_present() {
                     &mut self.buffer.as_mut()[field::DAO_ACK_DODAG_ID.end..]
                 } else {
                     &mut self.buffer.as_mut()[field::DAO_ACK_STATUS + 1..]
@@ -255,7 +257,7 @@ impl<'p, T: AsRef<[u8]> + AsMut<[u8]> + ?Sized> Packet<&'p mut T> {
             }
             RplControlMessage::SecureDodagInformationSolicitation
             | RplControlMessage::SecureDodagInformationObject
-            | RplControlMessage::SecureDesintationAdvertismentObject
+            | RplControlMessage::SecureDestinationAdvertisementObject
             | RplControlMessage::SecureDestinationAdvertisementObjectAck
             | RplControlMessage::ConsistencyCheck => todo!("Secure messages not supported"),
             RplControlMessage::Unknown(_) => todo!(),
@@ -366,7 +368,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
         get!(self.buffer, field: field::DIO_PRF, mask: 0b111)
     }
 
-    /// Return the destination advertisment trigger sequence number.
+    /// Return the destination advertisement trigger sequence number.
     #[inline]
     pub fn dio_dest_adv_trigger_seq_number(&self) -> u8 {
         get!(self.buffer, field: field::DIO_DTSN)
@@ -417,7 +419,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
         set!(self.buffer, value, field: field::DIO_PRF, mask: 0b111)
     }
 
-    /// Set the destination advertisment trigger sequence number.
+    /// Set the destination advertisement trigger sequence number.
     #[inline]
     pub fn set_dio_dest_adv_trigger_seq_number(&mut self, value: u8) {
         set!(self.buffer, value, field: field::DIO_DTSN)
@@ -430,7 +432,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     }
 }
 
-/// Getters for the Destination Advertisment Object (DAO) message.
+/// Getters for the Destination Advertisement Object (DAO) message.
 ///
 /// ```txt
 ///  0                   1                   2                   3
@@ -481,7 +483,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
     }
 }
 
-/// Setters for the Destination Advertisment Object (DAO) message.
+/// Setters for the Destination Advertisement Object (DAO) message.
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     /// Set the Expect DAO-ACK flag.
     #[inline]
@@ -506,7 +508,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     pub fn set_dao_dodag_id(&mut self, address: Option<Address>) {
         match address {
             Some(address) => {
-                self.buffer.as_mut()[field::DAO_DODAG_ID].copy_from_slice(address.as_bytes());
+                self.buffer.as_mut()[field::DAO_DODAG_ID].copy_from_slice(&address.octets());
                 self.set_dao_dodag_id_present(true);
             }
             None => {
@@ -516,7 +518,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     }
 }
 
-/// Getters for the Destination Advertisment Object acknowledgement (DAO-ACK) message.
+/// Getters for the Destination Advertisement Object acknowledgement (DAO-ACK) message.
 ///
 /// ```txt
 ///  0                   1                   2                   3
@@ -539,7 +541,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
     /// Returns the flag indicating that the DODAG ID is present or not.
     #[inline]
     pub fn dao_ack_dodag_id_present(&self) -> bool {
-        get!(self.buffer, bool, field: field::DAO_ACK_D, shift: 6, mask: 0b1)
+        get!(self.buffer, bool, field: field::DAO_ACK_D, shift: 7, mask: 0b1)
     }
 
     /// Return the DODAG sequence number.
@@ -567,12 +569,12 @@ impl<T: AsRef<[u8]>> Packet<T> {
     }
 }
 
-/// Setters for the Destination Advertisment Object acknowledgement (DAO-ACK) message.
+/// Setters for the Destination Advertisement Object acknowledgement (DAO-ACK) message.
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     /// Set the flag indicating that the DODAG ID is present or not.
     #[inline]
     pub fn set_dao_ack_dodag_id_present(&mut self, value: bool) {
-        set!(self.buffer, value, bool, field: field::DAO_ACK_D, shift: 6, mask: 0b1)
+        set!(self.buffer, value, bool, field: field::DAO_ACK_D, shift: 7, mask: 0b1)
     }
 
     /// Set the DODAG sequence number.
@@ -592,7 +594,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     pub fn set_dao_ack_dodag_id(&mut self, address: Option<Address>) {
         match address {
             Some(address) => {
-                self.buffer.as_mut()[field::DAO_ACK_DODAG_ID].copy_from_slice(address.as_bytes());
+                self.buffer.as_mut()[field::DAO_ACK_DODAG_ID].copy_from_slice(&address.octets());
                 self.set_dao_ack_dodag_id_present(true);
             }
             None => {
@@ -715,6 +717,8 @@ impl<'p> Repr<'p> {
     }
 
     pub fn parse<T: AsRef<[u8]> + ?Sized>(packet: &Packet<&'p T>) -> Result<Self> {
+        packet.check_len()?;
+
         let options = packet.options()?;
         match RplControlMessage::from(packet.msg_code()) {
             RplControlMessage::DodagInformationSolicitation => {
@@ -750,7 +754,7 @@ impl<'p> Repr<'p> {
             }
             RplControlMessage::SecureDodagInformationSolicitation
             | RplControlMessage::SecureDodagInformationObject
-            | RplControlMessage::SecureDesintationAdvertismentObject
+            | RplControlMessage::SecureDestinationAdvertisementObject
             | RplControlMessage::SecureDestinationAdvertisementObjectAck
             | RplControlMessage::ConsistencyCheck => Err(Error),
             RplControlMessage::Unknown(_) => Err(Error),
@@ -862,7 +866,7 @@ pub mod options {
     use byteorder::{ByteOrder, NetworkEndian};
 
     use super::{Error, InstanceId, Result};
-    use crate::wire::ipv6::Address;
+    use crate::wire::ipv6::{Address, AddressExt};
 
     /// A read/write wrapper around a RPL Control Message Option.
     #[derive(Debug, Clone)]
@@ -1493,7 +1497,7 @@ pub mod options {
         #[inline]
         pub fn set_transit_info_parent_address(&mut self, address: Address) {
             self.buffer.as_mut()[field::TRANSIT_INFO_PARENT_ADDRESS]
-                .copy_from_slice(address.as_bytes());
+                .copy_from_slice(&address.octets());
         }
     }
 
@@ -2016,7 +2020,7 @@ pub mod options {
                         PrefixLength={prefix_length} \
                         L={on_link} A={autonomous_address_configuration} R={router_address} \
                         Valid={valid_lifetime} \
-                        Prefered={preferred_lifetime} \
+                        Preferred={preferred_lifetime} \
                         Prefix={destination_prefix:0x?}"
                     )
                 }
@@ -2091,7 +2095,7 @@ pub mod options {
                 Repr::DagMetricContainer => todo!(),
                 Repr::RouteInformation { prefix, .. } => 2 + 6 + prefix.len(),
                 Repr::DodagConfiguration { .. } => 2 + 14,
-                Repr::RplTarget { prefix, .. } => 2 + 2 + prefix.0.len(),
+                Repr::RplTarget { prefix, .. } => 2 + 2 + prefix.octets().len(),
                 Repr::TransitInformation { parent_address, .. } => {
                     2 + 4 + if parent_address.is_some() { 16 } else { 0 }
                 }
@@ -2161,7 +2165,7 @@ pub mod options {
                 } => {
                     packet.clear_rpl_target_flags();
                     packet.set_rpl_target_prefix_length(*prefix_length);
-                    packet.set_rpl_target_prefix(prefix.as_bytes());
+                    packet.set_rpl_target_prefix(&prefix.octets());
                 }
                 Repr::TransitInformation {
                     external,
@@ -2410,8 +2414,8 @@ mod tests {
             SixlowpanNextHeader::Uncompressed(IpProtocol::Icmpv6) => {
                 let icmp_packet = Icmpv6Packet::new_checked(packet.payload()).unwrap();
                 match Icmpv6Repr::parse(
-                    &IpAddress::Ipv6(repr.src_addr),
-                    &IpAddress::Ipv6(repr.dst_addr),
+                    &repr.src_addr,
+                    &repr.dst_addr,
                     &icmp_packet,
                     &ChecksumCapabilities::ignored(),
                 ) {
@@ -2612,7 +2616,7 @@ mod tests {
                 prefix,
             } => {
                 assert_eq!(prefix_length, 128);
-                assert_eq!(prefix.as_bytes(), &target_prefix[..]);
+                assert_eq!(prefix.octets(), target_prefix);
             }
             _ => unreachable!(),
         }
@@ -2674,6 +2678,37 @@ mod tests {
                 assert_eq!(sequence, 241);
                 assert_eq!(status, 0);
                 assert_eq!(dodag_id, None);
+            }
+            _ => unreachable!(),
+        }
+
+        let mut buffer = vec![0u8; dao_ack_repr.buffer_len()];
+        dao_ack_repr.emit(&mut Packet::new_unchecked(&mut buffer[..]));
+
+        assert_eq!(&data[..], &buffer[..]);
+
+        let data = [
+            0x9b, 0x03, 0x0, 0x0, 0x1e, 0x80, 0xf0, 0x00, 0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        ];
+
+        let packet = Packet::new_checked(&data[..]).unwrap();
+        let dao_ack_repr = RplRepr::parse(&packet).unwrap();
+        match dao_ack_repr {
+            RplRepr::DestinationAdvertisementObjectAck {
+                rpl_instance_id,
+                sequence,
+                status,
+                dodag_id,
+                ..
+            } => {
+                assert_eq!(rpl_instance_id, InstanceId::from(30));
+                assert_eq!(sequence, 240);
+                assert_eq!(status, 0x0);
+                assert_eq!(
+                    dodag_id,
+                    Some(Ipv6Address::new(0xfe80, 0, 0, 0, 0x0200, 0, 0, 1))
+                );
             }
             _ => unreachable!(),
         }

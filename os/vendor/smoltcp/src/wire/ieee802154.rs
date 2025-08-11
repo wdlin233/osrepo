@@ -3,7 +3,7 @@ use core::fmt;
 use byteorder::{ByteOrder, LittleEndian};
 
 use super::{Error, Result};
-use crate::wire::ipv6::Address as Ipv6Address;
+use crate::wire::{Ipv6Address, Ipv6AddressExt};
 
 enum_with_unknown! {
     /// IEEE 802.15.4 frame type.
@@ -276,11 +276,26 @@ impl<T: AsRef<[u8]>> Frame<T> {
         let packet = Self::new_unchecked(buffer);
         packet.check_len()?;
 
-        if matches!(packet.dst_addressing_mode(), AddressingMode::Unknown(_)) {
+        // We don't handle unknown frame versions.
+        if matches!(packet.frame_version(), FrameVersion::Unknown(_)) {
             return Err(Error);
         }
 
-        if matches!(packet.src_addressing_mode(), AddressingMode::Unknown(_)) {
+        // We don't handle unknown addressing modes.
+        if matches!(packet.dst_addressing_mode(), AddressingMode::Unknown(_))
+            || matches!(packet.src_addressing_mode(), AddressingMode::Unknown(_))
+        {
+            return Err(Error);
+        }
+
+        // We don't handle absent addressing mode with PAN ID compression for older frame versions.
+        if matches!(
+            packet.frame_version(),
+            FrameVersion::Ieee802154_2003 | FrameVersion::Ieee802154_2006
+        ) && packet.pan_id_compression()
+            && matches!(packet.dst_addressing_mode(), AddressingMode::Absent)
+            && matches!(packet.src_addressing_mode(), AddressingMode::Absent)
+        {
             return Err(Error);
         }
 
@@ -295,14 +310,34 @@ impl<T: AsRef<[u8]>> Frame<T> {
             return Err(Error);
         }
 
-        let mut offset = field::ADDRESSING.start + 2;
+        // We don't handle frames with a payload larger than 127 bytes.
+        if self.buffer.as_ref().len() > 127 {
+            return Err(Error);
+        }
 
-        // Calculate the size of the addressing field.
-        offset += self.dst_addressing_mode().size();
-        offset += self.src_addressing_mode().size();
+        let mut offset = field::ADDRESSING.start
+            + if let Some((dst_pan_id, dst_addr, src_pan_id, src_addr)) = self.addr_present_flags()
+            {
+                let mut offset = if dst_pan_id { 2 } else { 0 };
+                offset += dst_addr.size();
+                offset += if src_pan_id { 2 } else { 0 };
+                offset += src_addr.size();
 
-        if !self.pan_id_compression() {
-            offset += 2;
+                if offset > self.buffer.as_ref().len() {
+                    return Err(Error);
+                }
+                offset
+            } else {
+                0
+            };
+
+        if self.security_enabled() {
+            // First check that we can access the security header control bits.
+            if offset + 1 > self.buffer.as_ref().len() {
+                return Err(Error);
+            }
+
+            offset += self.security_header_len();
         }
 
         if offset > self.buffer.as_ref().len() {
@@ -322,7 +357,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
     pub fn frame_type(&self) -> FrameType {
         let data = self.buffer.as_ref();
         let raw = LittleEndian::read_u16(&data[field::FRAMECONTROL]);
-        let ft = (raw & 0b11) as u8;
+        let ft = (raw & 0b111) as u8;
         FrameType::from(ft)
     }
 
@@ -393,103 +428,140 @@ impl<T: AsRef<[u8]>> Frame<T> {
             | FrameType::Unknown(_) => return None,
         }
 
-        let mut offset = 2;
+        if let Some((dst_pan_id, dst_addr, src_pan_id, src_addr)) = self.addr_present_flags() {
+            let mut offset = if dst_pan_id { 2 } else { 0 };
+            offset += dst_addr.size();
+            offset += if src_pan_id { 2 } else { 0 };
+            offset += src_addr.size();
 
-        // Calculate the size of the addressing field.
-        offset += self.dst_addressing_mode().size();
-        offset += self.src_addressing_mode().size();
-
-        if !self.pan_id_compression() {
-            offset += 2;
+            let data = self.buffer.as_ref();
+            Some(&data[field::ADDRESSING][..offset])
+        } else {
+            None
         }
+    }
 
-        Some(&self.buffer.as_ref()[field::ADDRESSING][..offset])
+    fn addr_present_flags(&self) -> Option<(bool, AddressingMode, bool, AddressingMode)> {
+        let dst_addr_mode = self.dst_addressing_mode();
+        let src_addr_mode = self.src_addressing_mode();
+        let pan_id_compression = self.pan_id_compression();
+
+        use AddressingMode::*;
+        match self.frame_version() {
+            FrameVersion::Ieee802154_2003 | FrameVersion::Ieee802154_2006 => {
+                match (dst_addr_mode, src_addr_mode) {
+                    (Absent, src) => Some((false, Absent, true, src)),
+                    (dst, Absent) => Some((true, dst, false, Absent)),
+
+                    (dst, src) if pan_id_compression => Some((true, dst, false, src)),
+                    (dst, src) if !pan_id_compression => Some((true, dst, true, src)),
+                    _ => None,
+                }
+            }
+            FrameVersion::Ieee802154 => {
+                Some(match (dst_addr_mode, src_addr_mode, pan_id_compression) {
+                    (Absent, Absent, false) => (false, Absent, false, Absent),
+                    (Absent, Absent, true) => (true, Absent, false, Absent),
+                    (dst, Absent, false) if !matches!(dst, Absent) => (true, dst, false, Absent),
+                    (dst, Absent, true) if !matches!(dst, Absent) => (false, dst, false, Absent),
+                    (Absent, src, false) if !matches!(src, Absent) => (false, Absent, true, src),
+                    (Absent, src, true) if !matches!(src, Absent) => (false, Absent, true, src),
+                    (Extended, Extended, false) => (true, Extended, false, Extended),
+                    (Extended, Extended, true) => (false, Extended, false, Extended),
+                    (Short, Short, false) => (true, Short, true, Short),
+                    (Short, Extended, false) => (true, Short, true, Extended),
+                    (Extended, Short, false) => (true, Extended, true, Short),
+                    (Short, Extended, true) => (true, Short, false, Extended),
+                    (Extended, Short, true) => (true, Extended, false, Short),
+                    (Short, Short, true) => (true, Short, false, Short),
+                    _ => return None,
+                })
+            }
+            _ => None,
+        }
     }
 
     /// Return the destination PAN field.
     #[inline]
     pub fn dst_pan_id(&self) -> Option<Pan> {
-        let addressing_fields = self.addressing_fields()?;
-        match self.dst_addressing_mode() {
-            AddressingMode::Absent => None,
-            AddressingMode::Short | AddressingMode::Extended => {
-                Some(Pan(LittleEndian::read_u16(&addressing_fields[0..2])))
-            }
-            AddressingMode::Unknown(_) => None,
+        if let Some((true, _, _, _)) = self.addr_present_flags() {
+            let addressing_fields = self.addressing_fields()?;
+            Some(Pan(LittleEndian::read_u16(&addressing_fields[..2])))
+        } else {
+            None
         }
     }
 
     /// Return the destination address field.
     #[inline]
     pub fn dst_addr(&self) -> Option<Address> {
-        let addressing_fields = self.addressing_fields()?;
-        match self.dst_addressing_mode() {
-            AddressingMode::Absent => Some(Address::Absent),
-            AddressingMode::Short => {
-                let mut raw = [0u8; 2];
-                raw.clone_from_slice(&addressing_fields[2..4]);
-                raw.reverse();
-                Some(Address::short_from_bytes(raw))
+        if let Some((dst_pan_id, dst_addr, _, _)) = self.addr_present_flags() {
+            let addressing_fields = self.addressing_fields()?;
+            let offset = if dst_pan_id { 2 } else { 0 };
+
+            match dst_addr {
+                AddressingMode::Absent => Some(Address::Absent),
+                AddressingMode::Short => {
+                    let mut raw = [0u8; 2];
+                    raw.clone_from_slice(&addressing_fields[offset..offset + 2]);
+                    raw.reverse();
+                    Some(Address::short_from_bytes(raw))
+                }
+                AddressingMode::Extended => {
+                    let mut raw = [0u8; 8];
+                    raw.clone_from_slice(&addressing_fields[offset..offset + 8]);
+                    raw.reverse();
+                    Some(Address::extended_from_bytes(raw))
+                }
+                AddressingMode::Unknown(_) => None,
             }
-            AddressingMode::Extended => {
-                let mut raw = [0u8; 8];
-                raw.clone_from_slice(&addressing_fields[2..10]);
-                raw.reverse();
-                Some(Address::extended_from_bytes(raw))
-            }
-            AddressingMode::Unknown(_) => None,
+        } else {
+            None
         }
     }
 
     /// Return the destination PAN field.
     #[inline]
     pub fn src_pan_id(&self) -> Option<Pan> {
-        if self.pan_id_compression() {
-            return None;
-        }
-
-        let addressing_fields = self.addressing_fields()?;
-        let offset = self.dst_addressing_mode().size() + 2;
-
-        match self.src_addressing_mode() {
-            AddressingMode::Absent => None,
-            AddressingMode::Short | AddressingMode::Extended => Some(Pan(LittleEndian::read_u16(
-                &addressing_fields[offset..offset + 2],
-            ))),
-            AddressingMode::Unknown(_) => None,
+        if let Some((dst_pan_id, dst_addr, true, _)) = self.addr_present_flags() {
+            let mut offset = if dst_pan_id { 2 } else { 0 };
+            offset += dst_addr.size();
+            let addressing_fields = self.addressing_fields()?;
+            Some(Pan(LittleEndian::read_u16(
+                &addressing_fields[offset..][..2],
+            )))
+        } else {
+            None
         }
     }
 
     /// Return the source address field.
     #[inline]
     pub fn src_addr(&self) -> Option<Address> {
-        let addressing_fields = self.addressing_fields()?;
-        let mut offset = match self.dst_addressing_mode() {
-            AddressingMode::Absent => 0,
-            AddressingMode::Short => 2,
-            AddressingMode::Extended => 8,
-            _ => return None, // TODO(thvdveld): what do we do here?
-        } + 2;
+        if let Some((dst_pan_id, dst_addr, src_pan_id, src_addr)) = self.addr_present_flags() {
+            let addressing_fields = self.addressing_fields()?;
+            let mut offset = if dst_pan_id { 2 } else { 0 };
+            offset += dst_addr.size();
+            offset += if src_pan_id { 2 } else { 0 };
 
-        if !self.pan_id_compression() {
-            offset += 2;
-        }
-
-        match self.src_addressing_mode() {
-            AddressingMode::Absent => Some(Address::Absent),
-            AddressingMode::Short => {
-                let mut raw = [0u8; 2];
-                raw.clone_from_slice(&addressing_fields[offset..offset + 2]);
-                raw.reverse();
-                Some(Address::short_from_bytes(raw))
+            match src_addr {
+                AddressingMode::Absent => Some(Address::Absent),
+                AddressingMode::Short => {
+                    let mut raw = [0u8; 2];
+                    raw.clone_from_slice(&addressing_fields[offset..offset + 2]);
+                    raw.reverse();
+                    Some(Address::short_from_bytes(raw))
+                }
+                AddressingMode::Extended => {
+                    let mut raw = [0u8; 8];
+                    raw.clone_from_slice(&addressing_fields[offset..offset + 8]);
+                    raw.reverse();
+                    Some(Address::extended_from_bytes(raw))
+                }
+                AddressingMode::Unknown(_) => None,
             }
-            AddressingMode::Extended => {
-                let mut raw = [0u8; 8];
-                raw.clone_from_slice(&addressing_fields[offset..offset + 8]);
-                raw.reverse();
-                Some(Address::extended_from_bytes(raw))
-            }
-            AddressingMode::Unknown(_) => None,
+        } else {
+            None
         }
     }
 
@@ -497,8 +569,28 @@ impl<T: AsRef<[u8]>> Frame<T> {
     fn aux_security_header_start(&self) -> usize {
         // We start with 3, because 2 bytes for frame control and the sequence number.
         let mut index = 3;
-        index += self.addressing_fields().unwrap().len();
+        index += if let Some(addrs) = self.addressing_fields() {
+            addrs.len()
+        } else {
+            0
+        };
         index
+    }
+
+    /// Return the size of the security header.
+    fn security_header_len(&self) -> usize {
+        let mut size = 1;
+        size += if self.frame_counter_suppressed() {
+            0
+        } else {
+            4
+        };
+        size += if let Some(len) = self.key_identifier_length() {
+            len as usize
+        } else {
+            0
+        };
+        size
     }
 
     /// Return the index where the payload starts.
@@ -506,13 +598,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
         let mut index = self.aux_security_header_start();
 
         if self.security_enabled() {
-            // We add 5 because 1 byte for control bits and 4 bytes for frame counter.
-            index += 5;
-            index += if let Some(len) = self.key_identifier_length() {
-                len as usize
-            } else {
-                0
-            };
+            index += self.security_header_len();
         }
 
         index
@@ -543,11 +629,22 @@ impl<T: AsRef<[u8]>> Frame<T> {
         (b >> 3) & 0b11
     }
 
-    /// Return the frame counter field.
-    pub fn frame_counter(&self) -> u32 {
+    /// Return `true` when the frame counter in the security header is suppressed.
+    pub fn frame_counter_suppressed(&self) -> bool {
         let index = self.aux_security_header_start();
-        let b = &self.buffer.as_ref()[index..];
-        LittleEndian::read_u32(&b[1..1 + 4])
+        let b = self.buffer.as_ref()[index..][0];
+        ((b >> 5) & 0b1) == 0b1
+    }
+
+    /// Return the frame counter field.
+    pub fn frame_counter(&self) -> Option<u32> {
+        if self.frame_counter_suppressed() {
+            None
+        } else {
+            let index = self.aux_security_header_start();
+            let b = &self.buffer.as_ref()[index..];
+            Some(LittleEndian::read_u32(&b[1..1 + 4]))
+        }
     }
 
     /// Return the Key Identifier field.
@@ -1067,7 +1164,7 @@ mod test {
         src_addr -> Some(Address::Extended([0x00,0x12,0x4b,0x00,0x14,0xb5,0xd9,0xc7])),
         security_level -> 5,
         key_identifier_mode -> 0,
-        frame_counter -> 305,
+        frame_counter -> Some(305),
         key_source -> None,
         key_index -> None,
         payload -> Some(&[0x3e,0xe8,0xfb,0x85,0xe4,0xcc,0xf4,0x48,0x90,0xfe,0x56,0x66,0xf7,0x1c,0x65,0x9e,0xf9,0x93,0xc8,0x34,0x2e][..]),

@@ -1,7 +1,9 @@
+use core::hash::{BuildHasher, Hash};
+
 use crate::{
-    binary_heap::Kind as BinaryHeapKind, BinaryHeap, IndexMap, IndexSet, LinearMap, String, Vec,
+    binary_heap::Kind as BinaryHeapKind, BinaryHeap, Deque, IndexMap, IndexSet, LinearMap, String,
+    Vec,
 };
-use hash32::{BuildHasher, Hash};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
 // Sequential containers
@@ -41,6 +43,22 @@ where
 }
 
 impl<T, const N: usize> Serialize for Vec<T, N>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.len()))?;
+        for element in self {
+            seq.serialize_element(element)?;
+        }
+        seq.end()
+    }
+}
+
+impl<T, const N: usize> Serialize for Deque<T, N>
 where
     T: Serialize,
 {

@@ -531,5 +531,25 @@ mod test {
         }
     }
 
-    // TODO: drop test
+    #[test]
+    fn drop() {
+        droppable!();
+
+        {
+            let mut v: LinearMap<i32, Droppable, 2> = LinearMap::new();
+            v.insert(0, Droppable::new()).ok().unwrap();
+            v.insert(1, Droppable::new()).ok().unwrap();
+            v.remove(&1).unwrap();
+        }
+
+        assert_eq!(Droppable::count(), 0);
+
+        {
+            let mut v: LinearMap<i32, Droppable, 2> = LinearMap::new();
+            v.insert(0, Droppable::new()).ok().unwrap();
+            v.insert(1, Droppable::new()).ok().unwrap();
+        }
+
+        assert_eq!(Droppable::count(), 0);
+    }
 }

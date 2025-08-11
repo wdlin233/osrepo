@@ -11,11 +11,16 @@
 
 [package]
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.80"
 name = "smoltcp"
-version = "0.10.0"
+version = "0.12.0"
 authors = ["whitequark <whitequark@whitequark.org>"]
+build = "build.rs"
+autolib = false
+autobins = false
 autoexamples = false
+autotests = false
+autobenches = false
 description = "A TCP/IP stack designed for bare-metal, real-time systems without a heap."
 homepage = "https://github.com/smoltcp-rs/smoltcp"
 documentation = "https://docs.rs/smoltcp/"
@@ -37,21 +42,64 @@ repository = "https://github.com/smoltcp-rs/smoltcp.git"
 [profile.release]
 debug = 2
 
-[[example]]
-name = "packet2pcap"
-path = "utils/packet2pcap.rs"
-required-features = ["std"]
+[lib]
+name = "smoltcp"
+path = "src/lib.rs"
 
 [[example]]
-name = "tcpdump"
+name = "benchmark"
+path = "examples/benchmark.rs"
 required-features = [
     "std",
-    "phy-raw_socket",
+    "medium-ethernet",
+    "medium-ip",
+    "phy-tuntap_interface",
     "proto-ipv4",
+    "socket-raw",
+    "socket-udp",
+]
+
+[[example]]
+name = "client"
+path = "examples/client.rs"
+required-features = [
+    "std",
+    "medium-ethernet",
+    "medium-ip",
+    "phy-tuntap_interface",
+    "proto-ipv4",
+    "socket-tcp",
+    "socket-udp",
+]
+
+[[example]]
+name = "dhcp_client"
+path = "examples/dhcp_client.rs"
+required-features = [
+    "std",
+    "medium-ethernet",
+    "medium-ip",
+    "phy-tuntap_interface",
+    "proto-ipv4",
+    "proto-dhcpv4",
+    "socket-raw",
+]
+
+[[example]]
+name = "dns"
+path = "examples/dns.rs"
+required-features = [
+    "std",
+    "medium-ethernet",
+    "medium-ip",
+    "phy-tuntap_interface",
+    "proto-ipv4",
+    "socket-dns",
 ]
 
 [[example]]
 name = "httpclient"
+path = "examples/httpclient.rs"
 required-features = [
     "std",
     "medium-ethernet",
@@ -63,7 +111,59 @@ required-features = [
 ]
 
 [[example]]
+name = "loopback"
+path = "examples/loopback.rs"
+required-features = [
+    "log",
+    "medium-ethernet",
+    "proto-ipv4",
+    "socket-tcp",
+]
+
+[[example]]
+name = "loopback_benchmark"
+path = "examples/loopback_benchmark.rs"
+required-features = [
+    "std",
+    "log",
+    "medium-ethernet",
+    "proto-ipv4",
+    "socket-tcp",
+]
+
+[[example]]
+name = "multicast"
+path = "examples/multicast.rs"
+required-features = [
+    "std",
+    "medium-ethernet",
+    "medium-ip",
+    "phy-tuntap_interface",
+    "proto-ipv4",
+    "multicast",
+    "socket-udp",
+]
+
+[[example]]
+name = "multicast6"
+path = "examples/multicast6.rs"
+required-features = [
+    "std",
+    "medium-ethernet",
+    "medium-ip",
+    "phy-tuntap_interface",
+    "proto-ipv6",
+    "socket-udp",
+]
+
+[[example]]
+name = "packet2pcap"
+path = "utils/packet2pcap.rs"
+required-features = ["std"]
+
+[[example]]
 name = "ping"
+path = "examples/ping.rs"
 required-features = [
     "std",
     "medium-ethernet",
@@ -76,6 +176,7 @@ required-features = [
 
 [[example]]
 name = "server"
+path = "examples/server.rs"
 required-features = [
     "std",
     "medium-ethernet",
@@ -84,67 +185,11 @@ required-features = [
     "proto-ipv4",
     "socket-tcp",
     "socket-udp",
-]
-
-[[example]]
-name = "client"
-required-features = [
-    "std",
-    "medium-ethernet",
-    "medium-ip",
-    "phy-tuntap_interface",
-    "proto-ipv4",
-    "socket-tcp",
-    "socket-udp",
-]
-
-[[example]]
-name = "loopback"
-required-features = [
-    "log",
-    "medium-ethernet",
-    "proto-ipv4",
-    "socket-tcp",
-]
-
-[[example]]
-name = "multicast"
-required-features = [
-    "std",
-    "medium-ethernet",
-    "medium-ip",
-    "phy-tuntap_interface",
-    "proto-ipv4",
-    "proto-igmp",
-    "socket-udp",
-]
-
-[[example]]
-name = "benchmark"
-required-features = [
-    "std",
-    "medium-ethernet",
-    "medium-ip",
-    "phy-tuntap_interface",
-    "proto-ipv4",
-    "socket-raw",
-    "socket-udp",
-]
-
-[[example]]
-name = "dhcp_client"
-required-features = [
-    "std",
-    "medium-ethernet",
-    "medium-ip",
-    "phy-tuntap_interface",
-    "proto-ipv4",
-    "proto-dhcpv4",
-    "socket-raw",
 ]
 
 [[example]]
 name = "sixlowpan"
+path = "examples/sixlowpan.rs"
 required-features = [
     "std",
     "medium-ieee802154",
@@ -156,6 +201,7 @@ required-features = [
 
 [[example]]
 name = "sixlowpan_benchmark"
+path = "examples/sixlowpan_benchmark.rs"
 required-features = [
     "std",
     "medium-ieee802154",
@@ -166,15 +212,17 @@ required-features = [
 ]
 
 [[example]]
-name = "dns"
+name = "tcpdump"
+path = "examples/tcpdump.rs"
 required-features = [
     "std",
-    "medium-ethernet",
-    "medium-ip",
-    "phy-tuntap_interface",
+    "phy-raw_socket",
     "proto-ipv4",
-    "socket-dns",
 ]
+
+[[bench]]
+name = "bench"
+path = "benches/bench.rs"
 
 [dependencies.bitflags]
 version = "1.0"
@@ -188,11 +236,12 @@ default-features = false
 version = "1.0.0"
 
 [dependencies.defmt]
-version = "0.3"
+version = "0.3.8"
+features = ["ip_in_core"]
 optional = true
 
 [dependencies.heapless]
-version = "0.7.15"
+version = "0.8"
 
 [dependencies.libc]
 version = "0.2.18"
@@ -246,7 +295,6 @@ default = [
     "phy-raw_socket",
     "phy-tuntap_interface",
     "proto-ipv4",
-    "proto-igmp",
     "proto-dhcpv4",
     "proto-ipv6",
     "proto-dns",
@@ -261,11 +309,11 @@ default = [
     "socket-mdns",
     "packetmeta-id",
     "async",
+    "multicast",
 ]
 defmt = [
     "dep:defmt",
-    "heapless/defmt",
-    "heapless/defmt-impl",
+    "heapless/defmt-03",
 ]
 dns-max-name-size-128 = []
 dns-max-name-size-255 = []
@@ -362,12 +410,20 @@ iface-neighbor-cache-count-6 = []
 iface-neighbor-cache-count-64 = []
 iface-neighbor-cache-count-7 = []
 iface-neighbor-cache-count-8 = []
+ipv6-hbh-max-options-1 = []
+ipv6-hbh-max-options-16 = []
+ipv6-hbh-max-options-2 = []
+ipv6-hbh-max-options-3 = []
+ipv6-hbh-max-options-32 = []
+ipv6-hbh-max-options-4 = []
+ipv6-hbh-max-options-8 = []
 medium-ethernet = ["socket"]
 medium-ieee802154 = [
     "socket",
     "proto-sixlowpan",
 ]
 medium-ip = ["socket"]
+multicast = []
 packetmeta-id = []
 phy-raw_socket = [
     "std",
@@ -380,14 +436,28 @@ phy-tuntap_interface = [
 ]
 proto-dhcpv4 = ["proto-ipv4"]
 proto-dns = []
-proto-igmp = ["proto-ipv4"]
+proto-ipsec = [
+    "proto-ipsec-ah",
+    "proto-ipsec-esp",
+]
+proto-ipsec-ah = []
+proto-ipsec-esp = []
 proto-ipv4 = []
 proto-ipv4-fragmentation = [
     "proto-ipv4",
     "_proto-fragmentation",
 ]
 proto-ipv6 = []
-proto-rpl = []
+proto-ipv6-fragmentation = [
+    "proto-ipv6",
+    "_proto-fragmentation",
+]
+proto-ipv6-hbh = ["proto-ipv6"]
+proto-ipv6-routing = ["proto-ipv6"]
+proto-rpl = [
+    "proto-ipv6-hbh",
+    "proto-ipv6-routing",
+]
 proto-sixlowpan = ["proto-ipv6"]
 proto-sixlowpan-fragmentation = [
     "proto-sixlowpan",
@@ -437,9 +507,16 @@ socket-icmp = ["socket"]
 socket-mdns = ["socket-dns"]
 socket-raw = ["socket"]
 socket-tcp = ["socket"]
+socket-tcp-cubic = []
+socket-tcp-reno = []
 socket-udp = ["socket"]
 std = [
     "managed/std",
     "alloc",
 ]
 verbose = []
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(fuzzing)"]

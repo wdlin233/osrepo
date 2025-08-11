@@ -4,7 +4,6 @@ The `iface` module deals with the *network interfaces*. It filters incoming fram
 provides lookup and caching of hardware addresses, and handles management packets.
 */
 
-#[cfg(any(feature = "proto-ipv4", feature = "proto-sixlowpan"))]
 mod fragmentation;
 mod interface;
 #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee802154"))]
@@ -15,9 +14,13 @@ mod rpl;
 mod socket_meta;
 mod socket_set;
 
-#[cfg(feature = "proto-igmp")]
-pub use self::interface::MulticastError;
-pub use self::interface::{Config, Interface, InterfaceInner as Context};
+mod packet;
+
+#[cfg(feature = "multicast")]
+pub use self::interface::multicast::MulticastError;
+pub use self::interface::{
+    Config, Interface, InterfaceInner as Context, PollIngressSingleResult, PollResult,
+};
 
 pub use self::route::{Route, RouteTableFull, Routes};
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};

@@ -4,8 +4,8 @@ use byteorder::{ByteOrder, NetworkEndian};
 use super::{Error, Result};
 use crate::time::Duration;
 use crate::wire::icmpv6::{field, Message, Packet};
-use crate::wire::Ipv6Address;
 use crate::wire::RawHardwareAddress;
+use crate::wire::{Ipv6Address, Ipv6AddressExt};
 use crate::wire::{NdiscOption, NdiscOptionRepr};
 use crate::wire::{NdiscPrefixInformation, NdiscRedirectedHeader};
 
@@ -159,7 +159,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     #[inline]
     pub fn set_target_addr(&mut self, value: Ipv6Address) {
         let data = self.buffer.as_mut();
-        data[field::TARGET_ADDR].copy_from_slice(value.as_bytes());
+        data[field::TARGET_ADDR].copy_from_slice(&value.octets());
     }
 }
 
@@ -184,7 +184,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     #[inline]
     pub fn set_dest_addr(&mut self, value: Ipv6Address) {
         let data = self.buffer.as_mut();
-        data[field::DEST_ADDR].copy_from_slice(value.as_bytes());
+        data[field::DEST_ADDR].copy_from_slice(&value.octets());
     }
 }
 
@@ -230,109 +230,63 @@ impl<'a> Repr<'a> {
     where
         T: AsRef<[u8]> + ?Sized,
     {
-        fn foreach_option<'a>(
-            payload: &'a [u8],
-            mut f: impl FnMut(NdiscOptionRepr<'a>) -> Result<()>,
-        ) -> Result<()> {
-            let mut offset = 0;
-            while payload.len() > offset {
-                let pkt = NdiscOption::new_checked(&payload[offset..])?;
+        packet.check_len()?;
 
-                // If an option doesn't parse, ignore it and still parse the others.
-                if let Ok(opt) = NdiscOptionRepr::parse(&pkt) {
-                    f(opt)?;
-                }
+        let (mut src_ll_addr, mut mtu, mut prefix_info, mut target_ll_addr, mut redirected_hdr) =
+            (None, None, None, None, None);
 
-                let len = pkt.data_len() as usize * 8;
-                if len == 0 {
-                    return Err(Error);
+        let mut offset = 0;
+        while packet.payload().len() > offset {
+            let pkt = NdiscOption::new_checked(&packet.payload()[offset..])?;
+
+            // If an option doesn't parse, ignore it and still parse the others.
+            if let Ok(opt) = NdiscOptionRepr::parse(&pkt) {
+                match opt {
+                    NdiscOptionRepr::SourceLinkLayerAddr(addr) => src_ll_addr = Some(addr),
+                    NdiscOptionRepr::TargetLinkLayerAddr(addr) => target_ll_addr = Some(addr),
+                    NdiscOptionRepr::PrefixInformation(prefix) => prefix_info = Some(prefix),
+                    NdiscOptionRepr::RedirectedHeader(redirect) => redirected_hdr = Some(redirect),
+                    NdiscOptionRepr::Mtu(m) => mtu = Some(m),
+                    _ => {}
                 }
-                offset += len;
             }
-            Ok(())
+
+            let len = pkt.data_len() as usize * 8;
+            if len == 0 {
+                return Err(Error);
+            }
+            offset += len;
         }
 
         match packet.msg_type() {
-            Message::RouterSolicit => {
-                let mut lladdr = None;
-                foreach_option(packet.payload(), |opt| {
-                    match opt {
-                        NdiscOptionRepr::SourceLinkLayerAddr(addr) => lladdr = Some(addr),
-                        _ => {}
-                    }
-                    Ok(())
-                })?;
-                Ok(Repr::RouterSolicit { lladdr })
-            }
-            Message::RouterAdvert => {
-                let (mut lladdr, mut mtu, mut prefix_info) = (None, None, None);
-                foreach_option(packet.payload(), |opt| {
-                    match opt {
-                        NdiscOptionRepr::SourceLinkLayerAddr(addr) => lladdr = Some(addr),
-                        NdiscOptionRepr::Mtu(val) => mtu = Some(val),
-                        NdiscOptionRepr::PrefixInformation(info) => prefix_info = Some(info),
-                        _ => {}
-                    }
-                    Ok(())
-                })?;
-                Ok(Repr::RouterAdvert {
-                    hop_limit: packet.current_hop_limit(),
-                    flags: packet.router_flags(),
-                    router_lifetime: packet.router_lifetime(),
-                    reachable_time: packet.reachable_time(),
-                    retrans_time: packet.retrans_time(),
-                    lladdr,
-                    mtu,
-                    prefix_info,
-                })
-            }
-            Message::NeighborSolicit => {
-                let mut lladdr = None;
-                foreach_option(packet.payload(), |opt| {
-                    match opt {
-                        NdiscOptionRepr::SourceLinkLayerAddr(addr) => lladdr = Some(addr),
-                        _ => {}
-                    }
-                    Ok(())
-                })?;
-                Ok(Repr::NeighborSolicit {
-                    target_addr: packet.target_addr(),
-                    lladdr,
-                })
-            }
-            Message::NeighborAdvert => {
-                let mut lladdr = None;
-                foreach_option(packet.payload(), |opt| {
-                    match opt {
-                        NdiscOptionRepr::TargetLinkLayerAddr(addr) => lladdr = Some(addr),
-                        _ => {}
-                    }
-                    Ok(())
-                })?;
-                Ok(Repr::NeighborAdvert {
-                    flags: packet.neighbor_flags(),
-                    target_addr: packet.target_addr(),
-                    lladdr,
-                })
-            }
-            Message::Redirect => {
-                let (mut lladdr, mut redirected_hdr) = (None, None);
-
-                foreach_option(packet.payload(), |opt| {
-                    match opt {
-                        NdiscOptionRepr::SourceLinkLayerAddr(addr) => lladdr = Some(addr),
-                        NdiscOptionRepr::RedirectedHeader(rh) => redirected_hdr = Some(rh),
-                        _ => {}
-                    }
-                    Ok(())
-                })?;
-                Ok(Repr::Redirect {
-                    target_addr: packet.target_addr(),
-                    dest_addr: packet.dest_addr(),
-                    lladdr,
-                    redirected_hdr,
-                })
-            }
+            Message::RouterSolicit => Ok(Repr::RouterSolicit {
+                lladdr: src_ll_addr,
+            }),
+            Message::RouterAdvert => Ok(Repr::RouterAdvert {
+                hop_limit: packet.current_hop_limit(),
+                flags: packet.router_flags(),
+                router_lifetime: packet.router_lifetime(),
+                reachable_time: packet.reachable_time(),
+                retrans_time: packet.retrans_time(),
+                lladdr: src_ll_addr,
+                mtu,
+                prefix_info,
+            }),
+            Message::NeighborSolicit => Ok(Repr::NeighborSolicit {
+                target_addr: packet.target_addr(),
+                lladdr: src_ll_addr,
+            }),
+            Message::NeighborAdvert => Ok(Repr::NeighborAdvert {
+                flags: packet.neighbor_flags(),
+                target_addr: packet.target_addr(),
+                lladdr: target_ll_addr,
+            }),
+            Message::Redirect => Ok(Repr::Redirect {
+                target_addr: packet.target_addr(),
+                dest_addr: packet.dest_addr(),
+                lladdr: src_ll_addr,
+                redirected_hdr,
+            }),
             _ => Err(Error),
         }
     }
@@ -505,9 +459,11 @@ impl<'a> Repr<'a> {
 mod test {
     use super::*;
     use crate::phy::ChecksumCapabilities;
-    use crate::wire::ip::test::{MOCK_IP_ADDR_1, MOCK_IP_ADDR_2};
     use crate::wire::EthernetAddress;
     use crate::wire::Icmpv6Repr;
+
+    const MOCK_IP_ADDR_1: Ipv6Address = Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 1);
+    const MOCK_IP_ADDR_2: Ipv6Address = Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 2);
 
     static ROUTER_ADVERT_BYTES: [u8; 24] = [
         0x86, 0x00, 0xa9, 0xde, 0x40, 0x80, 0x03, 0x84, 0x00, 0x00, 0x03, 0x84, 0x00, 0x00, 0x03,
@@ -576,7 +532,7 @@ mod test {
 
     #[test]
     fn test_router_advert_repr_emit() {
-        let mut bytes = vec![0x2a; 24];
+        let mut bytes = [0x2a; 24];
         let mut packet = Packet::new_unchecked(&mut bytes[..]);
         create_repr().emit(
             &MOCK_IP_ADDR_1,

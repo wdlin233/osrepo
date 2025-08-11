@@ -182,6 +182,28 @@ impl<T, const N: usize> HistoryBuffer<T, N> {
         unsafe { slice::from_raw_parts(self.data.as_ptr() as *const _, self.len()) }
     }
 
+    /// Returns a pair of slices which contain, in order, the contents of the buffer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use heapless::HistoryBuffer;
+    ///
+    /// let mut buffer: HistoryBuffer<u8, 6> = HistoryBuffer::new();
+    /// buffer.extend([0, 0, 0]);
+    /// buffer.extend([1, 2, 3, 4, 5, 6]);
+    /// assert_eq!(buffer.as_slices(), (&[1, 2, 3][..], &[4, 5, 6][..]));
+    /// ```
+    pub fn as_slices(&self) -> (&[T], &[T]) {
+        let buffer = self.as_slice();
+
+        if !self.filled {
+            (buffer, &[])
+        } else {
+            (&buffer[self.write_at..], &buffer[..self.write_at])
+        }
+    }
+
     /// Returns an iterator for iterating over the buffer from oldest to newest.
     ///
     /// # Examples
@@ -238,6 +260,21 @@ where
     }
 }
 
+impl<T, const N: usize> Clone for HistoryBuffer<T, N>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        let mut ret = Self::new();
+        for (new, old) in ret.data.iter_mut().zip(self.as_slice()) {
+            new.write(old.clone());
+        }
+        ret.filled = self.filled;
+        ret.write_at = self.write_at;
+        ret
+    }
+}
+
 impl<T, const N: usize> Drop for HistoryBuffer<T, N> {
     fn drop(&mut self) {
         unsafe {
@@ -279,6 +316,15 @@ impl<T, const N: usize> Default for HistoryBuffer<T, N> {
     }
 }
 
+impl<T, const N: usize> PartialEq for HistoryBuffer<T, N>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.oldest_ordered().eq(other.oldest_ordered())
+    }
+}
+
 /// An iterator on the underlying buffer ordered from oldest data to newest
 #[derive(Clone)]
 pub struct OldestOrdered<'a, T, const N: usize> {
@@ -311,6 +357,7 @@ impl<'a, T, const N: usize> Iterator for OldestOrdered<'a, T, N> {
 mod tests {
     use crate::HistoryBuffer;
     use core::fmt::Debug;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn new() {
@@ -351,6 +398,47 @@ mod tests {
     }
 
     #[test]
+    fn clone() {
+        let mut x: HistoryBuffer<u8, 3> = HistoryBuffer::new();
+        for i in 0..10 {
+            assert_eq!(x.as_slice(), x.clone().as_slice());
+            x.write(i);
+        }
+
+        // Records number of clones locally and globally.
+        static GLOBAL: AtomicUsize = AtomicUsize::new(0);
+        #[derive(Default, PartialEq, Debug)]
+        struct InstrumentedClone(usize);
+
+        impl Clone for InstrumentedClone {
+            fn clone(&self) -> Self {
+                GLOBAL.fetch_add(1, Ordering::Relaxed);
+                Self(self.0 + 1)
+            }
+        }
+
+        let mut y: HistoryBuffer<InstrumentedClone, 2> = HistoryBuffer::new();
+        let _ = y.clone();
+        assert_eq!(GLOBAL.load(Ordering::Relaxed), 0);
+        y.write(InstrumentedClone(0));
+        assert_eq!(GLOBAL.load(Ordering::Relaxed), 0);
+        assert_eq!(y.clone().as_slice(), [InstrumentedClone(1)]);
+        assert_eq!(GLOBAL.load(Ordering::Relaxed), 1);
+        y.write(InstrumentedClone(0));
+        assert_eq!(GLOBAL.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            y.clone().as_slice(),
+            [InstrumentedClone(1), InstrumentedClone(1)]
+        );
+        assert_eq!(GLOBAL.load(Ordering::Relaxed), 3);
+        assert_eq!(
+            y.clone().clone().clone().as_slice(),
+            [InstrumentedClone(3), InstrumentedClone(3)]
+        );
+        assert_eq!(GLOBAL.load(Ordering::Relaxed), 9);
+    }
+
+    #[test]
     fn recent() {
         let mut x: HistoryBuffer<u8, 4> = HistoryBuffer::new();
         assert_eq!(x.recent(), None);
@@ -374,6 +462,37 @@ mod tests {
         x.extend([1, 2, 3, 4, 5].iter());
 
         assert_eq!(x.as_slice(), [5, 2, 3, 4]);
+    }
+
+    /// Test whether .as_slices() behaves as expected.
+    #[test]
+    fn as_slices() {
+        let mut buffer: HistoryBuffer<u8, 4> = HistoryBuffer::new();
+        let mut extend_then_assert = |extend: &[u8], assert: (&[u8], &[u8])| {
+            buffer.extend(extend);
+            assert_eq!(buffer.as_slices(), assert);
+        };
+
+        extend_then_assert(b"a", (b"a", b""));
+        extend_then_assert(b"bcd", (b"abcd", b""));
+        extend_then_assert(b"efg", (b"d", b"efg"));
+        extend_then_assert(b"h", (b"efgh", b""));
+        extend_then_assert(b"123456", (b"34", b"56"));
+    }
+
+    /// Test whether .as_slices() and .oldest_ordered() produce elements in the same order.
+    #[test]
+    fn as_slices_equals_ordered() {
+        let mut buffer: HistoryBuffer<u8, 6> = HistoryBuffer::new();
+
+        for n in 0..20 {
+            buffer.write(n);
+            let (head, tail) = buffer.as_slices();
+            assert_eq_iter(
+                [head, tail].iter().copied().flatten(),
+                buffer.oldest_ordered(),
+            )
+        }
     }
 
     #[test]
@@ -428,6 +547,32 @@ mod tests {
             if b_item.is_none() {
                 break;
             }
+        }
+    }
+
+    #[test]
+    fn partial_eq() {
+        let mut x: HistoryBuffer<u8, 3> = HistoryBuffer::new();
+        let mut y: HistoryBuffer<u8, 3> = HistoryBuffer::new();
+        assert_eq!(x, y);
+        x.write(1);
+        assert_ne!(x, y);
+        y.write(1);
+        assert_eq!(x, y);
+        for _ in 0..4 {
+            x.write(2);
+            assert_ne!(x, y);
+            for i in 0..5 {
+                x.write(i);
+                y.write(i);
+            }
+            assert_eq!(
+                x,
+                y,
+                "{:?} {:?}",
+                x.iter().collect::<Vec<_>>(),
+                y.iter().collect::<Vec<_>>()
+            );
         }
     }
 }

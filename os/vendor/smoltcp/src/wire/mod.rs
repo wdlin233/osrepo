@@ -93,17 +93,19 @@ mod icmpv4;
 mod icmpv6;
 #[cfg(feature = "medium-ieee802154")]
 pub mod ieee802154;
-#[cfg(feature = "proto-igmp")]
+#[cfg(feature = "proto-ipv4")]
 mod igmp;
 pub(crate) mod ip;
 #[cfg(feature = "proto-ipv4")]
-mod ipv4;
+pub(crate) mod ipv4;
 #[cfg(feature = "proto-ipv6")]
-mod ipv6;
+pub(crate) mod ipv6;
 #[cfg(feature = "proto-ipv6")]
 mod ipv6ext_header;
 #[cfg(feature = "proto-ipv6")]
 mod ipv6fragment;
+#[cfg(feature = "proto-ipv6")]
+mod ipv6hbh;
 #[cfg(feature = "proto-ipv6")]
 mod ipv6option;
 #[cfg(feature = "proto-ipv6")]
@@ -126,6 +128,12 @@ mod rpl;
 mod sixlowpan;
 mod tcp;
 mod udp;
+
+#[cfg(feature = "proto-ipsec-ah")]
+mod ipsec_ah;
+
+#[cfg(feature = "proto-ipsec-esp")]
+mod ipsec_esp;
 
 use core::fmt;
 
@@ -156,9 +164,9 @@ pub use self::sixlowpan::{
     frag::{Key as SixlowpanFragKey, Packet as SixlowpanFragPacket, Repr as SixlowpanFragRepr},
     iphc::{Packet as SixlowpanIphcPacket, Repr as SixlowpanIphcRepr},
     nhc::{
-        ExtHeaderPacket as SixlowpanExtHeaderPacket, ExtHeaderRepr as SixlowpanExtHeaderRepr,
-        NhcPacket as SixlowpanNhcPacket, UdpNhcPacket as SixlowpanUdpNhcPacket,
-        UdpNhcRepr as SixlowpanUdpNhcRepr,
+        ExtHeaderId as SixlowpanExtHeaderId, ExtHeaderPacket as SixlowpanExtHeaderPacket,
+        ExtHeaderRepr as SixlowpanExtHeaderRepr, NhcPacket as SixlowpanNhcPacket,
+        UdpNhcPacket as SixlowpanUdpNhcPacket, UdpNhcRepr as SixlowpanUdpNhcRepr,
     },
     AddressContext as SixlowpanAddressContext, NextHeader as SixlowpanNextHeader, SixlowpanPacket,
 };
@@ -180,32 +188,39 @@ pub use self::ip::{
 pub use self::ipv4::{
     Address as Ipv4Address, Cidr as Ipv4Cidr, Key as Ipv4FragKey, Packet as Ipv4Packet,
     Repr as Ipv4Repr, HEADER_LEN as IPV4_HEADER_LEN, MIN_MTU as IPV4_MIN_MTU,
+    MULTICAST_ALL_ROUTERS as IPV4_MULTICAST_ALL_ROUTERS,
+    MULTICAST_ALL_SYSTEMS as IPV4_MULTICAST_ALL_SYSTEMS,
 };
+
+#[cfg(feature = "proto-ipv4")]
+pub(crate) use self::ipv4::AddressExt as Ipv4AddressExt;
 
 #[cfg(feature = "proto-ipv6")]
 pub use self::ipv6::{
     Address as Ipv6Address, Cidr as Ipv6Cidr, Packet as Ipv6Packet, Repr as Ipv6Repr,
-    HEADER_LEN as IPV6_HEADER_LEN, MIN_MTU as IPV6_MIN_MTU,
+    HEADER_LEN as IPV6_HEADER_LEN,
+    LINK_LOCAL_ALL_MLDV2_ROUTERS as IPV6_LINK_LOCAL_ALL_MLDV2_ROUTERS,
+    LINK_LOCAL_ALL_NODES as IPV6_LINK_LOCAL_ALL_NODES,
+    LINK_LOCAL_ALL_ROUTERS as IPV6_LINK_LOCAL_ALL_ROUTERS,
+    LINK_LOCAL_ALL_RPL_NODES as IPV6_LINK_LOCAL_ALL_RPL_NODES, MIN_MTU as IPV6_MIN_MTU,
 };
+#[cfg(feature = "proto-ipv6")]
+pub(crate) use self::ipv6::{AddressExt as Ipv6AddressExt, MulticastScope as Ipv6MulticastScope};
 
 #[cfg(feature = "proto-ipv6")]
 pub use self::ipv6option::{
     FailureType as Ipv6OptionFailureType, Ipv6Option, Ipv6OptionsIterator, Repr as Ipv6OptionRepr,
-    Type as Ipv6OptionType,
+    RouterAlert as Ipv6OptionRouterAlert, Type as Ipv6OptionType,
 };
 
 #[cfg(feature = "proto-ipv6")]
 pub use self::ipv6ext_header::{Header as Ipv6ExtHeader, Repr as Ipv6ExtHeaderRepr};
 
 #[cfg(feature = "proto-ipv6")]
-/// A read/write wrapper around an IPv6 Hop-By-Hop header.
-pub type Ipv6HopByHopHeader<T> = Ipv6ExtHeader<T>;
-#[cfg(feature = "proto-ipv6")]
-/// A high-level representation of an IPv6 Hop-By-Hop heade.
-pub type Ipv6HopByHopRepr<'a> = Ipv6ExtHeaderRepr<'a>;
+pub use self::ipv6fragment::{Header as Ipv6FragmentHeader, Repr as Ipv6FragmentRepr};
 
 #[cfg(feature = "proto-ipv6")]
-pub use self::ipv6fragment::{Header as Ipv6FragmentHeader, Repr as Ipv6FragmentRepr};
+pub use self::ipv6hbh::{Header as Ipv6HopByHopHeader, Repr as Ipv6HopByHopRepr};
 
 #[cfg(feature = "proto-ipv6")]
 pub use self::ipv6routing::{
@@ -219,7 +234,7 @@ pub use self::icmpv4::{
     TimeExceeded as Icmpv4TimeExceeded,
 };
 
-#[cfg(feature = "proto-igmp")]
+#[cfg(feature = "proto-ipv4")]
 pub use self::igmp::{IgmpVersion, Packet as IgmpPacket, Repr as IgmpRepr};
 
 #[cfg(feature = "proto-ipv6")]
@@ -250,27 +265,37 @@ pub use self::ndiscoption::{
 };
 
 #[cfg(feature = "proto-ipv6")]
-pub use self::mld::{AddressRecord as MldAddressRecord, Repr as MldRepr};
+pub use self::mld::{
+    AddressRecord as MldAddressRecord, AddressRecordRepr as MldAddressRecordRepr,
+    RecordType as MldRecordType, Repr as MldRepr,
+};
 
 pub use self::udp::{Packet as UdpPacket, Repr as UdpRepr, HEADER_LEN as UDP_HEADER_LEN};
 
 pub use self::tcp::{
     Control as TcpControl, Packet as TcpPacket, Repr as TcpRepr, SeqNumber as TcpSeqNumber,
-    TcpOption, HEADER_LEN as TCP_HEADER_LEN,
+    TcpOption, TcpTimestampGenerator, TcpTimestampRepr, HEADER_LEN as TCP_HEADER_LEN,
 };
 
 #[cfg(feature = "proto-dhcpv4")]
 pub use self::dhcpv4::{
-    DhcpOption, DhcpOptionWriter, MessageType as DhcpMessageType, Packet as DhcpPacket,
-    Repr as DhcpRepr, CLIENT_PORT as DHCP_CLIENT_PORT,
+    DhcpOption, DhcpOptionWriter, Flags as DhcpFlags, MessageType as DhcpMessageType,
+    OpCode as DhcpOpCode, Packet as DhcpPacket, Repr as DhcpRepr, CLIENT_PORT as DHCP_CLIENT_PORT,
     MAX_DNS_SERVER_COUNT as DHCP_MAX_DNS_SERVER_COUNT, SERVER_PORT as DHCP_SERVER_PORT,
 };
 
 #[cfg(feature = "proto-dns")]
 pub use self::dns::{
-    Flags as DnsFlags, Opcode as DnsOpcode, Packet as DnsPacket, Rcode as DnsRcode,
-    Repr as DnsRepr, Type as DnsQueryType,
+    Flags as DnsFlags, Opcode as DnsOpcode, Packet as DnsPacket, Question as DnsQuestion,
+    Rcode as DnsRcode, Record as DnsRecord, RecordData as DnsRecordData, Repr as DnsRepr,
+    Type as DnsQueryType,
 };
+
+#[cfg(feature = "proto-ipsec-ah")]
+pub use self::ipsec_ah::{Packet as IpSecAuthHeaderPacket, Repr as IpSecAuthHeaderRepr};
+
+#[cfg(feature = "proto-ipsec-esp")]
+pub use self::ipsec_esp::{Packet as IpSecEspPacket, Repr as IpSecEspRepr};
 
 /// Parsing a packet failed.
 ///
@@ -312,6 +337,30 @@ pub enum HardwareAddress {
     feature = "medium-ethernet",
     feature = "medium-ieee802154"
 ))]
+#[cfg(test)]
+impl Default for HardwareAddress {
+    fn default() -> Self {
+        #![allow(unreachable_code)]
+        #[cfg(feature = "medium-ethernet")]
+        {
+            return Self::Ethernet(EthernetAddress::default());
+        }
+        #[cfg(feature = "medium-ip")]
+        {
+            return Self::Ip;
+        }
+        #[cfg(feature = "medium-ieee802154")]
+        {
+            Self::Ieee802154(Ieee802154Address::default())
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "medium-ip",
+    feature = "medium-ethernet",
+    feature = "medium-ieee802154"
+))]
 impl HardwareAddress {
     pub const fn as_bytes(&self) -> &[u8] {
         match self {
@@ -324,7 +373,7 @@ impl HardwareAddress {
         }
     }
 
-    /// Query wether the address is an unicast address.
+    /// Query whether the address is an unicast address.
     pub fn is_unicast(&self) -> bool {
         match self {
             #[cfg(feature = "medium-ip")]
@@ -336,7 +385,7 @@ impl HardwareAddress {
         }
     }
 
-    /// Query wether the address is a broadcast address.
+    /// Query whether the address is a broadcast address.
     pub fn is_broadcast(&self) -> bool {
         match self {
             #[cfg(feature = "medium-ip")]

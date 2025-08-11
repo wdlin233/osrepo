@@ -62,11 +62,11 @@ impl phy::Device for StmPhy {
 struct StmPhyRxToken<'a>(&'a mut [u8]);
 
 impl<'a> phy::RxToken for StmPhyRxToken<'a> {
-    fn consume<R, F>(mut self, f: F) -> R
-        where F: FnOnce(&mut [u8]) -> R
+    fn consume<R, F>(self, f: F) -> R
+        where F: FnOnce(& [u8]) -> R
     {
         // TODO: receive packet into buffer
-        let result = f(&mut self.0);
+        let result = f(&self.0);
         println!("rx called");
         result
     }
@@ -97,6 +97,7 @@ use crate::time::Instant;
 mod sys;
 
 mod fault_injector;
+#[cfg(feature = "alloc")]
 mod fuzz_injector;
 #[cfg(feature = "alloc")]
 mod loopback;
@@ -117,6 +118,7 @@ mod tuntap_interface;
 pub use self::sys::wait;
 
 pub use self::fault_injector::FaultInjector;
+#[cfg(feature = "alloc")]
 pub use self::fuzz_injector::{FuzzInjector, Fuzzer};
 #[cfg(feature = "alloc")]
 pub use self::loopback::Loopback;
@@ -149,9 +151,12 @@ pub use self::tuntap_interface::TunTapInterface;
 /// default values and then set the fields you want. This makes adding metadata
 /// fields a non-breaking change.
 ///
-/// ```rust,ignore
-/// let mut meta = PacketMeta::new();
-/// meta.id = 15;
+/// ```rust
+/// let mut meta = smoltcp::phy::PacketMeta::default();
+/// #[cfg(feature = "packetmeta-id")]
+/// {
+///     meta.id = 15;
+/// }
 /// ```
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default)]
@@ -369,7 +374,7 @@ pub trait RxToken {
     /// packet bytes as argument.
     fn consume<R, F>(self, f: F) -> R
     where
-        F: FnOnce(&mut [u8]) -> R;
+        F: FnOnce(&[u8]) -> R;
 
     /// The Packet ID associated with the frame received by this [`RxToken`]
     fn meta(&self) -> PacketMeta {

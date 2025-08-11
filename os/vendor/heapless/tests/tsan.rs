@@ -50,7 +50,6 @@ fn twice() {
 }
 
 #[test]
-#[cfg(unstable_channel)]
 fn scoped() {
     let mut rb: spsc::Queue<i32, 5> = spsc::Queue::new();
 
@@ -75,7 +74,6 @@ fn scoped() {
 
 #[test]
 #[cfg_attr(miri, ignore)] // too slow
-#[cfg(unstable_channel)]
 fn contention() {
     const N: usize = 1024;
 
@@ -121,7 +119,6 @@ fn contention() {
 
 #[test]
 #[cfg_attr(miri, ignore)] // too slow
-#[cfg(unstable_channel)]
 fn mpmc_contention() {
     use std::sync::mpsc;
 
@@ -172,7 +169,6 @@ fn mpmc_contention() {
 
 #[test]
 #[cfg_attr(miri, ignore)] // too slow
-#[cfg(unstable_channel)]
 fn unchecked() {
     const N: usize = 1024;
 
@@ -240,36 +236,4 @@ fn iterator_properly_wraps() {
         actual[idx] = *el;
     }
     assert_eq!(expected, actual)
-}
-
-#[cfg(all(target_arch = "x86_64", feature = "x86-sync-pool"))]
-#[test]
-fn pool() {
-    use heapless::pool::singleton::Pool as _;
-
-    static mut M: [u8; (N + 1) * 8] = [0; (N + 1) * 8];
-    const N: usize = 16 * 1024;
-    heapless::pool!(A: [u8; 8]);
-
-    A::grow(unsafe { &mut M });
-
-    thread::scope(move |scope| {
-        scope.spawn(move || {
-            for _ in 0..N / 4 {
-                let a = A::alloc().unwrap();
-                let b = A::alloc().unwrap();
-                drop(a);
-                let b = b.init([1; 8]);
-                drop(b);
-            }
-        });
-
-        scope.spawn(move || {
-            for _ in 0..N / 2 {
-                let a = A::alloc().unwrap();
-                let a = a.init([2; 8]);
-                drop(a);
-            }
-        });
-    });
 }

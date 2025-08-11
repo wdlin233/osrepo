@@ -13,12 +13,18 @@
 edition = "2021"
 rust-version = "1.70.0"
 name = "num_enum_derive"
-version = "0.7.3"
+version = "0.7.4"
 authors = [
     "Daniel Wagner-Hall <dawagner@gmail.com>",
     "Daniel Henry-Mantilla <daniel.henry.mantilla@gmail.com>",
     "Vincent Esche <regexident@gmail.com>",
 ]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Internal implementation details for ::num_enum (Procedural macros to make inter-operation between primitives and enums easier)"
 readme = "README.md"
 keywords = []
@@ -29,7 +35,15 @@ repository = "https://github.com/illicitonion/num_enum"
 [package.metadata.docs.rs]
 features = ["external_doc"]
 
+[features]
+complex-expressions = ["syn/full"]
+default = ["std"]
+external_doc = []
+std = ["proc-macro-crate"]
+
 [lib]
+name = "num_enum_derive"
+path = "src/lib.rs"
 proc-macro = true
 
 [dependencies.proc-macro-crate]
@@ -52,9 +66,3 @@ features = [
     "extra-traits",
     "parsing",
 ]
-
-[features]
-complex-expressions = ["syn/full"]
-default = ["std"]
-external_doc = []
-std = ["proc-macro-crate"]

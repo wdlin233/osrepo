@@ -20,8 +20,8 @@ use crate::{
     task::{
         add_task, block_current_and_run_next, current_process, current_task, current_user_token,
         exit_current_and_run_next, futex_requeue, futex_wait, futex_wake_up, mmap, munmap,
-        pid2process, process_num, remove_all_from_thread_group, suspend_current_and_run_next,
-        CloneFlags, FutexKey, TmsInner,
+        pid2process, process_num, remove_all_from_thread_group, remove_from_pid2process,
+        suspend_current_and_run_next, CloneFlags, FutexKey, TmsInner,
     },
     utils::{c_ptr_to_string, get_abs_path, page_round_up, trim_start_slash, SysErrNo, SyscallRet},
 };
@@ -443,6 +443,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32, options: usize) -> isize
                 drop(inner);
                 drop(process);
                 remove_all_from_thread_group(found_pid);
+                remove_from_pid2process(found_pid);
                 // confirm that child will be deallocated after being removed from children list
                 assert_eq!(Arc::strong_count(&child), 1);
                 return found_pid as isize;

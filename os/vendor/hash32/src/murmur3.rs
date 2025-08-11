@@ -1,6 +1,9 @@
-use core::{mem, slice};
+use core::slice;
+use core::mem::MaybeUninit;
 
 use byteorder::{ByteOrder, LE};
+
+use crate::Hasher as _;
 
 /// 32-bit MurmurHash3 hasher
 pub struct Hasher {
@@ -15,7 +18,7 @@ struct State(u32);
 #[derive(Clone, Copy)]
 #[repr(align(4))]
 struct Buffer {
-    bytes: [u8; 4],
+    bytes: MaybeUninit<[u8; 4]>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -57,7 +60,7 @@ impl Hasher {
         // self.buf.bytes[start..start+len].copy_from(buf);
         for i in 0..len {
             unsafe {
-                *self.buf.bytes.get_unchecked_mut(start + i) = *buf.get_unchecked(i);
+                *self.buf.bytes.assume_init_mut().get_unchecked_mut(start + i) = *buf.get_unchecked(i);
             }
         }
         self.index = Index::from(start + len);
@@ -68,7 +71,7 @@ impl Default for Hasher {
     #[allow(deprecated)]
     fn default() -> Self {
         Hasher {
-            buf: unsafe { mem::uninitialized() },
+            buf: Buffer { bytes: MaybeUninit::uninit() },
             index: Index::_0,
             processed: 0,
             state: State(0),
@@ -76,26 +79,32 @@ impl Default for Hasher {
     }
 }
 
-impl ::Hasher for Hasher {
-    fn finish(&self) -> u32 {
+impl crate::Hasher for Hasher {
+    fn finish32(&self) -> u32 {
         // tail
         let mut state = match self.index {
             Index::_3 => {
                 let mut block = 0;
-                block ^= u32::from(self.buf.bytes[2]) << 16;
-                block ^= u32::from(self.buf.bytes[1]) << 8;
-                block ^= u32::from(self.buf.bytes[0]);
+                unsafe {
+                    block ^= u32::from(self.buf.bytes.assume_init_ref()[2]) << 16;
+                    block ^= u32::from(self.buf.bytes.assume_init_ref()[1]) << 8;
+                    block ^= u32::from(self.buf.bytes.assume_init_ref()[0]);
+                }
                 self.state.0 ^ pre_mix(block)
             }
             Index::_2 => {
                 let mut block = 0;
-                block ^= u32::from(self.buf.bytes[1]) << 8;
-                block ^= u32::from(self.buf.bytes[0]);
+                unsafe {
+                    block ^= u32::from(self.buf.bytes.assume_init_ref()[1]) << 8;
+                    block ^= u32::from(self.buf.bytes.assume_init_ref()[0]);
+                }
                 self.state.0 ^ pre_mix(block)
             }
             Index::_1 => {
                 let mut block = 0;
-                block ^= u32::from(self.buf.bytes[0]);
+                unsafe {
+                    block ^= u32::from(self.buf.bytes.assume_init_ref()[0]);
+                }
                 self.state.0 ^ pre_mix(block)
             }
             Index::_0 => self.state.0,
@@ -111,7 +120,9 @@ impl ::Hasher for Hasher {
 
         state
     }
+}
 
+impl core::hash::Hasher for Hasher {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         let len = bytes.len();
@@ -135,7 +146,7 @@ impl ::Hasher for Hasher {
                 // self.buf.bytes[index..].copy_from_slice(head);
                 for i in 0..4 - index {
                     unsafe {
-                        *self.buf.bytes.get_unchecked_mut(index + i) = *head.get_unchecked(i);
+                        *self.buf.bytes.assume_init_mut().get_unchecked_mut(index + i) = *head.get_unchecked(i);
                     }
                 }
 
@@ -168,6 +179,11 @@ impl ::Hasher for Hasher {
 
         // self.push(tail);
     }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.finish32().into()
+    }
 }
 
 const C1: u32 = 0xcc9e2d51;
@@ -175,8 +191,8 @@ const C2: u32 = 0x1b873593;
 const R1: u32 = 15;
 
 impl State {
-    fn process_block(&mut self, block: &[u8; 4]) {
-        self.0 ^= pre_mix(LE::read_u32(block));
+    fn process_block(&mut self, block: &MaybeUninit<[u8; 4]>) {
+        self.0 ^= pre_mix(LE::read_u32(unsafe { block.assume_init_ref() }));
         self.0 = self.0.rotate_left(13);
         self.0 = 5u32.wrapping_mul(self.0).wrapping_add(0xe6546b64);
     }

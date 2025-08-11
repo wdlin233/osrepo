@@ -165,7 +165,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 crate::board::QEMU_EXIT_HANDLE.exit_success();
             }
         }
-        remove_from_pid2process(pid);
+
         let mut process_inner = process.inner_exclusive_access();
         // mark this process as a zombie process
         process_inner.is_zombie = true;

@@ -266,7 +266,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
         SYSCALL_SIGRETURN => sys_sig_return(),
-        SYSCALL_GETSOCKETOPT => sys_getsocketopt(args[0], args[1], args[2], args[3], args[4]),
+        SYSCALL_GETSOCKETOPT => sys_getsocketopt(
+            args[0],
+            args[1],
+            args[2],
+            args[3] as *mut u8,
+            args[4] as *mut u32,
+        ),
         SYSCALL_CONNECT => sys_connect(args[0], args[1] as *const u8, args[2] as u32),
         SYSCALL_SETTIMER => sys_set_timer(
             args[0] as usize,
@@ -295,7 +301,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[0],
             args[1] as *const u8,
             args[2],
-            args[3] as u32,
+            args[3] as i32,
             args[4] as *const u8,
             args[5] as u32,
         ),
@@ -303,13 +309,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_PSELECT6 => sys_pselect6(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYSCALL_LISTEN => sys_listen(args[0], args[1] as u32),
         SYSCALL_BIND => sys_bind(args[0], args[1], args[2] as u32),
-        SYSCALL_SETSOCKOPT => sys_setsockopt(
-            args[0],
-            args[1] as u32,
-            args[2] as u32,
-            args[3],
-            args[4] as u32,
-        ),
+        SYSCALL_SETSOCKOPT => sys_setsockopt(args[0], args[1], args[2], args[3], args[4] as u32),
         SYSCALL_SOCKET => sys_socket(args[0] as u32, args[1] as u32, args[2] as u32),
         SYSCALL_SETSID => sys_setsid(),
         SYSCALL_RENAMEAT2 => sys_renameat2(

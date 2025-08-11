@@ -4,7 +4,6 @@ pub mod ext4_lw;
 pub mod fsidx;
 pub mod fstruct;
 pub mod mount;
-pub mod net;
 pub mod pipe;
 pub mod stat;
 pub mod stdio;
@@ -29,7 +28,6 @@ pub use fstruct::*;
 use hashbrown::HashSet;
 use log::debug;
 pub use mount::MNT_TABLE;
-pub use net::*;
 pub use pipe::{make_pipe, Pipe};
 use spin::Lazy;
 pub use stat::*;
@@ -125,22 +123,24 @@ impl FileClass {
     pub fn socket(&self) -> Result<Arc<dyn Socket>, SysErrNo> {
         match self {
             FileClass::File(_) => Err(SysErrNo::EINVAL),
-            FileClass::Abs(_) => Err(SysErrNo::EINVAL),
-            FileClass::Socket(f) => Ok(f.clone()),
+            FileClass::Abs(f) => Err(SysErrNo::EINVAL),
+            FileClass::Socket(_) => Ok(f.clone()),
         }
     }
+
     pub fn any(&self) -> Arc<dyn File> {
         match self {
             FileClass::File(f) => f.clone(),
             FileClass::Abs(f) => f.clone(),
-            FileClass::Socket(f) => f.clone(),
+            FileClass::Socket(_) => Err(SysErrNo::EINVAL),
         }
     }
+
     pub fn fstat(&self) -> Kstat {
         match self {
             FileClass::File(f) => f.inode.fstat(),
             FileClass::Abs(f) => f.fstat(),
-            FileClass::Socket(f) => f.inode.fstat(),
+            FileClass::Socket(f) => f.fstat(),
         }
     }
 }

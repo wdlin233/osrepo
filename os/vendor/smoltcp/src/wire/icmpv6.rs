@@ -9,7 +9,11 @@ use crate::wire::MldRepr;
 use crate::wire::NdiscRepr;
 #[cfg(feature = "proto-rpl")]
 use crate::wire::RplRepr;
-use crate::wire::{IpAddress, IpProtocol, Ipv6Packet, Ipv6Repr};
+use crate::wire::{IpProtocol, Ipv6Address, Ipv6Packet, Ipv6Repr};
+use crate::wire::{IPV6_HEADER_LEN, IPV6_MIN_MTU};
+
+/// Error packets must not exceed min MTU
+const MAX_ERROR_PACKET_LEN: usize = IPV6_MIN_MTU - IPV6_HEADER_LEN;
 
 enum_with_unknown! {
     /// Internet protocol control message type.
@@ -321,7 +325,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
                 }
                 super::rpl::RplControlMessage::SecureDodagInformationSolicitation
                 | super::rpl::RplControlMessage::SecureDodagInformationObject
-                | super::rpl::RplControlMessage::SecureDesintationAdvertismentObject
+                | super::rpl::RplControlMessage::SecureDestinationAdvertisementObject
                 | super::rpl::RplControlMessage::SecureDestinationAdvertisementObjectAck
                 | super::rpl::RplControlMessage::ConsistencyCheck => return Err(Error),
                 super::rpl::RplControlMessage::Unknown(_) => return Err(Error),
@@ -417,14 +421,14 @@ impl<T: AsRef<[u8]>> Packet<T> {
     ///
     /// # Fuzzing
     /// This function always returns `true` when fuzzing.
-    pub fn verify_checksum(&self, src_addr: &IpAddress, dst_addr: &IpAddress) -> bool {
+    pub fn verify_checksum(&self, src_addr: &Ipv6Address, dst_addr: &Ipv6Address) -> bool {
         if cfg!(fuzzing) {
             return true;
         }
 
         let data = self.buffer.as_ref();
         checksum::combine(&[
-            checksum::pseudo_header(src_addr, dst_addr, IpProtocol::Icmpv6, data.len() as u32),
+            checksum::pseudo_header_v6(src_addr, dst_addr, IpProtocol::Icmpv6, data.len() as u32),
             checksum::data(data),
         ]) == !0
     }
@@ -531,12 +535,17 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     }
 
     /// Compute and fill in the header checksum.
-    pub fn fill_checksum(&mut self, src_addr: &IpAddress, dst_addr: &IpAddress) {
+    pub fn fill_checksum(&mut self, src_addr: &Ipv6Address, dst_addr: &Ipv6Address) {
         self.set_checksum(0);
         let checksum = {
             let data = self.buffer.as_ref();
             !checksum::combine(&[
-                checksum::pseudo_header(src_addr, dst_addr, IpProtocol::Icmpv6, data.len() as u32),
+                checksum::pseudo_header_v6(
+                    src_addr,
+                    dst_addr,
+                    IpProtocol::Icmpv6,
+                    data.len() as u32,
+                ),
                 checksum::data(data),
             ])
         };
@@ -605,29 +614,35 @@ impl<'a> Repr<'a> {
     /// Parse an Internet Control Message Protocol version 6 packet and return
     /// a high-level representation.
     pub fn parse<T>(
-        src_addr: &IpAddress,
-        dst_addr: &IpAddress,
+        src_addr: &Ipv6Address,
+        dst_addr: &Ipv6Address,
         packet: &Packet<&'a T>,
         checksum_caps: &ChecksumCapabilities,
     ) -> Result<Repr<'a>>
     where
         T: AsRef<[u8]> + ?Sized,
     {
+        packet.check_len()?;
+
         fn create_packet_from_payload<'a, T>(packet: &Packet<&'a T>) -> Result<(&'a [u8], Ipv6Repr)>
         where
             T: AsRef<[u8]> + ?Sized,
         {
-            let ip_packet = Ipv6Packet::new_checked(packet.payload())?;
+            // The packet must be truncated to fit the min MTU. Since we don't know the offset of
+            // the ICMPv6 header in the L2 frame, we should only check whether the payload's IPv6
+            // header is present, the rest is allowed to be truncated.
+            let ip_packet = if packet.payload().len() >= IPV6_HEADER_LEN {
+                Ipv6Packet::new_unchecked(packet.payload())
+            } else {
+                return Err(Error);
+            };
 
             let payload = &packet.payload()[ip_packet.header_len()..];
-            if payload.len() < 8 {
-                return Err(Error);
-            }
             let repr = Ipv6Repr {
                 src_addr: ip_packet.src_addr(),
                 dst_addr: ip_packet.dst_addr(),
                 next_header: ip_packet.next_header(),
-                payload_len: payload.len(),
+                payload_len: ip_packet.payload_len().into(),
                 hop_limit: ip_packet.hop_limit(),
             };
             Ok((payload, repr))
@@ -696,9 +711,10 @@ impl<'a> Repr<'a> {
             &Repr::DstUnreachable { header, data, .. }
             | &Repr::PktTooBig { header, data, .. }
             | &Repr::TimeExceeded { header, data, .. }
-            | &Repr::ParamProblem { header, data, .. } => {
-                field::UNUSED.end + header.buffer_len() + data.len()
-            }
+            | &Repr::ParamProblem { header, data, .. } => cmp::min(
+                field::UNUSED.end + header.buffer_len() + data.len(),
+                MAX_ERROR_PACKET_LEN,
+            ),
             &Repr::EchoRequest { data, .. } | &Repr::EchoReply { data, .. } => {
                 field::ECHO_SEQNO.end + data.len()
             }
@@ -714,18 +730,28 @@ impl<'a> Repr<'a> {
     /// packet.
     pub fn emit<T>(
         &self,
-        src_addr: &IpAddress,
-        dst_addr: &IpAddress,
+        src_addr: &Ipv6Address,
+        dst_addr: &Ipv6Address,
         packet: &mut Packet<&mut T>,
         checksum_caps: &ChecksumCapabilities,
     ) where
         T: AsRef<[u8]> + AsMut<[u8]> + ?Sized,
     {
-        fn emit_contained_packet(buffer: &mut [u8], header: Ipv6Repr, data: &[u8]) {
-            let mut ip_packet = Ipv6Packet::new_unchecked(buffer);
+        fn emit_contained_packet<T>(packet: &mut Packet<&mut T>, header: Ipv6Repr, data: &[u8])
+        where
+            T: AsRef<[u8]> + AsMut<[u8]> + ?Sized,
+        {
+            let icmp_header_len = packet.header_len();
+            let mut ip_packet = Ipv6Packet::new_unchecked(packet.payload_mut());
             header.emit(&mut ip_packet);
             let payload = &mut ip_packet.into_inner()[header.buffer_len()..];
-            payload.copy_from_slice(data);
+            // FIXME: this should rather be checked at link level, as we can't know in advance how
+            // much space we have for the packet due to IPv6 options and etc
+            let payload_len = cmp::min(
+                data.len(),
+                MAX_ERROR_PACKET_LEN - icmp_header_len - IPV6_HEADER_LEN,
+            );
+            payload[..payload_len].copy_from_slice(&data[..payload_len]);
         }
 
         match *self {
@@ -737,7 +763,7 @@ impl<'a> Repr<'a> {
                 packet.set_msg_type(Message::DstUnreachable);
                 packet.set_msg_code(reason.into());
 
-                emit_contained_packet(packet.payload_mut(), header, data);
+                emit_contained_packet(packet, header, data);
             }
 
             Repr::PktTooBig { mtu, header, data } => {
@@ -745,7 +771,7 @@ impl<'a> Repr<'a> {
                 packet.set_msg_code(0);
                 packet.set_pkt_too_big_mtu(mtu);
 
-                emit_contained_packet(packet.payload_mut(), header, data);
+                emit_contained_packet(packet, header, data);
             }
 
             Repr::TimeExceeded {
@@ -756,7 +782,7 @@ impl<'a> Repr<'a> {
                 packet.set_msg_type(Message::TimeExceeded);
                 packet.set_msg_code(reason.into());
 
-                emit_contained_packet(packet.payload_mut(), header, data);
+                emit_contained_packet(packet, header, data);
             }
 
             Repr::ParamProblem {
@@ -769,7 +795,7 @@ impl<'a> Repr<'a> {
                 packet.set_msg_code(reason.into());
                 packet.set_param_problem_ptr(pointer);
 
-                emit_contained_packet(packet.payload_mut(), header, data);
+                emit_contained_packet(packet, header, data);
             }
 
             Repr::EchoRequest {
@@ -819,8 +845,10 @@ impl<'a> Repr<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::wire::ip::test::{MOCK_IP_ADDR_1, MOCK_IP_ADDR_2};
     use crate::wire::{IpProtocol, Ipv6Address, Ipv6Repr};
+
+    const MOCK_IP_ADDR_1: Ipv6Address = Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 1);
+    const MOCK_IP_ADDR_2: Ipv6Address = Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 2);
 
     static ECHO_PACKET_BYTES: [u8; 12] = [
         0x80, 0x00, 0x19, 0xb3, 0x12, 0x34, 0xab, 0xcd, 0xaa, 0x00, 0x00, 0xff,
@@ -858,14 +886,8 @@ mod test {
         Repr::PktTooBig {
             mtu: 1500,
             header: Ipv6Repr {
-                src_addr: Ipv6Address([
-                    0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x01,
-                ]),
-                dst_addr: Ipv6Address([
-                    0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x02,
-                ]),
+                src_addr: Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 1),
+                dst_addr: Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 2),
                 next_header: IpProtocol::Udp,
                 payload_len: 12,
                 hop_limit: 0x40,
@@ -980,5 +1002,87 @@ mod test {
             &ChecksumCapabilities::default(),
         );
         assert_eq!(&*packet.into_inner(), &PKT_TOO_BIG_BYTES[..]);
+    }
+
+    #[test]
+    fn test_buffer_length_is_truncated_to_mtu() {
+        let repr = Repr::PktTooBig {
+            mtu: 1280,
+            header: Ipv6Repr {
+                src_addr: Ipv6Address::UNSPECIFIED,
+                dst_addr: Ipv6Address::UNSPECIFIED,
+                next_header: IpProtocol::Tcp,
+                hop_limit: 64,
+                payload_len: 1280,
+            },
+            data: &vec![0; 9999],
+        };
+        assert_eq!(repr.buffer_len(), 1280 - IPV6_HEADER_LEN);
+    }
+
+    #[test]
+    fn test_mtu_truncated_payload_roundtrip() {
+        let ip_packet_repr = Ipv6Repr {
+            src_addr: Ipv6Address::UNSPECIFIED,
+            dst_addr: Ipv6Address::UNSPECIFIED,
+            next_header: IpProtocol::Tcp,
+            hop_limit: 64,
+            payload_len: IPV6_MIN_MTU - IPV6_HEADER_LEN,
+        };
+        let mut ip_packet = Ipv6Packet::new_unchecked(vec![0; IPV6_MIN_MTU]);
+        ip_packet_repr.emit(&mut ip_packet);
+
+        let repr1 = Repr::PktTooBig {
+            mtu: IPV6_MIN_MTU as u32,
+            header: ip_packet_repr,
+            data: &ip_packet.as_ref()[IPV6_HEADER_LEN..],
+        };
+        // this is needed to make sure roundtrip gives the same value
+        // it is not needed for ensuring the correct bytes get emitted
+        let repr1 = Repr::PktTooBig {
+            mtu: IPV6_MIN_MTU as u32,
+            header: ip_packet_repr,
+            data: &ip_packet.as_ref()[IPV6_HEADER_LEN..repr1.buffer_len() - field::UNUSED.end],
+        };
+        let mut data = vec![0; MAX_ERROR_PACKET_LEN];
+        let mut packet = Packet::new_unchecked(&mut data);
+        repr1.emit(
+            &MOCK_IP_ADDR_1,
+            &MOCK_IP_ADDR_2,
+            &mut packet,
+            &ChecksumCapabilities::default(),
+        );
+
+        let packet = Packet::new_unchecked(&data);
+        let repr2 = Repr::parse(
+            &MOCK_IP_ADDR_1,
+            &MOCK_IP_ADDR_2,
+            &packet,
+            &ChecksumCapabilities::default(),
+        )
+        .unwrap();
+
+        assert_eq!(repr1, repr2);
+    }
+
+    #[test]
+    fn test_truncated_payload_ipv6_header_parse_fails() {
+        let repr = too_big_packet_repr();
+        let mut bytes = vec![0xa5; repr.buffer_len()];
+        let mut packet = Packet::new_unchecked(&mut bytes);
+        repr.emit(
+            &MOCK_IP_ADDR_1,
+            &MOCK_IP_ADDR_2,
+            &mut packet,
+            &ChecksumCapabilities::default(),
+        );
+        let packet = Packet::new_unchecked(&bytes[..field::HEADER_END + IPV6_HEADER_LEN - 1]);
+        assert!(Repr::parse(
+            &MOCK_IP_ADDR_1,
+            &MOCK_IP_ADDR_2,
+            &packet,
+            &ChecksumCapabilities::ignored(),
+        )
+        .is_err());
     }
 }

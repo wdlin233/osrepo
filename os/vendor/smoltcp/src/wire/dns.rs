@@ -7,9 +7,9 @@ use core::iter::Iterator;
 
 use super::{Error, Result};
 #[cfg(feature = "proto-ipv4")]
-use crate::wire::Ipv4Address;
+use crate::wire::{Ipv4Address, Ipv4AddressExt};
 #[cfg(feature = "proto-ipv6")]
-use crate::wire::Ipv6Address;
+use crate::wire::{Ipv6Address, Ipv6AddressExt};
 
 enum_with_unknown! {
     /// DNS OpCodes
@@ -190,7 +190,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
                     }
 
                     // RFC1035 says: "In this scheme, an entire domain name or a list of labels at
-                    //      the end of a domain name is replaced with a pointer to a ***prior*** occurance
+                    //      the end of a domain name is replaced with a pointer to a ***prior*** occurrence
                     //      of the same name.
                     //
                     // Is it unclear if this means the pointer MUST point backwards in the packet or not. Either way,
@@ -417,9 +417,9 @@ impl<'a> Repr<'a> {
     }
 
     /// Emit a high-level representation into a DNS packet.
-    pub fn emit<T: ?Sized>(&self, packet: &mut Packet<&mut T>)
+    pub fn emit<T>(&self, packet: &mut Packet<&mut T>)
     where
-        T: AsRef<[u8]> + AsMut<[u8]>,
+        T: AsRef<[u8]> + AsMut<[u8]> + ?Sized,
     {
         packet.set_transaction_id(self.transaction_id);
         packet.set_flags(self.flags);
@@ -779,8 +779,7 @@ mod test {
             },
         };
 
-        let mut buf = Vec::new();
-        buf.resize(repr.buffer_len(), 0);
+        let mut buf = vec![0; repr.buffer_len()];
         repr.emit(&mut Packet::new_unchecked(&mut buf));
 
         let want = &[

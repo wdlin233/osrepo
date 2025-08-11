@@ -57,12 +57,14 @@ impl std::error::Error for SendError {}
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum RecvError {
     Exhausted,
+    Truncated,
 }
 
 impl core::fmt::Display for RecvError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
             RecvError::Exhausted => write!(f, "exhausted"),
+            RecvError::Truncated => write!(f, "truncated"),
         }
     }
 }
@@ -273,9 +275,16 @@ impl<'a> Socket<'a> {
 
     /// Dequeue a packet, and copy the payload into the given slice.
     ///
+    /// **Note**: when the size of the provided buffer is smaller than the size of the payload,
+    /// the packet is dropped and a `RecvError::Truncated` error is returned.
+    ///
     /// See also [recv](#method.recv).
     pub fn recv_slice(&mut self, data: &mut [u8]) -> Result<usize, RecvError> {
         let buffer = self.recv()?;
+        if data.len() < buffer.len() {
+            return Err(RecvError::Truncated);
+        }
+
         let length = min(data.len(), buffer.len());
         data[..length].copy_from_slice(&buffer[..length]);
         Ok(length)
@@ -303,12 +312,29 @@ impl<'a> Socket<'a> {
     /// and return the amount of octets copied without removing the packet from the receive buffer.
     /// This function otherwise behaves identically to [recv_slice](#method.recv_slice).
     ///
+    /// **Note**: when the size of the provided buffer is smaller than the size of the payload,
+    /// no data is copied into the provided buffer and a `RecvError::Truncated` error is returned.
+    ///
     /// See also [peek](#method.peek).
     pub fn peek_slice(&mut self, data: &mut [u8]) -> Result<usize, RecvError> {
         let buffer = self.peek()?;
+        if data.len() < buffer.len() {
+            return Err(RecvError::Truncated);
+        }
+
         let length = min(data.len(), buffer.len());
         data[..length].copy_from_slice(&buffer[..length]);
         Ok(length)
+    }
+
+    /// Return the amount of octets queued in the transmit buffer.
+    pub fn send_queue(&self) -> usize {
+        self.tx_buffer.payload_bytes_count()
+    }
+
+    /// Return the amount of octets queued in the receive buffer.
+    pub fn recv_queue(&self) -> usize {
+        self.rx_buffer.payload_bytes_count()
     }
 
     pub(crate) fn accepts(&self, ip_repr: &IpRepr) -> bool {
@@ -445,6 +471,10 @@ impl<'a> Socket<'a> {
 
 #[cfg(test)]
 mod test {
+    use crate::phy::Medium;
+    use crate::tests::setup;
+    use rstest::*;
+
     use super::*;
     use crate::wire::IpRepr;
     #[cfg(feature = "proto-ipv4")]
@@ -474,8 +504,8 @@ mod test {
 
         pub const IP_PROTO: u8 = 63;
         pub const HEADER_REPR: IpRepr = IpRepr::Ipv4(Ipv4Repr {
-            src_addr: Ipv4Address([10, 0, 0, 1]),
-            dst_addr: Ipv4Address([10, 0, 0, 2]),
+            src_addr: Ipv4Address::new(10, 0, 0, 1),
+            dst_addr: Ipv4Address::new(10, 0, 0, 2),
             next_header: IpProtocol::Unknown(IP_PROTO),
             payload_len: 4,
             hop_limit: 64,
@@ -505,14 +535,8 @@ mod test {
 
         pub const IP_PROTO: u8 = 63;
         pub const HEADER_REPR: IpRepr = IpRepr::Ipv6(Ipv6Repr {
-            src_addr: Ipv6Address([
-                0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x01,
-            ]),
-            dst_addr: Ipv6Address([
-                0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x02,
-            ]),
+            src_addr: Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 1),
+            dst_addr: Ipv6Address::new(0xfe80, 0, 0, 0, 0, 0, 0, 2),
             next_header: IpProtocol::Unknown(IP_PROTO),
             payload_len: 4,
             hop_limit: 64,
@@ -539,10 +563,17 @@ mod test {
                     assert_eq!(socket.send_slice(&[0; 56][..]), Err(SendError::BufferFull));
                 }
 
-                #[test]
-                fn test_send_dispatch() {
+                #[rstest]
+                #[case::ip(Medium::Ip)]
+                #[cfg(feature = "medium-ip")]
+                #[case::ethernet(Medium::Ethernet)]
+                #[cfg(feature = "medium-ethernet")]
+                #[case::ieee802154(Medium::Ieee802154)]
+                #[cfg(feature = "medium-ieee802154")]
+                fn test_send_dispatch(#[case] medium: Medium) {
+                    let (mut iface, _, _) = setup(medium);
+                    let mut cx = iface.context();
                     let mut socket = $socket(buffer(0), buffer(1));
-                    let mut cx = Context::mock();
 
                     assert!(socket.can_send());
                     assert_eq!(
@@ -575,23 +606,36 @@ mod test {
                     assert!(socket.can_send());
                 }
 
-                #[test]
-                fn test_recv_truncated_slice() {
+                #[rstest]
+                #[case::ip(Medium::Ip)]
+                #[cfg(feature = "medium-ip")]
+                #[case::ethernet(Medium::Ethernet)]
+                #[cfg(feature = "medium-ethernet")]
+                #[case::ieee802154(Medium::Ieee802154)]
+                #[cfg(feature = "medium-ieee802154")]
+                fn test_recv_truncated_slice(#[case] medium: Medium) {
+                    let (mut iface, _, _) = setup(medium);
+                    let mut cx = iface.context();
                     let mut socket = $socket(buffer(1), buffer(0));
-                    let mut cx = Context::mock();
 
                     assert!(socket.accepts(&$hdr));
                     socket.process(&mut cx, &$hdr, &$payload);
 
                     let mut slice = [0; 4];
-                    assert_eq!(socket.recv_slice(&mut slice[..]), Ok(4));
-                    assert_eq!(&slice, &$packet[..slice.len()]);
+                    assert_eq!(socket.recv_slice(&mut slice[..]), Err(RecvError::Truncated));
                 }
 
-                #[test]
-                fn test_recv_truncated_packet() {
+                #[rstest]
+                #[case::ip(Medium::Ip)]
+                #[cfg(feature = "medium-ip")]
+                #[case::ethernet(Medium::Ethernet)]
+                #[cfg(feature = "medium-ethernet")]
+                #[case::ieee802154(Medium::Ieee802154)]
+                #[cfg(feature = "medium-ieee802154")]
+                fn test_recv_truncated_packet(#[case] medium: Medium) {
+                    let (mut iface, _, _) = setup(medium);
+                    let mut cx = iface.context();
                     let mut socket = $socket(buffer(1), buffer(0));
-                    let mut cx = Context::mock();
 
                     let mut buffer = vec![0; 128];
                     buffer[..$packet.len()].copy_from_slice(&$packet[..]);
@@ -600,19 +644,24 @@ mod test {
                     socket.process(&mut cx, &$hdr, &buffer);
                 }
 
-                #[test]
-                fn test_peek_truncated_slice() {
+                #[rstest]
+                #[case::ip(Medium::Ip)]
+                #[cfg(feature = "medium-ip")]
+                #[case::ethernet(Medium::Ethernet)]
+                #[cfg(feature = "medium-ethernet")]
+                #[case::ieee802154(Medium::Ieee802154)]
+                #[cfg(feature = "medium-ieee802154")]
+                fn test_peek_truncated_slice(#[case] medium: Medium) {
+                    let (mut iface, _, _) = setup(medium);
+                    let mut cx = iface.context();
                     let mut socket = $socket(buffer(1), buffer(0));
-                    let mut cx = Context::mock();
 
                     assert!(socket.accepts(&$hdr));
                     socket.process(&mut cx, &$hdr, &$payload);
 
                     let mut slice = [0; 4];
-                    assert_eq!(socket.peek_slice(&mut slice[..]), Ok(4));
-                    assert_eq!(&slice, &$packet[..slice.len()]);
-                    assert_eq!(socket.recv_slice(&mut slice[..]), Ok(4));
-                    assert_eq!(&slice, &$packet[..slice.len()]);
+                    assert_eq!(socket.peek_slice(&mut slice[..]), Err(RecvError::Truncated));
+                    assert_eq!(socket.recv_slice(&mut slice[..]), Err(RecvError::Truncated));
                     assert_eq!(socket.peek_slice(&mut slice[..]), Err(RecvError::Exhausted));
                 }
             }
@@ -637,159 +686,136 @@ mod test {
         ipv6_locals::PACKET_PAYLOAD
     );
 
-    #[test]
-    #[cfg(feature = "proto-ipv4")]
-    fn test_send_illegal() {
+    #[rstest]
+    #[case::ip(Medium::Ip)]
+    #[case::ethernet(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    #[case::ieee802154(Medium::Ieee802154)]
+    #[cfg(feature = "medium-ieee802154")]
+    fn test_send_illegal(#[case] medium: Medium) {
         #[cfg(feature = "proto-ipv4")]
         {
+            let (mut iface, _, _) = setup(medium);
+            let cx = iface.context();
             let mut socket = ipv4_locals::socket(buffer(0), buffer(2));
-            let mut cx = Context::mock();
 
             let mut wrong_version = ipv4_locals::PACKET_BYTES;
             Ipv4Packet::new_unchecked(&mut wrong_version).set_version(6);
 
             assert_eq!(socket.send_slice(&wrong_version[..]), Ok(()));
-            assert_eq!(
-                socket.dispatch(&mut cx, |_, _| unreachable!()),
-                Ok::<_, ()>(())
-            );
+            assert_eq!(socket.dispatch(cx, |_, _| unreachable!()), Ok::<_, ()>(()));
 
             let mut wrong_protocol = ipv4_locals::PACKET_BYTES;
             Ipv4Packet::new_unchecked(&mut wrong_protocol).set_next_header(IpProtocol::Tcp);
 
             assert_eq!(socket.send_slice(&wrong_protocol[..]), Ok(()));
-            assert_eq!(
-                socket.dispatch(&mut cx, |_, _| unreachable!()),
-                Ok::<_, ()>(())
-            );
+            assert_eq!(socket.dispatch(cx, |_, _| unreachable!()), Ok::<_, ()>(()));
         }
         #[cfg(feature = "proto-ipv6")]
         {
+            let (mut iface, _, _) = setup(medium);
+            let cx = iface.context();
             let mut socket = ipv6_locals::socket(buffer(0), buffer(2));
-            let mut cx = Context::mock();
 
             let mut wrong_version = ipv6_locals::PACKET_BYTES;
             Ipv6Packet::new_unchecked(&mut wrong_version[..]).set_version(4);
 
             assert_eq!(socket.send_slice(&wrong_version[..]), Ok(()));
-            assert_eq!(
-                socket.dispatch(&mut cx, |_, _| unreachable!()),
-                Ok::<_, ()>(())
-            );
+            assert_eq!(socket.dispatch(cx, |_, _| unreachable!()), Ok::<_, ()>(()));
 
             let mut wrong_protocol = ipv6_locals::PACKET_BYTES;
             Ipv6Packet::new_unchecked(&mut wrong_protocol[..]).set_next_header(IpProtocol::Tcp);
 
             assert_eq!(socket.send_slice(&wrong_protocol[..]), Ok(()));
-            assert_eq!(
-                socket.dispatch(&mut cx, |_, _| unreachable!()),
-                Ok::<_, ()>(())
-            );
+            assert_eq!(socket.dispatch(cx, |_, _| unreachable!()), Ok::<_, ()>(()));
         }
     }
 
-    #[test]
-    fn test_recv_process() {
+    #[rstest]
+    #[case::ip(Medium::Ip)]
+    #[cfg(feature = "medium-ip")]
+    #[case::ethernet(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    #[case::ieee802154(Medium::Ieee802154)]
+    #[cfg(feature = "medium-ieee802154")]
+    fn test_recv_process(#[case] medium: Medium) {
         #[cfg(feature = "proto-ipv4")]
         {
+            let (mut iface, _, _) = setup(medium);
+            let cx = iface.context();
             let mut socket = ipv4_locals::socket(buffer(1), buffer(0));
             assert!(!socket.can_recv());
-            let mut cx = Context::mock();
 
             let mut cksumd_packet = ipv4_locals::PACKET_BYTES;
             Ipv4Packet::new_unchecked(&mut cksumd_packet).fill_checksum();
 
             assert_eq!(socket.recv(), Err(RecvError::Exhausted));
             assert!(socket.accepts(&ipv4_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv4_locals::HEADER_REPR,
-                &ipv4_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv4_locals::HEADER_REPR, &ipv4_locals::PACKET_PAYLOAD);
             assert!(socket.can_recv());
 
             assert!(socket.accepts(&ipv4_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv4_locals::HEADER_REPR,
-                &ipv4_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv4_locals::HEADER_REPR, &ipv4_locals::PACKET_PAYLOAD);
             assert_eq!(socket.recv(), Ok(&cksumd_packet[..]));
             assert!(!socket.can_recv());
         }
         #[cfg(feature = "proto-ipv6")]
         {
+            let (mut iface, _, _) = setup(medium);
+            let cx = iface.context();
             let mut socket = ipv6_locals::socket(buffer(1), buffer(0));
             assert!(!socket.can_recv());
-            let mut cx = Context::mock();
 
             assert_eq!(socket.recv(), Err(RecvError::Exhausted));
             assert!(socket.accepts(&ipv6_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv6_locals::HEADER_REPR,
-                &ipv6_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv6_locals::HEADER_REPR, &ipv6_locals::PACKET_PAYLOAD);
             assert!(socket.can_recv());
 
             assert!(socket.accepts(&ipv6_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv6_locals::HEADER_REPR,
-                &ipv6_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv6_locals::HEADER_REPR, &ipv6_locals::PACKET_PAYLOAD);
             assert_eq!(socket.recv(), Ok(&ipv6_locals::PACKET_BYTES[..]));
             assert!(!socket.can_recv());
         }
     }
 
-    #[test]
-    fn test_peek_process() {
+    #[rstest]
+    #[case::ip(Medium::Ip)]
+    #[case::ethernet(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    #[case::ieee802154(Medium::Ieee802154)]
+    #[cfg(feature = "medium-ieee802154")]
+    fn test_peek_process(#[case] medium: Medium) {
         #[cfg(feature = "proto-ipv4")]
         {
+            let (mut iface, _, _) = setup(medium);
+            let cx = iface.context();
             let mut socket = ipv4_locals::socket(buffer(1), buffer(0));
-            let mut cx = Context::mock();
 
             let mut cksumd_packet = ipv4_locals::PACKET_BYTES;
             Ipv4Packet::new_unchecked(&mut cksumd_packet).fill_checksum();
 
             assert_eq!(socket.peek(), Err(RecvError::Exhausted));
             assert!(socket.accepts(&ipv4_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv4_locals::HEADER_REPR,
-                &ipv4_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv4_locals::HEADER_REPR, &ipv4_locals::PACKET_PAYLOAD);
 
             assert!(socket.accepts(&ipv4_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv4_locals::HEADER_REPR,
-                &ipv4_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv4_locals::HEADER_REPR, &ipv4_locals::PACKET_PAYLOAD);
             assert_eq!(socket.peek(), Ok(&cksumd_packet[..]));
             assert_eq!(socket.recv(), Ok(&cksumd_packet[..]));
             assert_eq!(socket.peek(), Err(RecvError::Exhausted));
         }
         #[cfg(feature = "proto-ipv6")]
         {
+            let (mut iface, _, _) = setup(medium);
+            let cx = iface.context();
             let mut socket = ipv6_locals::socket(buffer(1), buffer(0));
-            let mut cx = Context::mock();
 
             assert_eq!(socket.peek(), Err(RecvError::Exhausted));
             assert!(socket.accepts(&ipv6_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv6_locals::HEADER_REPR,
-                &ipv6_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv6_locals::HEADER_REPR, &ipv6_locals::PACKET_PAYLOAD);
 
             assert!(socket.accepts(&ipv6_locals::HEADER_REPR));
-            socket.process(
-                &mut cx,
-                &ipv6_locals::HEADER_REPR,
-                &ipv6_locals::PACKET_PAYLOAD,
-            );
+            socket.process(cx, &ipv6_locals::HEADER_REPR, &ipv6_locals::PACKET_PAYLOAD);
             assert_eq!(socket.peek(), Ok(&ipv6_locals::PACKET_BYTES[..]));
             assert_eq!(socket.recv(), Ok(&ipv6_locals::PACKET_BYTES[..]));
             assert_eq!(socket.peek(), Err(RecvError::Exhausted));

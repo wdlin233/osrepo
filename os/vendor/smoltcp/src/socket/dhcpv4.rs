@@ -5,8 +5,9 @@ use crate::iface::Context;
 use crate::time::{Duration, Instant};
 use crate::wire::dhcpv4::field as dhcpv4_field;
 use crate::wire::{
-    DhcpMessageType, DhcpPacket, DhcpRepr, IpAddress, IpProtocol, Ipv4Address, Ipv4Cidr, Ipv4Repr,
-    UdpRepr, DHCP_CLIENT_PORT, DHCP_MAX_DNS_SERVER_COUNT, DHCP_SERVER_PORT, UDP_HEADER_LEN,
+    DhcpMessageType, DhcpPacket, DhcpRepr, IpAddress, IpProtocol, Ipv4Address, Ipv4AddressExt,
+    Ipv4Cidr, Ipv4Repr, UdpRepr, DHCP_CLIENT_PORT, DHCP_MAX_DNS_SERVER_COUNT, DHCP_SERVER_PORT,
+    UDP_HEADER_LEN,
 };
 use crate::wire::{DhcpOption, HardwareAddress};
 use heapless::Vec;
@@ -114,12 +115,17 @@ enum ClientState {
 /// Timeout and retry configuration.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub struct RetryConfig {
     pub discover_timeout: Duration,
     /// The REQUEST timeout doubles every 2 tries.
     pub initial_request_timeout: Duration,
     pub request_retries: u16,
     pub min_renew_timeout: Duration,
+    /// An upper bound on how long to wait between retrying a renew or rebind.
+    ///
+    /// Set this to [`Duration::MAX`] if you don't want to impose an upper bound.
+    pub max_renew_timeout: Duration,
 }
 
 impl Default for RetryConfig {
@@ -129,12 +135,13 @@ impl Default for RetryConfig {
             initial_request_timeout: Duration::from_secs(5),
             request_retries: 5,
             min_renew_timeout: Duration::from_secs(60),
+            max_renew_timeout: Duration::MAX,
         }
     }
 }
 
 /// Return value for the `Dhcpv4Socket::poll` function
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Event<'a> {
     /// Configuration has been lost (for example, the lease has expired)
@@ -212,6 +219,11 @@ impl<'a> Socket<'a> {
     /// Set the retry/timeouts configuration.
     pub fn set_retry_config(&mut self, config: RetryConfig) {
         self.retry_config = config;
+    }
+
+    /// Gets the current retry/timeouts configuration
+    pub fn get_retry_config(&self) -> RetryConfig {
+        self.retry_config
     }
 
     /// Set the outgoing options.
@@ -354,7 +366,7 @@ impl<'a> Socket<'a> {
 
         match (&mut self.state, dhcp_repr.message_type) {
             (ClientState::Discovering(_state), DhcpMessageType::Offer) => {
-                if !dhcp_repr.your_ip.is_unicast() {
+                if !dhcp_repr.your_ip.x_is_unicast() {
                     net_debug!("DHCP ignoring OFFER because your_ip is not unicast");
                     return;
                 }
@@ -450,7 +462,7 @@ impl<'a> Socket<'a> {
             }
         };
 
-        if !dhcp_repr.your_ip.is_unicast() {
+        if !dhcp_repr.your_ip.x_is_unicast() {
             net_debug!("DHCP ignoring ACK because your_ip is not unicast");
             return None;
         }
@@ -471,7 +483,7 @@ impl<'a> Socket<'a> {
             .dns_servers
             .iter()
             .flatten()
-            .filter(|s| s.is_unicast())
+            .filter(|s| s.x_is_unicast())
             .for_each(|a| {
                 // This will never produce an error, as both the arrays and `dns_servers`
                 // have length DHCP_MAX_DNS_SERVER_COUNT
@@ -551,7 +563,7 @@ impl<'a> Socket<'a> {
         const MAX_IPV4_HEADER_LEN: usize = 60;
 
         // We don't directly modify self.transaction_id because sending the packet
-        // may fail. We only want to update state after succesfully sending.
+        // may fail. We only want to update state after successfully sending.
         let next_transaction_id = Self::random_transaction_id(cx);
 
         let mut dhcp_repr = DhcpRepr {
@@ -682,14 +694,16 @@ impl<'a> Socket<'a> {
                         + self
                             .retry_config
                             .min_renew_timeout
-                            .max((state.expires_at - now) / 2);
+                            .max((state.expires_at - now) / 2)
+                            .min(self.retry_config.max_renew_timeout);
                 } else {
                     state.renew_at = now
                         + self
                             .retry_config
                             .min_renew_timeout
                             .max((state.rebind_at - now) / 2)
-                            .min(state.rebind_at - now);
+                            .min(state.rebind_at - now)
+                            .min(self.retry_config.max_renew_timeout);
                 }
 
                 self.transaction_id = next_transaction_id;
@@ -867,14 +881,14 @@ mod test {
 
     const TXID: u32 = 0x12345678;
 
-    const MY_IP: Ipv4Address = Ipv4Address([192, 168, 1, 42]);
-    const SERVER_IP: Ipv4Address = Ipv4Address([192, 168, 1, 1]);
-    const DNS_IP_1: Ipv4Address = Ipv4Address([1, 1, 1, 1]);
-    const DNS_IP_2: Ipv4Address = Ipv4Address([1, 1, 1, 2]);
-    const DNS_IP_3: Ipv4Address = Ipv4Address([1, 1, 1, 3]);
+    const MY_IP: Ipv4Address = Ipv4Address::new(192, 168, 1, 42);
+    const SERVER_IP: Ipv4Address = Ipv4Address::new(192, 168, 1, 1);
+    const DNS_IP_1: Ipv4Address = Ipv4Address::new(1, 1, 1, 1);
+    const DNS_IP_2: Ipv4Address = Ipv4Address::new(1, 1, 1, 2);
+    const DNS_IP_3: Ipv4Address = Ipv4Address::new(1, 1, 1, 3);
     const DNS_IPS: &[Ipv4Address] = &[DNS_IP_1, DNS_IP_2, DNS_IP_3];
 
-    const MASK_24: Ipv4Address = Ipv4Address([255, 255, 255, 0]);
+    const MASK_24: Ipv4Address = Ipv4Address::new(255, 255, 255, 0);
 
     const MY_MAC: EthernetAddress = EthernetAddress([0x02, 0x02, 0x02, 0x02, 0x02, 0x02]);
 
@@ -1048,28 +1062,34 @@ mod test {
     // =========================================================================================//
     // Tests
 
-    fn socket() -> TestSocket {
+    use crate::phy::Medium;
+    use crate::tests::setup;
+    use rstest::*;
+
+    fn socket(medium: Medium) -> TestSocket {
+        let (iface, _, _) = setup(medium);
         let mut s = Socket::new();
         assert_eq!(s.poll(), Some(Event::Deconfigured));
         TestSocket {
             socket: s,
-            cx: Context::mock(),
+            cx: iface.inner,
         }
     }
 
-    fn socket_different_port() -> TestSocket {
+    fn socket_different_port(medium: Medium) -> TestSocket {
+        let (iface, _, _) = setup(medium);
         let mut s = Socket::new();
         s.set_ports(DIFFERENT_SERVER_PORT, DIFFERENT_CLIENT_PORT);
 
         assert_eq!(s.poll(), Some(Event::Deconfigured));
         TestSocket {
             socket: s,
-            cx: Context::mock(),
+            cx: iface.inner,
         }
     }
 
-    fn socket_bound() -> TestSocket {
-        let mut s = socket();
+    fn socket_bound(medium: Medium) -> TestSocket {
+        let mut s = socket(medium);
         s.state = ClientState::Renewing(RenewState {
             config: Config {
                 server: ServerInfo {
@@ -1090,9 +1110,11 @@ mod test {
         s
     }
 
-    #[test]
-    fn test_bind() {
-        let mut s = socket();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_bind(#[case] medium: Medium) {
+        let mut s = socket(medium);
 
         recv!(s, [(IP_BROADCAST, UDP_SEND, DHCP_DISCOVER)]);
         assert_eq!(s.poll(), None);
@@ -1126,9 +1148,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_bind_different_ports() {
-        let mut s = socket_different_port();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_bind_different_ports(#[case] medium: Medium) {
+        let mut s = socket_different_port(medium);
 
         recv!(s, [(IP_BROADCAST, UDP_SEND_DIFFERENT_PORT, DHCP_DISCOVER)]);
         assert_eq!(s.poll(), None);
@@ -1162,9 +1186,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_discover_retransmit() {
-        let mut s = socket();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_discover_retransmit(#[case] medium: Medium) {
+        let mut s = socket(medium);
 
         recv!(s, time 0, [(IP_BROADCAST, UDP_SEND, DHCP_DISCOVER)]);
         recv!(s, time 1_000, []);
@@ -1177,9 +1203,11 @@ mod test {
         recv!(s, time 20_000, [(IP_BROADCAST, UDP_SEND, DHCP_REQUEST)]);
     }
 
-    #[test]
-    fn test_request_retransmit() {
-        let mut s = socket();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_request_retransmit(#[case] medium: Medium) {
+        let mut s = socket(medium);
 
         recv!(s, time 0, [(IP_BROADCAST, UDP_SEND, DHCP_DISCOVER)]);
         send!(s, time 0, (IP_RECV, UDP_RECV, dhcp_offer()));
@@ -1203,9 +1231,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_request_timeout() {
-        let mut s = socket();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_request_timeout(#[case] medium: Medium) {
+        let mut s = socket(medium);
 
         recv!(s, time 0, [(IP_BROADCAST, UDP_SEND, DHCP_DISCOVER)]);
         send!(s, time 0, (IP_RECV, UDP_RECV, dhcp_offer()));
@@ -1224,9 +1254,11 @@ mod test {
         recv!(s, time 60_000, [(IP_BROADCAST, UDP_SEND, DHCP_REQUEST)]);
     }
 
-    #[test]
-    fn test_request_nak() {
-        let mut s = socket();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_request_nak(#[case] medium: Medium) {
+        let mut s = socket(medium);
 
         recv!(s, time 0, [(IP_BROADCAST, UDP_SEND, DHCP_DISCOVER)]);
         send!(s, time 0, (IP_RECV, UDP_RECV, dhcp_offer()));
@@ -1235,9 +1267,11 @@ mod test {
         recv!(s, time 0, [(IP_BROADCAST, UDP_SEND, DHCP_DISCOVER)]);
     }
 
-    #[test]
-    fn test_renew() {
-        let mut s = socket_bound();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_renew(#[case] medium: Medium) {
+        let mut s = socket_bound(medium);
 
         recv!(s, []);
         assert_eq!(s.poll(), None);
@@ -1266,9 +1300,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_renew_rebind_retransmit() {
-        let mut s = socket_bound();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_renew_rebind_retransmit(#[case] medium: Medium) {
+        let mut s = socket_bound(medium);
 
         recv!(s, []);
         // First renew attempt at T1
@@ -1306,9 +1342,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_renew_rebind_timeout() {
-        let mut s = socket_bound();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_renew_rebind_timeout(#[case] medium: Medium) {
+        let mut s = socket_bound(medium);
 
         recv!(s, []);
         // First renew attempt at T1
@@ -1334,9 +1372,44 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_renew_nak() {
-        let mut s = socket_bound();
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_min_max_renew_timeout(#[case] medium: Medium) {
+        let mut s = socket_bound(medium);
+        // Set a minimum of 45s and a maximum of 120s
+        let config = RetryConfig {
+            max_renew_timeout: Duration::from_secs(120),
+            min_renew_timeout: Duration::from_secs(45),
+            ..s.get_retry_config()
+        };
+        s.set_retry_config(config);
+        recv!(s, []);
+        // First renew attempt at T1
+        recv!(s, time 499_999, []);
+        recv!(s, time 500_000, [(IP_SEND, UDP_SEND, DHCP_RENEW)]);
+        // Next renew attempt 120s after T1 because we hit the max
+        recv!(s, time 619_999, []);
+        recv!(s, time 620_000, [(IP_SEND, UDP_SEND, DHCP_RENEW)]);
+        // Next renew attempt 120s after previous because we hit the max again
+        recv!(s, time 739_999, []);
+        recv!(s, time 740_000, [(IP_SEND, UDP_SEND, DHCP_RENEW)]);
+        // Next renew attempt half way to T2
+        recv!(s, time 807_499, []);
+        recv!(s, time 807_500, [(IP_SEND, UDP_SEND, DHCP_RENEW)]);
+        // Next renew attempt 45s after previous because we hit the min
+        recv!(s, time 852_499, []);
+        recv!(s, time 852_500, [(IP_SEND, UDP_SEND, DHCP_RENEW)]);
+        // Next is a rebind, because the min puts us after T2
+        recv!(s, time 874_999, []);
+        recv!(s, time 875_000, [(IP_BROADCAST_ADDRESSED, UDP_SEND, DHCP_REBIND)]);
+    }
+
+    #[rstest]
+    #[case::ip(Medium::Ethernet)]
+    #[cfg(feature = "medium-ethernet")]
+    fn test_renew_nak(#[case] medium: Medium) {
+        let mut s = socket_bound(medium);
 
         recv!(s, time 500_000, [(IP_SEND, UDP_SEND, DHCP_RENEW)]);
         send!(s, time 500_000, (IP_SERVER_BROADCAST, UDP_RECV, DHCP_NAK));

@@ -1,13 +1,21 @@
-use core::{borrow::Borrow, fmt, iter::FromIterator, mem, num::NonZeroU32, ops, slice};
+use core::{
+    borrow::Borrow,
+    fmt,
+    hash::{BuildHasher, Hash, Hasher as _},
+    iter::FromIterator,
+    mem,
+    num::NonZeroU32,
+    ops, slice,
+};
 
-use hash32::{BuildHasher, BuildHasherDefault, FnvHasher, Hash, Hasher};
+use hash32::{BuildHasherDefault, FnvHasher};
 
 use crate::Vec;
 
-/// A [`heapless::IndexMap`](./struct.IndexMap.html) using the default FNV hasher
+/// A [`IndexMap`] using the default FNV hasher
 ///
 /// A list of all Methods and Traits available for `FnvIndexMap` can be found in
-/// the [`heapless::IndexMap`](./struct.IndexMap.html) documentation.
+/// the [`IndexMap`] documentation.
 ///
 /// # Examples
 /// ```
@@ -201,8 +209,9 @@ where
                     // robin hood: steal the spot if it's better for us
                     let index = self.entries.len();
                     unsafe { self.entries.push_unchecked(Bucket { hash, key, value }) };
+                    Self::insert_phase_2(&mut self.indices, probe, Pos::new(index, hash));
                     return Insert::Success(Inserted {
-                        index: self.insert_phase_2(probe, Pos::new(index, hash)),
+                        index,
                         old_value: None,
                     });
                 } else if entry_hash == hash && unsafe { self.entries.get_unchecked(i).key == key }
@@ -233,9 +242,9 @@ where
     }
 
     // phase 2 is post-insert where we forward-shift `Pos` in the indices.
-    fn insert_phase_2(&mut self, mut probe: usize, mut old_pos: Pos) -> usize {
-        probe_loop!(probe < self.indices.len(), {
-            let pos = unsafe { self.indices.get_unchecked_mut(probe) };
+    fn insert_phase_2(indices: &mut [Option<Pos>; N], mut probe: usize, mut old_pos: Pos) -> usize {
+        probe_loop!(probe < indices.len(), {
+            let pos = unsafe { indices.get_unchecked_mut(probe) };
 
             let mut is_none = true; // work around lack of NLL
             if let Some(pos) = pos.as_mut() {
@@ -279,6 +288,50 @@ where
         (entry.key, entry.value)
     }
 
+    fn retain_in_order<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&mut K, &mut V) -> bool,
+    {
+        const INIT: Option<Pos> = None;
+
+        self.entries
+            .retain_mut(|entry| keep(&mut entry.key, &mut entry.value));
+
+        if self.entries.len() < self.indices.len() {
+            for index in self.indices.iter_mut() {
+                *index = INIT;
+            }
+
+            for (index, entry) in self.entries.iter().enumerate() {
+                let mut probe = entry.hash.desired_pos(Self::mask());
+                let mut dist = 0;
+
+                probe_loop!(probe < self.indices.len(), {
+                    let pos = &mut self.indices[probe];
+
+                    if let Some(pos) = *pos {
+                        let entry_hash = pos.hash();
+
+                        // robin hood: steal the spot if it's better for us
+                        let their_dist = entry_hash.probe_distance(Self::mask(), probe);
+                        if their_dist < dist {
+                            Self::insert_phase_2(
+                                &mut self.indices,
+                                probe,
+                                Pos::new(index, entry.hash),
+                            );
+                            break;
+                        }
+                    } else {
+                        *pos = Some(Pos::new(index, entry.hash));
+                        break;
+                    }
+                    dist += 1;
+                });
+            }
+        }
+    }
+
     fn backward_shift_after_removal(&mut self, probe_at_remove: usize) {
         // backward shift deletion in self.indices
         // after probe, shift all non-ideally placed indices backward
@@ -305,7 +358,7 @@ where
 
 impl<K, V, const N: usize> Clone for CoreMap<K, V, N>
 where
-    K: Eq + Hash + Clone,
+    K: Clone,
     V: Clone,
 {
     fn clone(&self) -> Self {
@@ -425,15 +478,16 @@ where
     }
 }
 
-/// Fixed capacity [`IndexMap`](https://docs.rs/indexmap/1/indexmap/map/struct.IndexMap.html)
+/// Fixed capacity [`IndexMap`](https://docs.rs/indexmap/2/indexmap/map/struct.IndexMap.html)
 ///
 /// Note that you cannot use `IndexMap` directly, since it is generic around the hashing algorithm
-/// in use. Pick a concrete instantiation like [`FnvIndexMap`](./type.FnvIndexMap.html) instead
+/// in use. Pick a concrete instantiation like [`FnvIndexMap`] instead
 /// or create your own.
 ///
 /// Note that the capacity of the `IndexMap` must be a power of 2.
 ///
 /// # Examples
+///
 /// Since `IndexMap` cannot be used directly, we're using its `FnvIndexMap` instantiation
 /// for this example.
 ///
@@ -491,18 +545,13 @@ impl<K, V, S, const N: usize> IndexMap<K, V, BuildHasherDefault<S>, N> {
     }
 }
 
-impl<K, V, S, const N: usize> IndexMap<K, V, S, N>
-where
-    K: Eq + Hash,
-    S: BuildHasher,
-{
-    /* Public API */
+impl<K, V, S, const N: usize> IndexMap<K, V, S, N> {
     /// Returns the number of elements the map can hold
     pub fn capacity(&self) -> usize {
         N
     }
 
-    /// Return an iterator over the keys of the map, in their order
+    /// Return an iterator over the keys of the map, in insertion order
     ///
     /// ```
     /// use heapless::FnvIndexMap;
@@ -516,11 +565,13 @@ where
     ///     println!("{}", key);
     /// }
     /// ```
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.core.entries.iter().map(|bucket| &bucket.key)
+    pub fn keys(&self) -> Keys<'_, K, V> {
+        Keys {
+            iter: self.core.entries.iter(),
+        }
     }
 
-    /// Return an iterator over the values of the map, in their order
+    /// Return an iterator over the values of the map, in insertion order
     ///
     /// ```
     /// use heapless::FnvIndexMap;
@@ -534,11 +585,13 @@ where
     ///     println!("{}", val);
     /// }
     /// ```
-    pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.core.entries.iter().map(|bucket| &bucket.value)
+    pub fn values(&self) -> Values<'_, K, V> {
+        Values {
+            iter: self.core.entries.iter(),
+        }
     }
 
-    /// Return an iterator over mutable references to the the values of the map, in their order
+    /// Return an iterator over mutable references to the the values of the map, in insertion order
     ///
     /// ```
     /// use heapless::FnvIndexMap;
@@ -556,11 +609,13 @@ where
     ///     println!("{}", val);
     /// }
     /// ```
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
-        self.core.entries.iter_mut().map(|bucket| &mut bucket.value)
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
+        ValuesMut {
+            iter: self.core.entries.iter_mut(),
+        }
     }
 
-    /// Return an iterator over the key-value pairs of the map, in their order
+    /// Return an iterator over the key-value pairs of the map, in insertion order
     ///
     /// ```
     /// use heapless::FnvIndexMap;
@@ -580,7 +635,7 @@ where
         }
     }
 
-    /// Return an iterator over the key-value pairs of the map, in their order
+    /// Return an iterator over the key-value pairs of the map, in insertion order
     ///
     /// ```
     /// use heapless::FnvIndexMap;
@@ -644,39 +699,6 @@ where
             .map(|bucket| (&bucket.key, &mut bucket.value))
     }
 
-    /// Returns an entry for the corresponding key
-    /// ```
-    /// use heapless::FnvIndexMap;
-    /// use heapless::Entry;
-    /// let mut map = FnvIndexMap::<_, _, 16>::new();
-    /// if let Entry::Vacant(v) = map.entry("a") {
-    ///     v.insert(1).unwrap();
-    /// }
-    /// if let Entry::Occupied(mut o) = map.entry("a") {
-    ///     println!("found {}", *o.get()); // Prints 1
-    ///     o.insert(2);
-    /// }
-    /// // Prints 2
-    /// println!("val: {}", *map.get("a").unwrap());
-    /// ```
-    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, N> {
-        let hash_val = hash_with(&key, &self.build_hasher);
-        if let Some((probe, pos)) = self.core.find(hash_val, &key) {
-            Entry::Occupied(OccupiedEntry {
-                key,
-                probe,
-                pos,
-                core: &mut self.core,
-            })
-        } else {
-            Entry::Vacant(VacantEntry {
-                key,
-                hash_val,
-                core: &mut self.core,
-            })
-        }
-    }
-
     /// Return the number of key-value pairs in the map.
     ///
     /// Computes in **O(1)** time.
@@ -725,6 +747,46 @@ where
         self.core.entries.clear();
         for pos in self.core.indices.iter_mut() {
             *pos = None;
+        }
+    }
+}
+
+impl<K, V, S, const N: usize> IndexMap<K, V, S, N>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    /* Public API */
+    /// Returns an entry for the corresponding key
+    /// ```
+    /// use heapless::FnvIndexMap;
+    /// use heapless::Entry;
+    /// let mut map = FnvIndexMap::<_, _, 16>::new();
+    /// if let Entry::Vacant(v) = map.entry("a") {
+    ///     v.insert(1).unwrap();
+    /// }
+    /// if let Entry::Occupied(mut o) = map.entry("a") {
+    ///     println!("found {}", *o.get()); // Prints 1
+    ///     o.insert(2);
+    /// }
+    /// // Prints 2
+    /// println!("val: {}", *map.get("a").unwrap());
+    /// ```
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, N> {
+        let hash_val = hash_with(&key, &self.build_hasher);
+        if let Some((probe, pos)) = self.core.find(hash_val, &key) {
+            Entry::Occupied(OccupiedEntry {
+                key,
+                probe,
+                pos,
+                core: &mut self.core,
+            })
+        } else {
+            Entry::Vacant(VacantEntry {
+                key,
+                hash_val,
+                core: &mut self.core,
+            })
         }
     }
 
@@ -843,7 +905,7 @@ where
         }
     }
 
-    /// Same as [`swap_remove`](struct.IndexMap.html#method.swap_remove)
+    /// Same as [`swap_remove`](Self::swap_remove)
     ///
     /// Computes in **O(1)** time (average).
     ///
@@ -880,6 +942,16 @@ where
     {
         self.find(key)
             .map(|(probe, found)| self.core.remove_found(probe, found).1)
+    }
+
+    /// Retains only the elements specified by the predicate.
+    ///
+    /// In other words, remove all pairs `(k, v)` for which `f(&k, &mut v)` returns `false`.
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&K, &mut V) -> bool,
+    {
+        self.core.retain_in_order(move |k, v| f(k, v));
     }
 
     /* Private API */
@@ -923,7 +995,7 @@ where
 
 impl<K, V, S, const N: usize> Clone for IndexMap<K, V, S, N>
 where
-    K: Eq + Hash + Clone,
+    K: Clone,
     V: Clone,
     S: Clone,
 {
@@ -937,9 +1009,8 @@ where
 
 impl<K, V, S, const N: usize> fmt::Debug for IndexMap<K, V, S, N>
 where
-    K: Eq + Hash + fmt::Debug,
+    K: fmt::Debug,
     V: fmt::Debug,
-    S: BuildHasher,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
@@ -948,8 +1019,7 @@ where
 
 impl<K, V, S, const N: usize> Default for IndexMap<K, V, S, N>
 where
-    K: Eq + Hash,
-    S: BuildHasher + Default,
+    S: Default,
 {
     fn default() -> Self {
         // Const assert
@@ -1044,11 +1114,7 @@ impl<K, V, const N: usize> Iterator for IntoIter<K, V, N> {
     }
 }
 
-impl<K, V, S, const N: usize> IntoIterator for IndexMap<K, V, S, N>
-where
-    K: Eq + Hash,
-    S: BuildHasher,
-{
+impl<K, V, S, const N: usize> IntoIterator for IndexMap<K, V, S, N> {
     type Item = (K, V);
     type IntoIter = IntoIter<K, V, N>;
 
@@ -1059,11 +1125,7 @@ where
     }
 }
 
-impl<'a, K, V, S, const N: usize> IntoIterator for &'a IndexMap<K, V, S, N>
-where
-    K: Eq + Hash,
-    S: BuildHasher,
-{
+impl<'a, K, V, S, const N: usize> IntoIterator for &'a IndexMap<K, V, S, N> {
     type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;
 
@@ -1072,11 +1134,7 @@ where
     }
 }
 
-impl<'a, K, V, S, const N: usize> IntoIterator for &'a mut IndexMap<K, V, S, N>
-where
-    K: Eq + Hash,
-    S: BuildHasher,
-{
+impl<'a, K, V, S, const N: usize> IntoIterator for &'a mut IndexMap<K, V, S, N> {
     type Item = (&'a K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
 
@@ -1085,6 +1143,10 @@ where
     }
 }
 
+/// An iterator over the items of a [`IndexMap`].
+///
+/// This `struct` is created by the [`iter`](IndexMap::iter) method on [`IndexMap`]. See its
+/// documentation for more.
 pub struct Iter<'a, K, V> {
     iter: slice::Iter<'a, Bucket<K, V>>,
 }
@@ -1105,6 +1167,10 @@ impl<'a, K, V> Clone for Iter<'a, K, V> {
     }
 }
 
+/// A mutable iterator over the items of a [`IndexMap`].
+///
+/// This `struct` is created by the [`iter_mut`](IndexMap::iter_mut) method on [`IndexMap`]. See its
+/// documentation for more.
 pub struct IterMut<'a, K, V> {
     iter: slice::IterMut<'a, Bucket<K, V>>,
 }
@@ -1116,6 +1182,54 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
         self.iter
             .next()
             .map(|bucket| (&bucket.key, &mut bucket.value))
+    }
+}
+
+/// An iterator over the keys of a [`IndexMap`].
+///
+/// This `struct` is created by the [`keys`](IndexMap::keys) method on [`IndexMap`]. See its
+/// documentation for more.
+pub struct Keys<'a, K, V> {
+    iter: slice::Iter<'a, Bucket<K, V>>,
+}
+
+impl<'a, K, V> Iterator for Keys<'a, K, V> {
+    type Item = &'a K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|bucket| &bucket.key)
+    }
+}
+
+/// An iterator over the values of a [`IndexMap`].
+///
+/// This `struct` is created by the [`values`](IndexMap::values) method on [`IndexMap`]. See its
+/// documentation for more.
+pub struct Values<'a, K, V> {
+    iter: slice::Iter<'a, Bucket<K, V>>,
+}
+
+impl<'a, K, V> Iterator for Values<'a, K, V> {
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|bucket| &bucket.value)
+    }
+}
+
+/// A mutable iterator over the values of a [`IndexMap`].
+///
+/// This `struct` is created by the [`values_mut`](IndexMap::values_mut) method on [`IndexMap`]. See its
+/// documentation for more.
+pub struct ValuesMut<'a, K, V> {
+    iter: slice::IterMut<'a, Bucket<K, V>>,
+}
+
+impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
+    type Item = &'a mut V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|bucket| &mut bucket.value)
     }
 }
 
@@ -1200,7 +1314,12 @@ mod tests {
         assert_eq!(a.get("k1"), a.get("k2"));
     }
 
+    // tests that use this constant take too long to run under miri, specially on CI, with a map of
+    // this size so make the map smaller when using miri
+    #[cfg(not(miri))]
     const MAP_SLOTS: usize = 4096;
+    #[cfg(miri)]
+    const MAP_SLOTS: usize = 64;
     fn almost_filled_map() -> FnvIndexMap<usize, usize, MAP_SLOTS> {
         let mut almost_filled = FnvIndexMap::new();
         for i in 1..MAP_SLOTS {
@@ -1251,7 +1370,7 @@ mod tests {
                 panic!("Entry found when empty");
             }
             Entry::Vacant(v) => {
-                v.insert(value).unwrap();
+                assert_eq!(value, *v.insert(value).unwrap());
             }
         };
         assert_eq!(value, *src.get(&key).unwrap())
@@ -1316,6 +1435,33 @@ mod tests {
     }
 
     #[test]
+    fn retain() {
+        let mut none = almost_filled_map();
+        none.retain(|_, _| false);
+        assert!(none.is_empty());
+
+        let mut all = almost_filled_map();
+        all.retain(|_, _| true);
+        assert_eq!(all.len(), MAP_SLOTS - 1);
+
+        let mut even = almost_filled_map();
+        even.retain(|_, &mut v| v % 2 == 0);
+        assert_eq!(even.len(), (MAP_SLOTS - 1) / 2);
+        for &v in even.values() {
+            assert_eq!(v % 2, 0);
+        }
+
+        let mut odd = almost_filled_map();
+        odd.retain(|_, &mut v| v % 2 != 0);
+        assert_eq!(odd.len(), MAP_SLOTS / 2);
+        for &v in odd.values() {
+            assert_ne!(v % 2, 0);
+        }
+        assert_eq!(odd.insert(2, 2), Ok(None));
+        assert_eq!(odd.len(), (MAP_SLOTS / 2) + 1);
+    }
+
+    #[test]
     fn entry_roll_through_all() {
         let mut src: FnvIndexMap<usize, usize, MAP_SLOTS> = FnvIndexMap::new();
         for i in 0..MAP_SLOTS {
@@ -1324,7 +1470,7 @@ mod tests {
                     panic!("Entry found before insert");
                 }
                 Entry::Vacant(v) => {
-                    v.insert(i).unwrap();
+                    assert_eq!(i, *v.insert(i).unwrap());
                 }
             }
         }
@@ -1377,5 +1523,33 @@ mod tests {
 
         assert_eq!(Some((&0, &1)), map.first());
         assert_eq!(Some((&1, &2)), map.last());
+    }
+
+    #[test]
+    fn keys_iter() {
+        let map = almost_filled_map();
+        for (&key, i) in map.keys().zip(1..MAP_SLOTS) {
+            assert_eq!(key, i);
+        }
+    }
+
+    #[test]
+    fn values_iter() {
+        let map = almost_filled_map();
+        for (&value, i) in map.values().zip(1..MAP_SLOTS) {
+            assert_eq!(value, i);
+        }
+    }
+
+    #[test]
+    fn values_mut_iter() {
+        let mut map = almost_filled_map();
+        for value in map.values_mut() {
+            *value += 1;
+        }
+
+        for (&value, i) in map.values().zip(1..MAP_SLOTS) {
+            assert_eq!(value, i + 1);
+        }
     }
 }
