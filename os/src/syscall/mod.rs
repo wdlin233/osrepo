@@ -232,6 +232,8 @@ pub const SYSCALL_CONDVAR_WAIT: usize = 473;
 pub const SYSCALL_COPY_FILE_RANGE: usize = 285;
 /// pread64 syscall
 pub const SYSCALL_PREAD64: usize = 67;
+/// splice syscall
+pub const SYSCALL_SPLICE: usize = 76;
 
 mod fs;
 mod mem;
@@ -269,6 +271,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_SPLICE => sys_splice(args[0] as isize, args[1] as *mut isize, args[2] as isize, args[3] as *mut isize, args[4], args[5] as u32),
         SYSCALL_PREAD64 => sys_pread64(args[0], args[1] as *mut u8, args[2], args[3] as isize),
         SYSCALL_COPY_FILE_RANGE => sys_copy_file_range(args[0], args[1] as *mut isize, args[2], args[3] as *mut isize, args[4], args[5] as u32),
         SYSCALL_SIGRETURN => sys_sig_return(),

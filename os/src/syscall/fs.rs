@@ -15,7 +15,7 @@ use core::cmp::min;
 
 use crate::syscall::{
     process, FaccessatFileMode, FaccessatMode, FcntlCmd, FdSet, Iovec, PollEvents, PollFd, RLimit,
-    SignalFlags, TimeVal,
+    SignalFlags, SpliceFlags, TimeVal,
 };
 use crate::task::{
     block_current_and_run_next, current_process, current_task, current_user_token,
@@ -1692,4 +1692,228 @@ pub fn sys_pread64(
         Ok(bytes_read) => bytes_read as isize,
         Err(e) => e as isize,
     }
+}
+
+pub fn sys_splice(
+    fd_in: isize,
+    off_in: *mut isize,
+    fd_out: isize,
+    off_out: *mut isize,
+    size: usize,
+    flags: u32,
+) -> isize {
+    warn!("sys_splice: fd_in: {}, fd_out: {}, size: {}, flags: 0x{:x}", fd_in, fd_out, size, flags);
+    
+    use crate::syscall::SpliceFlags;
+    use crate::fs::pipe::Pipe;
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+
+    if (fd_in as isize) < 0 || (fd_out as isize) < 0 {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if size == 0 {
+        return 0;
+    }
+
+    let fd_in = fd_in as usize;
+    let fd_out = fd_out as usize;
+
+    if fd_in >= inner.fd_table.len() || fd_out >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    let in_file_desc = inner.fd_table.get(fd_in);
+    let out_file_desc = inner.fd_table.get(fd_out);
+
+    let in_file = in_file_desc.any();
+    let out_file = out_file_desc.any();
+
+    if !in_file.readable() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    if !out_file.writable() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    // is pipe?
+    let in_is_pipe = in_file.as_any().is::<Pipe>();
+    let out_is_pipe = out_file.as_any().is::<Pipe>();
+
+    if !in_is_pipe && !out_is_pipe {
+        return SysErrNo::EINVAL as isize; // at least one pipe
+    }
+
+    // same pipe?
+    if in_is_pipe && out_is_pipe && fd_in == fd_out {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if in_is_pipe && !off_in.is_null() {
+        return SysErrNo::ESPIPE as isize;
+    }
+
+    if out_is_pipe && !off_out.is_null() {
+        return SysErrNo::ESPIPE as isize;
+    }
+
+    let splice_flags = SpliceFlags::from_bits_truncate(flags);
+    
+    let chunk_size = 4096.min(size);
+    let mut buffer = vec![0u8; chunk_size];
+    let mut total_transferred = 0;
+    let mut remaining = size;
+
+    drop(inner);
+
+    while remaining > 0 && total_transferred < size {
+        let current_chunk = chunk_size.min(remaining);
+
+        // read input file data
+        let read_bytes = if off_in.is_null() {
+            let buf = UserBuffer::new_single(unsafe {
+                core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), current_chunk)
+            });
+            
+            if in_is_pipe {
+                let pipe = in_file.as_any().downcast_ref::<Pipe>().unwrap();
+                let ring_buffer = pipe.inner_lock();
+                let available = ring_buffer.available_read();
+                if available == 0 {
+                    if ring_buffer.all_write_ends_closed() {
+                        drop(ring_buffer);
+                        break; // EOF
+                    } else {
+                        drop(ring_buffer);
+                        break;
+                    }
+                }
+                drop(ring_buffer);
+            }
+            
+            match in_file.read(buf) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    if total_transferred > 0 {
+                        break; 
+                    }
+                    return e as isize;
+                }
+            }
+        } else {
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            let token = inner.get_user_token();
+            let current_offset = *translated_ref(token, off_in);
+            drop(inner);
+            drop(process);
+            
+            if current_offset < 0 {
+                return SysErrNo::EINVAL as isize;
+            }
+            
+            // read_at for normal file
+            match in_file_desc.file() {
+                Ok(file) => {
+                    let buf_slice = unsafe {
+                        core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), current_chunk)
+                    };
+                    match file.inode.read_at(current_offset as usize, buf_slice) {
+                        Ok(bytes) => {
+                            let process = current_process();
+                            let inner = process.inner_exclusive_access();
+                            let token = inner.get_user_token();
+                            *translated_refmut(token, off_in) += bytes as isize;
+                            drop(inner);
+                            drop(process);
+                            bytes
+                        }
+                        Err(e) => {
+                            if total_transferred > 0 {
+                                break;
+                            }
+                            return e as isize;
+                        }
+                    }
+                }
+                Err(_) => {
+                    return SysErrNo::EBADF as isize;
+                }
+            }
+        };
+
+        if read_bytes == 0 {
+            break;
+        }
+
+        let written_bytes = if off_out.is_null() {
+            let buf = UserBuffer::new_single(unsafe {
+                core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), read_bytes)
+            });
+            match out_file.write(buf) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    if total_transferred > 0 {
+                        break;
+                    }
+                    return e as isize;
+                }
+            }
+        } else {
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            let token = inner.get_user_token();
+            let current_offset = *translated_ref(token, off_out);
+            drop(inner);
+            drop(process);
+            
+            if current_offset < 0 {
+                return SysErrNo::EINVAL as isize;
+            }
+            
+            match out_file_desc.file() {
+                Ok(file) => {
+                    let buf_slice = unsafe {
+                        core::slice::from_raw_parts(buffer.as_ptr(), read_bytes)
+                    };
+                    match file.inode.write_at(current_offset as usize, buf_slice) {
+                        Ok(bytes) => {
+                            let process = current_process();
+                            let inner = process.inner_exclusive_access();
+                            let token = inner.get_user_token();
+                            *translated_refmut(token, off_out) += bytes as isize;
+                            drop(inner);
+                            drop(process);
+                            bytes
+                        }
+                        Err(e) => {
+                            if total_transferred > 0 {
+                                break;
+                            }
+                            return e as isize;
+                        }
+                    }
+                }
+                Err(_) => {
+                    return SysErrNo::EBADF as isize;
+                }
+            }
+        };
+
+        total_transferred += written_bytes;
+        remaining -= written_bytes;
+
+        if written_bytes < read_bytes {
+            break;
+        }
+
+        if splice_flags.contains(SpliceFlags::SPLICE_F_NONBLOCK) && total_transferred > 0 {
+            break;
+        }
+    }
+
+    total_transferred as isize
 }

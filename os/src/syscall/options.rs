@@ -327,3 +327,17 @@ bitflags! {
         const R_OK = 4;
     }
 }
+
+bitflags! {
+    /// Splice flags
+    pub struct SpliceFlags: u32 {
+        /// Attempt to move pages instead of copying
+        const SPLICE_F_MOVE = 0x01;
+        /// Do not block on I/O
+        const SPLICE_F_NONBLOCK = 0x02;
+        /// More data will be coming in a subsequent splice
+        const SPLICE_F_MORE = 0x04;
+        /// Unused for splice(); see vmsplice(2)
+        const SPLICE_F_GIFT = 0x08;
+    }
+}
