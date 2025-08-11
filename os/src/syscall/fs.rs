@@ -1548,3 +1548,148 @@ pub fn sys_sync() -> isize {
     sync();
     0
 }
+
+pub fn sys_copy_file_range(
+    fd_in: usize,
+    off_in: *mut isize,
+    fd_out: usize,
+    off_out: *mut isize,
+    size: usize,
+    flags: u32,
+) -> isize {
+    warn!("sys_copy_file_range: fd_in: {}, fd_out: {}, size: {}", fd_in, fd_out, size);
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    if flags != 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if (size as isize) < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+
+    if fd_in >= inner.fd_table.len() || fd_out >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    if fd_in == fd_out {
+        // According to man page, if fd_in and fd_out refer to the same file, 
+        // then the source and target ranges are not allowed to overlap.
+        // For simplicity, we just return EINVAL.
+        return SysErrNo::EINVAL as isize;
+    }
+
+    let in_file_desc = inner.fd_table.get(fd_in);
+    let out_file_desc = inner.fd_table.get(fd_out);
+
+    let in_file = match in_file_desc.file() {
+        Ok(file) => file,
+        Err(_) => return SysErrNo::EBADF as isize,
+    };
+    let out_file = match out_file_desc.file() {
+        Ok(file) => file,
+        Err(_) => return SysErrNo::EBADF as isize,
+    };
+
+    let mut buffer = vec![0u8; 1024.min(size)];
+    let mut total_copied = 0;
+    let mut remaining = size;
+
+    while remaining > 0 {
+        let chunk_size = 1024.min(remaining);
+
+        // Read from in_file
+        let read_bytes = if off_in.is_null() {
+            let buf = UserBuffer::new_single(unsafe {
+                core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), chunk_size)
+            });
+            in_file.read(buf).unwrap()
+        } else {
+            warn!("Reading from file with offset");
+            let current_offset = *translated_ref(token, off_in);
+            let original_pos = in_file.lseek(0, SEEK_CUR).unwrap();
+            in_file.lseek(current_offset, SEEK_SET).unwrap();
+            let buf = UserBuffer::new_single(unsafe {
+                core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), chunk_size)
+            });
+            let bytes = in_file.read(buf).unwrap();
+            in_file.lseek(original_pos as isize, SEEK_SET).unwrap();
+            *translated_refmut(token, off_in) += bytes as isize;
+            bytes
+        };
+
+        if read_bytes == 0 {
+            break;
+        }
+
+        // Write to out_file
+        let written_bytes = if off_out.is_null() {
+            let buf = UserBuffer::new_single(unsafe {
+                core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), read_bytes)
+            });
+            out_file.write(buf).unwrap()
+        } else {
+            warn!("Writing to file with offset");
+            let current_offset = *translated_ref(token, off_out);
+            let original_pos = out_file.lseek(0, SEEK_CUR).unwrap();
+            out_file.lseek(current_offset, SEEK_SET).unwrap();
+            let buf = UserBuffer::new_single(unsafe {
+                core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), read_bytes)
+            });
+            let bytes = out_file.write(buf).unwrap();
+            out_file.lseek(original_pos as isize, SEEK_SET).unwrap();
+            *translated_refmut(token, off_out) += bytes as isize;
+            bytes
+        };
+
+        warn!("Read {} bytes, wrote {} bytes", read_bytes, written_bytes);
+        total_copied += written_bytes as usize;
+        remaining -= written_bytes as usize;
+
+        if written_bytes < read_bytes {
+            // If we couldn't write all the bytes we read, we stop.
+            break;
+        }
+    }
+
+    total_copied as isize
+}
+
+pub fn sys_pread64(
+    fd: usize,
+    buf: *mut u8,
+    count: usize,
+    offset: isize,
+) -> isize {
+    warn!("sys_pread64: fd: {}, count: {}, offset: {}", fd, count, offset);
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    
+    if count == 0 {
+        return 0;
+    }
+
+    if fd >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
+    }
+
+    let file_desc = inner.fd_table.get(fd);
+    let file = match file_desc.file() {
+        Ok(file) => file,
+        Err(_) => return SysErrNo::EBADF as isize,
+    };
+
+    let buf = unsafe {
+        core::slice::from_raw_parts_mut(buf, count)
+    };
+
+    drop(inner);
+    drop(process);
+
+    match file.inode.read_at(offset as usize, buf) {
+        Ok(bytes_read) => bytes_read as isize,
+        Err(e) => e as isize,
+    }
+}
