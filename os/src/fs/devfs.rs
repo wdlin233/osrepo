@@ -12,6 +12,7 @@ use alloc::{
 };
 use core::cmp::min;
 use spin::{Lazy, Mutex, RwLock};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use super::{stat::StMode, File, Kstat, Stdin, Stdout};
 
@@ -24,6 +25,22 @@ pub struct DevTty;
 
 pub struct DevCpuDmaLatency {
     reaction_time: RwLock<u32>, //进程最大反应时间,即CPU最大延迟,单位us
+}
+
+pub struct DevInterrupts;
+
+// 中断计数器，使用原子操作确保线程安全
+pub static TIMER_INTERRUPT_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub static VIRTIO_INTERRUPT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+// 中断号定义
+pub const TIMER_IRQ: usize = 5;    // 时钟中断号
+pub const VIRTIO_IRQ: usize = 10;  // virtio 中断号
+
+impl DevInterrupts {
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 //设备树，通过设备名称可以查找到设备号
@@ -60,6 +77,7 @@ pub fn open_device_file(abs_path: &str) -> Result<Arc<dyn File>, SysErrNo> {
         "/dev/random" => Ok(Arc::new(DevRandom::new())),
         "/dev/tty" => Ok(Arc::new(DevTty::new())),
         "/dev/cpu_dma_latency" => Ok(Arc::new(DevCpuDmaLatency::new())),
+        "/proc/interrupts" => Ok(Arc::new(DevInterrupts::new())),
         _ => Err(SysErrNo::ENOENT),
     }
 }
@@ -379,4 +397,58 @@ impl File for DevCpuDmaLatency {
         }
         revents
     }
+}
+
+impl File for DevInterrupts {
+    fn readable(&self) -> bool {
+        true
+    }
+    fn writable(&self) -> bool {
+        false
+    }
+    fn read(&self, mut user_buf: UserBuffer) -> SyscallRet {
+        let timer_count = TIMER_INTERRUPT_COUNT.load(Ordering::Relaxed);
+        let virtio_count = VIRTIO_INTERRUPT_COUNT.load(Ordering::Relaxed);
+        
+        let mut content = String::new();
+        
+        content.push_str(&format!("{}:        {}\n", TIMER_IRQ, timer_count));
+        if virtio_count > 0 {
+            content.push_str(&format!("{}:        {}\n", VIRTIO_IRQ, virtio_count));
+        }
+        
+        let bytes = content.as_bytes();
+        let len = min(user_buf.len(), bytes.len());
+        user_buf.write(bytes);
+        Ok(len)
+    }
+    fn write(&self, _user_buf: UserBuffer) -> SyscallRet {
+        // 禁止写入
+        Err(SysErrNo::EPERM)
+    }
+    fn fstat(&self) -> Kstat {
+        let devno = get_devno("/proc/interrupts");
+        Kstat {
+            st_dev: devno,
+            st_mode: StMode::FCHR.bits(),
+            st_rdev: devno,
+            st_nlink: 1,
+            ..Kstat::default()
+        }
+    }
+    fn poll(&self, events: PollEvents) -> PollEvents {
+        let mut revents = PollEvents::empty();
+        if events.contains(PollEvents::IN) {
+            revents |= PollEvents::IN;
+        }
+        revents
+    }
+}
+
+pub fn increment_timer_interrupt() {
+    TIMER_INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn increment_virtio_interrupt() {
+    VIRTIO_INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
 }

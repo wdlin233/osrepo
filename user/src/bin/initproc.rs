@@ -4,24 +4,28 @@
 #[macro_use]
 extern crate user_lib;
 /*
-    //"/musl/unixbench_testcode.sh\0",
-    //"/musl/netperf_testcode.sh\0",
-    //"/musl/lua_testcode.sh\0",
-    //"/musl/ltp_testcode.sh\0",
-    //"/musl/Imbench_testcode.sh\0",
-    //"/musl/libctest_testcode.sh\0",
-    //"/musl/libcbench_testcode.sh\0",
-    //"/musl/iperf_testcode.sh\0",
-    //"/musl/iozone_testcode.sh\0",
-    //"/musl/cyclictest_testcode.sh\0",
-    //"/musl/busybox_testcode.sh\0",
-    //"musl/basic_testcode.sh\0",
+    "/musl/unixbench_testcode.sh\0",
+    "/musl/netperf_testcode.sh\0",
+    "/musl/lua_testcode.sh\0",
+    "/musl/ltp_testcode.sh\0",
+    "/musl/Imbench_testcode.sh\0",
+    "/musl/libctest_testcode.sh\0",
+    "/musl/libcbench_testcode.sh\0",
+    "/musl/iperf_testcode.sh\0",
+    "/musl/iozone_testcode.sh\0",
+    "/musl/cyclictest_testcode.sh\0",
+    "/musl/busybox_testcode.sh\0",
+    "musl/basic_testcode.sh\0",
 
 
-    // "/glibc/basic_testcode.sh\0",
-    //"/glibc/busybox_testcode.sh\0",
+    "/glibc/basic_testcode.sh\0",
+    "/glibc/busybox_testcode.sh\0",
+
+    "/musl/copy-file-range_testcode.sh\0",
+    "/musl/splice_testcode.sh\0",
+    "/musl/interrupts_testcode.sh\0",
 */
-const TESTS: &[&str] = &["/musl/libctest_testcode.sh\0"];
+const TESTS: &[&str] = &["/musl/interrupts_testcode.sh\0"];
 
 const TEST_NUM: usize = TESTS.len();
 

@@ -18,6 +18,7 @@ use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
 use crate::hal::strampoline;
 use crate::mm::VirtAddr;
 use crate::println;
+use crate::fs::increment_timer_interrupt;
 pub use crate::signal::SignalFlags;
 use crate::signal::{check_if_any_sig_for_current_task, handle_signal};
 use crate::syscall::syscall;
@@ -242,9 +243,13 @@ pub fn trap_handler() -> ! {
             current_add_signal(SignalFlags::SIGILL);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            crate::timer::check_timer();
+            increment_timer_interrupt();
             set_next_trigger();
-            check_timer();
-            suspend_current_and_run_next();
+        }
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            // Handle external interrupts (e.g., virtio devices)
+            crate::fs::increment_virtio_interrupt();
         }
         _ => {
             panic!(
@@ -469,7 +474,8 @@ pub fn trap_from_kernel() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 fn timer_handler() {
-    // println!("timer interrupt from user");
+    // 增加时钟中断计数
+    increment_timer_interrupt();
     // 释放那些处于等待的任务
     check_timer();
     // 清除时钟中断

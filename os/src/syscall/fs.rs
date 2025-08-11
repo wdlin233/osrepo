@@ -3,7 +3,7 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, fs_stat, open, open_device_file, remove_inode_idx, stat, sync, File,
+    convert_kstat_to_statx, find_device, fs_stat, open, open_device_file, remove_inode_idx, stat, sync, File,
     FileClass, FileDescriptor, Kstat, OpenFlags, Statfs, Statx, StatxFlags, MAX_PATH_LEN,
     MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
 }; //::{link, unlink}
@@ -758,6 +758,11 @@ pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
     if abs_path == "" {
         return -1;
     }
+    
+    if find_device(&abs_path) {
+        return SysErrNo::EPERM as isize;
+    }
+    
     debug!("to open,the abs path is :{}", abs_path);
     let osfile = match open(&abs_path, OpenFlags::O_ASK_SYMLINK, NONE_MODE, "") {
         Ok(of) => of.file().unwrap(),
@@ -1530,6 +1535,11 @@ pub fn sys_renameat2(
         Ok(path) => path,
         Err(e) => return e as isize,
     };
+    
+    if find_device(&old_abs_path) {
+        return SysErrNo::EPERM as isize;
+    }
+    
     let osfile = open(&old_abs_path, OpenFlags::O_RDWR, NONE_MODE, "")
         .unwrap()
         .file()

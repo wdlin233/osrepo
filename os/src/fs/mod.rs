@@ -350,6 +350,8 @@ pub fn create_init_files() -> GeneralRet {
     register_device("/dev/null");
     //注册设备/dev/cpu_dma_latency
     register_device("/dev/cpu_dma_latency");
+    //注册虚拟设备/proc/interrupts
+    register_device("/proc/interrupts");
     //创建./dev/misc文件夹
     open(
         "/dev/misc",
