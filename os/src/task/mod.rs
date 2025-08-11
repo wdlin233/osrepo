@@ -50,17 +50,13 @@ pub use manager::{
 pub use process::{
     CloneFlags, ProcessControlBlock, ProcessControlBlockInner, RobustList, Tms, TmsInner,
 };
-#[cfg(target_arch = "loongarch64")]
-pub use processor::current_trap_addr;
-#[cfg(target_arch = "riscv64")]
 pub use processor::{current_kstack_top, current_trap_cx_user_va};
 pub use processor::{
     current_process, current_task, current_trap_cx, current_user_token, mmap, munmap, run_tasks,
-    schedule, take_current_task, PROCESSOR,
+    schedule, take_current_task, PROCESSOR, current_trap_cx_user_pa,
 };
 pub use task::{TaskControlBlock, TaskStatus};
 
-#[cfg(target_arch = "riscv64")]
 pub use id::kstack_alloc;
 
 use core::arch::{asm, global_asm};
@@ -256,11 +252,11 @@ pub static INITPROC: Lazy<Arc<ProcessControlBlock>> = Lazy::new(|| {
     debug!("kernel: INITPROC is being initialized");
     unsafe {
         extern "C" {
-            fn initproc_rv_start();
-            fn initproc_rv_end();
+            fn initproc_start();
+            fn initproc_end();
         }
-        let start = initproc_rv_start as usize as *const usize as *const u8;
-        let len = initproc_rv_end as usize - initproc_rv_start as usize;
+        let start = initproc_start as usize as *const usize as *const u8;
+        let len = initproc_end as usize - initproc_start as usize;
         let data = core::slice::from_raw_parts(start, len);
         ProcessControlBlock::new(data)
     }

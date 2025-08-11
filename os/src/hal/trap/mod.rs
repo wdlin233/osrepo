@@ -13,10 +13,9 @@
 //! to [`syscall()`].
 
 mod context;
-#[cfg(target_arch = "loongarch64")]
-mod trap;
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+use crate::hal::strampoline;
 use crate::mm::VirtAddr;
 use crate::println;
 pub use crate::signal::SignalFlags;
@@ -24,21 +23,20 @@ use crate::signal::{check_if_any_sig_for_current_task, handle_signal};
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_process, current_trap_cx,
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
+    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, current_trap_cx_user_va,
 };
 use crate::timer::check_timer;
 pub use context::{MachineContext, UserContext};
 
+use crate::config::TRAMPOLINE;
+
 #[cfg(target_arch = "riscv64")]
 use crate::{
-    config::TRAMPOLINE,
-    task::current_trap_cx_user_va,
     timer::{get_time, set_next_trigger},
 };
 #[cfg(target_arch = "loongarch64")]
 use crate::{
     mm::{PageTable, VirtPageNum},
-    task::current_trap_addr,
     timer::get_time,
 };
 
@@ -72,6 +70,11 @@ pub fn init() {
     set_kernel_trap_entry();
     #[cfg(target_arch = "loongarch64")]
     {
+        // make sure that the interrupt is enabled when first task returns user mode
+        euen::set_fpe(true);
+        prmd::set_pie(true);
+        crmd::set_ie(false);
+        crmd::set_pg(true);
         // 清除时钟专断
         ticlr::clear_timer_interrupt();
         tcfg::set_en(false);
@@ -83,24 +86,24 @@ pub fn init() {
 
         // 设置普通异常和中断入口
         // 设置TLB重填异常地址
-        println!("kernel_trap_entry: {:#x}", trap::kernel_trap_entry as usize);
-        eentry::set_eentry(trap::kernel_trap_entry as usize);
-        // 设置重填tlb地址
-        tlbrentry::set_tlbrentry(trap::__tlb_rfill as usize);
-        // 设置TLB的页面大小为16KiB
-        stlbps::set_ps(0xe);
-        // 设置TLB的页面大小为16KiB
-        tlbrehi::set_ps(0xe);
-        pwcl::set_ptbase(0xe);
-        pwcl::set_ptwidth(0xb); //16KiB的页大小
-        pwcl::set_dir1_base(25); //页目录表起始位置
-        pwcl::set_dir1_width(0xb); //页目录表宽度为11位
+        println!("(trap::init) __trap_from_kernel: {:#x}", __trap_from_kernel as usize);
+        set_kernel_trap_entry();
+        tlbrentry::set_tlbrentry(__tlb_refill as usize); // 设置重填tlb地址    
+        stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
+        tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
-        pwch::set_dir3_base(36); //第三级页目录表
-        pwch::set_dir3_width(0xb); //页目录表宽度为11位
+        dmw2::set_plv0(true);
+        dmw2::set_vseg(8);
+        dmw2::set_mat(MemoryAccessType::StronglyOrderedUnCached);
 
-        // make sure that the interrupt is enabled when first task returns user mode
-        prmd::set_pie(true);
+        pwcl::set_pte_width(8);
+        pwcl::set_ptbase(0xc); // 第零级页表的起始地址
+        pwcl::set_ptwidth(9); // 第零级页表的索引位数，4KiB的页大小，0xe->0xb, 0xc->0x9
+        pwcl::set_dir1_base(21); //页目录表起始位置 PAGE_SIZE_BITS + DIR_WIDTH = 12 + 9
+        pwcl::set_dir1_width(9); //页目录表宽度为9位
+
+        pwch::set_dir3_base(30); //第三级页目录表
+        pwch::set_dir3_width(9); //页目录表宽度为9位
 
         println!("trap init success");
     }
@@ -110,16 +113,12 @@ pub fn init() {
 #[inline]
 fn set_kernel_trap_entry() {
     #[cfg(target_arch = "riscv64")]
-    extern "C" {
-        fn __trap_from_kernel();
-    }
-    #[cfg(target_arch = "riscv64")]
     unsafe {
         stvec::write(__trap_from_kernel as usize, TrapMode::Direct);
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(trap::kernel_trap_entry as usize);
+    eentry::set_eentry(__trap_from_kernel as usize);
 }
 /// set trap entry for traps happen in user mode
 #[inline]
@@ -130,7 +129,7 @@ fn set_user_trap_entry() {
     }
 
     #[cfg(target_arch = "loongarch64")]
-    eentry::set_eentry(__alltraps as usize); // 设置普通异常和中断入口
+    eentry::set_eentry(strampoline as usize); // 设置普通异常和中断入口
 }
 
 /// enable timer interrupt in supervisor mode
@@ -147,13 +146,13 @@ pub fn enable_timer_interrupt() {
         // println!("timer freq: {}", timer_freq);
         tcfg::set_init_val(timer_freq / TICKS_PER_SEC);
         tcfg::set_en(true);
-        tcfg::set_periodic(true);
+        tcfg::set_periodic(false);
 
         // 开启全局中断
-        ecfg::set_lie(LineBasedInterrupt::TIMER | LineBasedInterrupt::HWI0);
+        ecfg::set_lie(LineBasedInterrupt::TIMER);
         crmd::set_ie(true);
 
-        println!("Interrupt enable: {:?}", ecfg::read().lie());
+        //println!("Interrupt enable: {:?}", ecfg::read().lie());
     }
 }
 
@@ -182,8 +181,8 @@ pub fn trap_handler() -> ! {
             //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
             // );
             let result = syscall(
-                cx.x[17],
-                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
+                cx.gp.x[17],
+                [cx.gp.x[10], cx.gp.x[11], cx.gp.x[12], cx.gp.x[13], cx.gp.x[14], cx.gp.x[15]],
             );
             // cx is changed during sys_exec, so we have to call it again
             //debug!("after syscall, to get cx");
@@ -192,7 +191,7 @@ pub fn trap_handler() -> ! {
             //     "after syscall, genenral register: x17 :{}, x10: {}, x11: {}, x12: {}, x13: {}, x14: {}, x15: {}",
             //     cx.x[17], cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
             // );
-            cx.x[10] = result as usize;
+            cx.gp.x[10] = result as usize;
             //debug!("return x10 is : {}", cx.x[10]);
         }
         Trap::Exception(Exception::StorePageFault)
@@ -269,10 +268,12 @@ pub fn trap_handler() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
+pub fn trap_handler() -> ! {
+    warn!("(trap_handler) in loongarch64 trap handler");
     set_kernel_trap_entry();
     let estat = estat::read();
     let crmd = crmd::read();
+    warn!("pgdl: {:#x}, pgdh: {:#x}, pgd: {:#x}", pgdl::read().raw(), pgdh::read().raw(), pgd::read().raw());
     if crmd.ie() {
         // 全局中断会在中断处理程序被关掉
         panic!("kerneltrap: global interrupt enable");
@@ -285,14 +286,15 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
     match estat.cause() {
         Trap::Exception(Exception::Syscall) => {
             //系统调用
+            let mut cx = current_trap_cx();
             cx.sepc += 4;
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
             let result = syscall(
-                cx.x[11],
-                [cx.x[4], cx.x[5], cx.x[6], cx.x[7], cx.x[8], cx.x[9]],
+                cx.gp.x[11],
+                [cx.gp.x[4], cx.gp.x[5], cx.gp.x[6], cx.gp.x[7], cx.gp.x[8], cx.gp.x[9]],
             ) as usize;
             cx = current_trap_cx();
-            cx.x[4] = result;
+            cx.gp.x[4] = result;
         }
         Trap::Exception(Exception::LoadPageFault)
         | Trap::Exception(Exception::StorePageFault)
@@ -303,7 +305,6 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             let t = estat.cause();
             let badv = badv::read().vaddr();
             info!("badv: {:#x}", badv);
-            let mut res: bool;
             {
                 let process = current_process();
                 let inner = process.inner_exclusive_access();
@@ -311,17 +312,18 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
                 info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
                 let add = add.floor();
                 info!("[kernel] trap_handler: {:?} at {:#x} as vpn", t, add.0);
-                res = inner.memory_set.lazy_page_fault(add, t);
-                if !res {
-                    res = inner.memory_set.cow_page_fault(add, t);
-                }
+                
+                // debug
+                let pte = inner.memory_set.get_ref().page_table.find_pte(add).unwrap();
+                let token = inner.memory_set.token();
+                info!("[kernel] trap_handler: {:?} at {:#x} as pte, pte ppn: {:#x}, pte flags: {:?}", t, add.0, pte.ppn().0, pte.flags());
+                info!("[kernel] trap_handler, current user token: {:#x}", token);
+
                 // drop to avoid deadlock and exit exception
             }
-            if !res {
-                println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
-                // 设置SIGSEGV信号
-                current_add_signal(SignalFlags::SIGSEGV);
-            }
+            println!("[kernel] {:?} {:#x} in application, core dumped.", t, badv);
+            // 设置SIGSEGV信号
+            current_add_signal(SignalFlags::SIGSEGV);
         }
         Trap::Exception(Exception::InstructionPrivilegeIllegal) => {
             // 指令权限不足
@@ -330,6 +332,7 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Interrupt(Interrupt::Timer) => {
             // 时钟中断
+            warn!("timer interrupt from user");
             timer_handler();
         }
         Trap::Exception(Exception::TLBRFill) => {
@@ -362,11 +365,6 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
             tlb_page_fault();
             panic!("[kernel] PagePrivilegeIllegal in application, core dumped.");
         }
-        Trap::Interrupt(Interrupt::HWI0) => {
-            //中断0 --- 外部中断处理
-            //hwi0_handler();
-            unimplemented!()
-        }
         _ => {
             panic!("{:?}", estat.cause());
         }
@@ -376,13 +374,15 @@ pub fn trap_handler(mut cx: &mut TrapContext) -> &mut TrapContext {
         println!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
-    set_user_trap_entry();
-    cx
+    //set_user_trap_entry();
+    trap_return();
 }
 
 extern "C" {
     fn __alltraps();
     fn __restore();
+    fn __trap_from_kernel();
+    fn __tlb_refill();
 }
 
 /// return to user space
@@ -396,7 +396,7 @@ pub fn trap_return() -> ! {
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
-    debug!("in trap return, get trap va");
+    //debug!("in trap return, get trap va");
     let user_satp = current_user_token();
 
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
@@ -415,22 +415,56 @@ pub fn trap_return() -> ! {
 
 #[cfg(target_arch = "loongarch64")]
 #[no_mangle]
-pub fn trap_return() {
+pub fn trap_return() -> ! {
+    use crate::{config::PAGE_SIZE_BITS, task::current_trap_cx_user_pa};
+
+    warn!("(trap_return) in loongarch64 trap return");
     set_user_trap_entry();
-    let trap_addr = current_trap_addr();
+    let trap_cx_ptr = current_trap_cx_user_pa();
+    //debug!("in trap return, get trap va");
+    warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
+    prmd::set_pplv(CpuMode::Ring3);
+    prmd::set_pie(true);
+    let user_satp = current_user_token();
+
+    let restore_va = __restore as usize - __alltraps as usize + strampoline as usize;
+    debug!(
+        "[kernel] trap_return: ..before return, restore_va = {:#x}, trap_cx_ptr = {:#x}, user_satp = {:#x}",
+        restore_va,
+        trap_cx_ptr,
+        user_satp
+    );
+    //pgdl::set_base(user_satp << PAGE_SIZE_BITS);
     unsafe {
-        asm!("move $a0,{}",in(reg)trap_addr);
-        __restore();
+        asm!(
+            "ibar 0",
+            "jr {restore_va}",
+            restore_va = in(reg) restore_va,
+            in("$a0") trap_cx_ptr,
+            in("$a1") user_satp,
+            options(noreturn)
+        );
     }
 }
 
 /// handle trap from kernel
-#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub fn trap_from_kernel() -> ! {
-    //use riscv::register::sepc;
-    //trace!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+    #[cfg(target_arch = "riscv64")]
     panic!("a trap {:?} from kernel!", scause::read().cause());
+    #[cfg(target_arch = "loongarch64")]
+    {
+        warn!("(trap_from_kernel) in loongarch64 trap from kernel");
+        let estat = estat::read();
+        let era = era::read();
+        panic!(
+            "a trap {:?} from kernel! [pc:{:#x}], code:{:b}",
+            estat::read().cause(),
+            era.pc(),
+            estat.is(),
+        );
+    }
+    
 }
 
 #[cfg(target_arch = "loongarch64")]
@@ -440,6 +474,7 @@ fn timer_handler() {
     check_timer();
     // 清除时钟中断
     ticlr::clear_timer_interrupt();
+    enable_timer_interrupt();
     suspend_current_and_run_next();
 }
 
@@ -462,13 +497,7 @@ pub fn trap_handler_kernel() {
     match estat.cause() {
         Trap::Interrupt(Interrupt::Timer) => {
             // 清除时钟专断
-            trace!("timer interrupt from kernel");
             ticlr::clear_timer_interrupt();
-        }
-        Trap::Interrupt(Interrupt::HWI0) => {
-            // 中断0 --- 外部中断处理
-            // hwi0_handler();
-            unimplemented!("unnecessary")
         }
         e => {
             panic!(
@@ -488,7 +517,7 @@ pub fn trap_handler_kernel() {
 fn tlb_refill_handler() {
     log::error!("TLB refill exception");
     unsafe {
-        trap::__tlb_rfill();
+        __tlb_refill();
     }
 }
 

@@ -6,7 +6,6 @@
 /// 因此11-11-11-14,最高位是次高位的扩展
 ///
 use super::{translated_byte_buffer, PageTableEntry};
-use crate::phys_to_virt;
 use crate::{
     config::{PAGE_SIZE, PAGE_SIZE_BITS},
     task::current_user_token,
@@ -210,21 +209,14 @@ impl VirtPageNum {
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
-        #[cfg(target_arch = "riscv64")]
         for i in (0..3).rev() {
             idx[i] = vpn & 511; // 2^9-1
             vpn >>= 9;
-        }
-        #[cfg(target_arch = "loongarch64")]
-        for i in (0..3).rev() {
-            idx[i] = vpn & 2047; //2^11-1, 每页包含2048个页表项
-            vpn >>= 11;
         }
         idx
     }
 }
 
-#[cfg(target_arch = "riscv64")]
 impl PhysAddr {
     /// Get the immutable reference of physical address
     pub fn get_ref<T>(&self) -> &'static T {
@@ -236,17 +228,6 @@ impl PhysAddr {
     }
 }
 
-#[cfg(target_arch = "loongarch64")]
-impl PhysAddr {
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        unsafe { ((phys_to_virt!(self.0)) as *mut T).as_mut().unwrap() }
-    }
-    pub fn get_ref<T>(&self) -> &'static T {
-        unsafe { ((phys_to_virt!(self.0)) as *const T).as_ref().unwrap() }
-    }
-}
-
-#[cfg(target_arch = "riscv64")]
 impl PhysPageNum {
     /// Get the reference of page table(array of ptes)
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
@@ -265,35 +246,13 @@ impl PhysPageNum {
     }
 }
 
-#[cfg(target_arch = "loongarch64")]
-impl PhysPageNum {
-    pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
-        let pa: PhysAddr = self.clone().into();
-        let va = phys_to_virt!(pa.0);
-        // 每一个页有2048个项目 : 16kb/8 = 2048
-        unsafe { core::slice::from_raw_parts_mut(va as *mut PageTableEntry, 2048) }
-    }
-    pub fn get_bytes_array(&self) -> &'static mut [u8] {
-        let pa: PhysAddr = self.clone().into();
-        let va = phys_to_virt!(pa.0);
-        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, 16 * 1024) }
-    }
-    pub fn get_mut<T>(&self) -> &'static mut T {
-        let pa: PhysAddr = self.clone().into();
-        pa.get_mut()
-    }
-}
-
 impl PhysPageNum {
     pub fn bytes_array_mut(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-        //let kernel_va = KernelAddr::from(pa).0;
-        debug!("Getting bytes array for PhysAddr: {:#x}", pa.0);
-        //let kernel_va = (pa.0 as isize >> PA_WIDTH_SV39) as isize;
-        //debug!("Kernel virtual address: {:#x}", kernel_va);
-        // No kernel address translation.
+        debug!("(PhysPageNum, bytes_array_mut) Getting bytes array for PhysAddr: {:#x}", pa.0);
+        let va = pa.0;
         use crate::config::PAGE_SIZE;
-        unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, PAGE_SIZE) }
+        unsafe { core::slice::from_raw_parts_mut(va as *mut u8, PAGE_SIZE) }
     }
 }
 
@@ -328,7 +287,6 @@ where
 {
     pub fn new(start: T, end: T) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
-        debug!("in vpn range new");
         Self { l: start, r: end }
     }
     pub fn get_start(&self) -> T {

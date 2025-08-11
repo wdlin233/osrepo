@@ -13,7 +13,7 @@ use crate::{
 };
 use alloc::{sync::Arc, vec::Vec};
 use core::ptr::NonNull;
-#[cfg(target_arch = "riscv64")]
+//#[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 
 /// 实现 Trait BlockDevice时对内部操作加锁
@@ -41,7 +41,7 @@ unsafe impl Hal for VirtIoHalImpl {
         }
         #[cfg(target_arch = "loongarch64")]
         unsafe {
-            (pa.0, NonNull::new_unchecked((pa.0 | 0x9000000000000000) as *mut u8))
+            (pa.0, NonNull::new_unchecked(pa.0 as *mut u8))
         }
     }
 
@@ -56,15 +56,13 @@ unsafe impl Hal for VirtIoHalImpl {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: usize, _size: usize) -> NonNull<u8> {
-        //info!("translating paddr {:#x} to virt", paddr);
         #[cfg(target_arch = "riscv64")]  
         return NonNull::new_unchecked((PhysAddr::from(paddr).0 | 0x80200000) as *mut u8);
         #[cfg(target_arch = "loongarch64")]
-        return NonNull::new((paddr | 0x9000000000000000) as *mut u8).unwrap();
+        return NonNull::new((paddr) as *mut u8).unwrap();
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> usize {
-        //info!("Executing share for virtio_blk");
         #[cfg(target_arch = "riscv64")]
         return KERNEL_SPACE
             .exclusive_access()
@@ -75,7 +73,7 @@ unsafe impl Hal for VirtIoHalImpl {
             .unwrap()
             .0;
         #[cfg(target_arch = "loongarch64")]
-        return buffer.as_ptr() as *mut u8 as usize - 0x9000000000000000;
+        return buffer.as_ptr() as *mut u8 as usize;
     }
 
     unsafe fn unshare(_paddr: usize, _buffer: NonNull<[u8]>, _direction: BufferDirection) {

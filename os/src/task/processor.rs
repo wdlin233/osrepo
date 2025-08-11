@@ -7,7 +7,6 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
-#[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 use crate::hal::trap::TrapContext;
 use crate::mm::MapPermission;
@@ -19,7 +18,7 @@ use core::arch::asm;
 //use core::str::next_code_point;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
-use loongarch64::register::{asid, pgdl};
+use loongarch64::register::{asid, pgdl, pgdh};
 
 /// Processor management structure
 pub struct Processor {
@@ -73,45 +72,29 @@ pub fn run_tasks() {
             //check_timer();
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
-            #[cfg(target_arch = "riscv64")]
             task.process
                 .upgrade()
                 .unwrap()
                 .inner_exclusive_access()
                 .tms
                 .set_begin();
-            #[cfg(target_arch = "loongarch64")]
-            let pid = task.process.upgrade().unwrap().getpid();
-            #[cfg(target_arch = "loongarch64")]
-            {
-                //应用进程号
-                let pgd = task.get_user_token() << PAGE_SIZE_BITS;
-                pgdl::set_base(pgd); //设置根页表基地址
-                asid::set_asid(pid); //设置ASID
-            }
-            // debug!(
-            //     "run_tasks: pid: {}, tid: {}",
-            //     task.process.upgrade().unwrap().getpid(),
-            //     task.inner_exclusive_access().res.as_ref().unwrap().tid
-            // );
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
-            #[cfg(target_arch = "loongarch64")]
-            // 在进行线程切换的时候
-            // 地址空间是相同的，并且pgd也是相同的
-            // 每个线程都有自己的内核栈和用户栈，用户栈互相隔离
-            // 在进入用户态后应该每个线程的地址转换是相同的
-            unsafe {
-                asm!("invtlb 0x4,{},$r0",in(reg) pid);
-            }
-
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
             processor.current = Some(task);
             // release processor manually
             drop(processor);
+            info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
+            warn!("idle_task_cx_ptr ra: {:#x}, next_task_cx_ptr ra: {:#x}", unsafe { (*idle_task_cx_ptr).get_ra() }, unsafe { (*next_task_cx_ptr).get_ra() });
+            warn!("idle_task_cx_ptr sp: {:#x}, next_task_cx_ptr sp: {:#x}", unsafe { (*idle_task_cx_ptr).get_sp() }, unsafe { (*next_task_cx_ptr).get_sp() });
+            #[cfg(target_arch = "loongarch64")]
+            {
+                let (tlbrsave, sp) = read_tlbrsave_and_sp();
+                warn!("tlbrsave: {:#x}, sp: {:#x}", tlbrsave, sp);
+            }
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
@@ -151,24 +134,18 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
-#[cfg(target_arch = "riscv64")]
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
     current_task().unwrap().trap_cx_user_va()
 }
 
-#[cfg(target_arch = "riscv64")]
+pub fn current_trap_cx_user_pa() -> usize {
+   current_task().unwrap().trap_cx_user_pa()
+}
+
 /// get the top addr of kernel stack
 pub fn current_kstack_top() -> usize {
     current_task().unwrap().kstack.get_top()
-}
-
-#[cfg(target_arch = "loongarch64")]
-pub fn current_trap_addr() -> usize {
-    current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .get_trap_addr()
 }
 
 /// Return to idle control flow for new scheduling
@@ -207,4 +184,19 @@ pub fn munmap(addr: usize, len: usize) -> isize {
         .inner_exclusive_access()
         .memory_set
         .munmap(addr, len)
+}
+
+#[cfg(target_arch = "loongarch64")]
+fn read_tlbrsave_and_sp() -> (usize, usize) {
+    let tlbrsave: usize;
+    let sp: usize;
+    unsafe {
+        asm!(
+            "csrrd {}, 0x30",
+            "move {}, $sp",
+            out(reg) tlbrsave,
+            out(reg) sp
+        );
+    }
+    (tlbrsave, sp)
 }

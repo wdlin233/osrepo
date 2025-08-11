@@ -62,9 +62,23 @@ use crate::{
 pub mod system;
 pub mod users;
 
-use crate::hal::{clear_bss, utils::console::CONSOLE};
+use crate::hal::{utils::console::CONSOLE};
 use config::FLAG;
 use core::arch::global_asm;
+
+pub fn clear_bss() {
+    extern "C" {
+        fn sbss();
+        fn ebss();
+    }
+    unsafe {
+        core::slice::from_raw_parts_mut(
+            sbss as usize as *mut u128,
+             (ebss as usize - sbss as usize) / core::mem::size_of::<u128>(),
+        )
+        .fill(0);
+    }
+}
 
 #[no_mangle]
 pub fn main(cpu: usize) -> ! {
@@ -76,19 +90,18 @@ pub fn main(cpu: usize) -> ! {
     log::error!("Logging init success");
 
     mm::init();
-    #[cfg(target_arch = "riscv64")]
-    mm::remap_test();
     hal::trap::init();
     #[cfg(target_arch = "loongarch64")]
     print_machine_info();
-    hal::trap::enable_timer_interrupt();
+    //hal::trap::enable_timer_interrupt();
     #[cfg(target_arch = "riscv64")]
     timer::set_next_trigger();
 
     fs::list_apps();
     task::add_initproc();
     fs::init();
-
+    hal::trap::enable_timer_interrupt();
+    
     task::run_tasks();
     panic!("Unreachable section for kernel!");
 }

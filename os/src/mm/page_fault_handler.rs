@@ -1,4 +1,4 @@
-use crate::config::PAGE_SIZE_BITS;
+use crate::{config::PAGE_SIZE_BITS, mm::MapPermission};
 use alloc::sync::Arc;
 use core::arch::asm;
 
@@ -24,10 +24,10 @@ pub fn mmap_read_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut 
     if let Some(frame) = frame {
         //有现成的，直接clone,需要是cow的
         let vpn = va.floor();
-        let mut pte_flags = vma.flags() | PTEFlags::V;
+        let mut pte_flags = vma.flags();
         //可写的才需要cow
-        let need_cow = pte_flags.contains(PTEFlags::W);
-        pte_flags &= !PTEFlags::W;
+        let need_cow = pte_flags.contains(MapPermission::W);
+        pte_flags &= !MapPermission::W;
         //page_table.set_flags(vpn, pte_flags);
         let ppn = frame.ppn;
         vma.data_frames.insert(vpn, frame);
@@ -83,10 +83,10 @@ pub fn mmap_write_page_fault(va: VirtAddr, page_table: &mut PageTable, vma: &mut
         .expect("mmap_write_page_fault should not fail");
     //设置为cow
     let vpn = VirtAddr::from(va).floor();
-    let mut pte_flags = vma.flags() | PTEFlags::V;
+    let mut pte_flags = vma.flags();
     //可写的才需要cow
-    let need_cow = pte_flags.contains(PTEFlags::W);
-    pte_flags &= !PTEFlags::W;
+    let need_cow = pte_flags.contains(MapPermission::W);
+    pte_flags &= !MapPermission::W;
     page_table.set_map_flags(vpn, pte_flags);
     if need_cow {
         page_table.set_cow(vpn);

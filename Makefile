@@ -92,3 +92,6 @@ gdb-auto: all
 
 modify:
 	@cp ${HOME}/sdcard-rv.img  ${HOME}/osrepo/sdcard-rv.img
+
+disasm:
+	@cd os && make disasm ARCH=loongarch64 LOG=DEBUG

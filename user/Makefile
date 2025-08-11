@@ -37,6 +37,7 @@ build: clean pre binary
 	@$(foreach t, $(ELFS), cp $(t) $(BUILD_DIR)/elf/;)
 else ifeq ($(ARCH),loongarch64)
 build: clean
+	@echo "It is running on loongarch64 architecture"
 	@cargo build --release --target $(TARGET)
 endif
 

@@ -156,16 +156,7 @@ pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: 
         Ok(n) => n,
         Err(_) => return SysErrNo::EBADF as isize, //?
     };
-    #[cfg(target_arch = "riscv64")]
     if (permission.contains(MapPermission::R) && !file.readable())
-        || (permission.contains(MapPermission::W) && !file.writable())
-        || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
-    {
-        //如果需要读/写/执行方式映射，必须要求文件可读
-        return SysErrNo::EACCES as isize;
-    }
-    #[cfg(target_arch = "loongarch64")]
-    if (permission.contains(MapPermission::NR) && file.readable())
         || (permission.contains(MapPermission::W) && !file.writable())
         || (mmap_prot != MmapProt::PROT_NONE && inode.flags.contains(OpenFlags::O_WRONLY))
     {

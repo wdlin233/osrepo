@@ -6,7 +6,7 @@
  
 ## 参赛文档
 
-系统介绍文档在 [docs](./docs/) 文件夹。初赛参赛文档为[此文档](./docs/初赛文档.md)
+系统介绍文档在 [docs](./docs/) 文件夹。初赛参赛文档为[此文档](./docs/prel/初赛文档.md)
 
 [GitLab 仓库](https://gitlab.eduxiji.net/T202510008995695/oskernel2025-osrepo) 与 [GitHub 仓库](https://github.com/wdlin233/osrepo) 保持同步。
 
@@ -19,6 +19,5 @@
     - 刘畅：[wdlin233@163.com](mailto:wdlin233@163.com)
 
 <!-- 
-I really like the life,
-especially with all the pain and suffering. 
+水面に浮かぶ花弁の如く
 -->

@@ -34,6 +34,7 @@ pub const SIG_ERR: usize = usize::MAX;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
+#[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("sig_handle.s"));
 extern "C" {
     pub fn sigreturn();
@@ -83,11 +84,12 @@ pub fn setup_frame(signo: usize, sig_action: KSigAction) {
     let mut task_inner = task.inner_exclusive_access();
 
     let trap_cx = task_inner.get_trap_cx();
-    let mut user_sp = trap_cx.x[2];
+    let mut user_sp = trap_cx.gp.x[2];
 
     // if this syscall wants to restart
+    #[cfg(target_arch = "riscv64")]
     if scause::read().cause() == Trap::Exception(Exception::UserEnvCall)
-        && trap_cx.x[10] == SysErrNo::ERESTART as usize
+        && trap_cx.gp.x[10] == SysErrNo::ERESTART as usize
     {
         // and if `SA_RESTART` is set
         if sig_action.act.sa_flags.contains(SigActionFlags::SA_RESTART) {
@@ -95,11 +97,11 @@ pub fn setup_frame(signo: usize, sig_action: KSigAction) {
             // back to `ecall`
             trap_cx.sepc -= 4;
             // restore syscall parameter `a0`
-            trap_cx.x[10] = trap_cx.origin_a0;
+            trap_cx.gp.x[10] = trap_cx.origin_a0;
         } else {
             debug!("[do_signal] syscall was interrupted");
             // will return EINTR after sigreturn
-            trap_cx.x[10] = SysErrNo::EINTR as usize;
+            trap_cx.gp.x[10] = SysErrNo::EINTR as usize;
         }
     }
 
@@ -136,11 +138,11 @@ pub fn setup_frame(signo: usize, sig_action: KSigAction) {
             mcontext: trap_cx.as_mctx(),
         };
         // a2
-        trap_cx.x[12] = uctx_addr;
+        trap_cx.gp.x[12] = uctx_addr;
         //ata_flow!({ *(siginfo_addr as *mut SigInfo) = SigInfo::new(signo, 0, 0) });
         *translated_refmut(token, siginfo_addr as *mut SigInfo) = SigInfo::new(signo, 0, 0);
         // a1
-        trap_cx.x[11] = siginfo_addr;
+        trap_cx.gp.x[11] = siginfo_addr;
 
         user_sp = sig_sp;
         // 是 sigInfo
@@ -154,13 +156,13 @@ pub fn setup_frame(signo: usize, sig_action: KSigAction) {
     //data_flow!({ *(user_sp as *mut usize) = 0xdeadbeef });
     *translated_refmut(token, user_sp as *mut usize) = 0xdeadbeef;
     // a0
-    trap_cx.x[10] = signo;
+    trap_cx.gp.x[10] = signo;
     // sp
     trap_cx.set_sp(user_sp);
     // 修改Trap
     trap_cx.sepc = sig_action.act.sa_handler;
     // ra
-    trap_cx.x[1] = if sig_action
+    trap_cx.gp.x[1] = if sig_action
         .act
         .sa_flags
         .contains(SigActionFlags::SA_RESTORER)
@@ -178,7 +180,7 @@ pub fn restore_frame() -> isize {
     let mut task_inner = task.inner_exclusive_access();
 
     let trap_cx = task_inner.get_trap_cx();
-    let mut user_sp = trap_cx.x[2];
+    let mut user_sp = trap_cx.gp.x[2];
 
     //let checkout = unsafe { *(user_sp as *const usize) };
     let checkout = *translated_ref(token, user_sp as *const usize);
@@ -214,7 +216,7 @@ pub fn restore_frame() -> isize {
         trap_cx.copy_from_mctx(mctx);
     }
 
-    trap_cx.x[10] as isize
+    trap_cx.gp.x[10] as isize
 }
 
 pub fn add_signal(task: Arc<TaskControlBlock>, signal: SignalFlags) {

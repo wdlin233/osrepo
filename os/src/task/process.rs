@@ -7,7 +7,6 @@ use super::manager::insert_into_pid2process;
 use super::stride::Stride;
 use super::TaskControlBlock;
 use super::{pid_alloc, PidHandle};
-#[cfg(target_arch = "loongarch64")]
 use crate::config::PAGE_SIZE_BITS;
 use crate::mm::{translated_ref, MapPermission};
 
@@ -16,7 +15,6 @@ use crate::fs::File;
 use crate::fs::{FdTable, FsInfo, Stdin, Stdout};
 use crate::hal::trap::{trap_handler, TrapContext};
 use crate::mm::VPNRange;
-#[cfg(target_arch = "riscv64")]
 use crate::mm::KERNEL_SPACE;
 use crate::mm::{
     flush_tlb, put_data, translated_refmut, MapAreaType, MemorySet, MemorySetInner, VirtAddr,
@@ -350,7 +348,6 @@ impl ProcessControlBlock {
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
         let ustack_top = task_inner.ustack_top();
-        #[cfg(target_arch = "riscv64")]
         let kstack_top = task.kstack.get_top();
         drop(task_inner);
         //info!("ustack_top = {:#x}, kstack_top = {:#x}", ustack_top, kstack_top);
@@ -360,12 +357,9 @@ impl ProcessControlBlock {
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             ustack_top,
-            #[cfg(target_arch = "riscv64")]
             KERNEL_SPACE.exclusive_access().token(),
-            #[cfg(target_arch = "riscv64")]
             kstack_top,
-            #[cfg(target_arch = "riscv64")]
-            (trap_handler as usize),
+            trap_handler as usize,
         );
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
@@ -520,29 +514,27 @@ impl ProcessControlBlock {
 
         // initialize trap_cx
         debug!("init context");
+        let kstack_top = task.kstack.get_top();
         let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            #[cfg(target_arch = "riscv64")]
             KERNEL_SPACE.exclusive_access().token(),
-            #[cfg(target_arch = "riscv64")]
-            task.kstack.get_top(),
-            #[cfg(target_arch = "riscv64")]
-            (trap_handler as usize),
+            kstack_top,
+            trap_handler as usize,
         );
         #[cfg(target_arch = "riscv64")]
         {
-            trap_cx.x[10] = args_len; // a0, the same with previous stack frame
-            trap_cx.x[11] = argv_base; // a1
-            trap_cx.x[12] = env_base;
-            trap_cx.x[13] = aux_base;
+            trap_cx.gp.x[10] = args_len; // a0, the same with previous stack frame
+            trap_cx.gp.x[11] = argv_base; // a1
+            trap_cx.gp.x[12] = env_base;
+            trap_cx.gp.x[13] = aux_base;
         }
         #[cfg(target_arch = "loongarch64")]
         {
-            trap_cx.x[4] = args_len;
-            trap_cx.x[5] = argv_base;
-            trap_cx.x[6] = env_base;
-            trap_cx.x[7] = aux_base;
+            trap_cx.gp.x[4] = args_len;
+            trap_cx.gp.x[5] = argv_base;
+            trap_cx.gp.x[6] = env_base;
+            trap_cx.gp.x[7] = aux_base;
         }
         *task_inner.get_trap_cx() = trap_cx;
 
@@ -571,7 +563,6 @@ impl ProcessControlBlock {
         tls: usize,
         child_tid: *mut u32,
     ) -> Arc<Self> {
-        //unimplemented!()
         let user = self.user.clone();
         let mut parent = self.inner_exclusive_access();
         let ptid = current_task().unwrap().tid();
@@ -643,8 +634,7 @@ impl ProcessControlBlock {
             if flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
                 put_data(token, child_tid, task.tid() as u32);
             }
-            let trap_cx;
-            #[cfg(target_arch = "riscv64")]
+            let trap_cx: &mut TrapContext;
             {
                 let task_inner = task.inner_exclusive_access();
                 trap_cx = task_inner.get_trap_cx();
@@ -661,13 +651,13 @@ impl ProcessControlBlock {
                 // debug!("[new thread] entry_point:{:#x}", entry_point);
                 trap_cx.sepc = entry_point;
                 //a0
-                trap_cx.x[10] = arg;
+                trap_cx.gp.x[10] = arg;
                 //sp
                 trap_cx.set_sp(stack);
             }
             if flags.contains(CloneFlags::CLONE_SETTLS) {
                 debug!("tls");
-                trap_cx.x[4] = tls;
+                trap_cx.gp.x[4] = tls;
             }
             insert_into_tid2task(task.tid(), Arc::clone(&task));
             add_task(task);
@@ -748,23 +738,21 @@ impl ProcessControlBlock {
             }
 
             drop(child_inner);
-            let trap_cx;
+            let trap_cx: &mut TrapContext;
             #[cfg(target_arch = "riscv64")]
             {
                 let task_inner = task.inner_exclusive_access();
                 trap_cx = task_inner.get_trap_cx();
-                trap_cx.x[10] = 0;
+                trap_cx.gp.x[10] = 0;
                 trap_cx.kernel_sp = task.kstack.get_top();
             }
             // modify kstack_top in trap_cx of this thread
             #[cfg(target_arch = "loongarch64")]
             {
-                let mut kstack = &mut task.inner_exclusive_access().kstack;
-                // 修改trap_cx的内容，使其保持与父进程相同
-                // 这需要拷贝父进程的主线程的内核栈到子进程的内核栈中
-                trap_cx = kstack.get_trap_cx();
-                trap_cx.x[4] = 0; // a0, the same with
-                kstack.copy_from_other(&parent.get_task(0).inner_exclusive_access().kstack);
+                let task_inner = task.inner_exclusive_access();
+                trap_cx = task_inner.get_trap_cx();
+                trap_cx.gp.x[4] = 0;
+                trap_cx.kernel_sp = task.kstack.get_top();
             }
 
             if stack != 0 {
@@ -777,12 +765,12 @@ impl ProcessControlBlock {
                 // debug!("[new thread] entry_point:{:#x}", entry_point);
                 trap_cx.sepc = entry_point;
                 //a0
-                trap_cx.x[10] = arg;
+                trap_cx.gp.x[10] = arg;
                 //sp
                 trap_cx.set_sp(stack);
             }
             if flags.contains(CloneFlags::CLONE_SETTLS) {
-                trap_cx.x[4] = tls;
+                trap_cx.gp.x[4] = tls;
             }
             insert_into_tid2task(task.tid(), Arc::clone(&task));
             insert_into_pid2process(child.getpid(), Arc::clone(&child));

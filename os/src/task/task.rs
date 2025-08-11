@@ -1,12 +1,10 @@
 //! Types related to task management & Functions for completely changing TCB
 
 use super::id::{trap_cx_bottom_from_tid, ustack_bottom_from_tid};
-#[cfg(target_arch = "riscv64")]
 use super::kstack_alloc;
 use super::{KernelStack, ProcessControlBlock, TaskContext};
 use crate::config::{
-    KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
-    USER_TRAP_CONTEXT_TOP,
+    KERNEL_STACK_SIZE, PAGE_SIZE, PAGE_SIZE_BITS, TRAMPOLINE, USER_HEAP_SIZE, USER_STACK_SIZE, USER_STACK_TOP, USER_TRAP_CONTEXT_TOP
 };
 use crate::hal::trap::TrapContext;
 use crate::mm::{
@@ -23,25 +21,18 @@ use spin::MutexGuard;
 /// Task control block structure
 pub struct TaskControlBlock {
     /// immutable
-    pub process: Weak<ProcessControlBlock>, //所属进程
-    /// Kernel stack corresponding to PID
-    #[cfg(target_arch = "riscv64")]
+    pub process: Weak<ProcessControlBlock>, 
+    /// Kernel stack corresponding to TID
     pub kstack: KernelStack,
     /// mutable
     inner: UPSafeCell<TaskControlBlockInner>,
 }
 
 pub struct TaskControlBlockInner {
-    //pub res: Option<TaskUserRes>,
     pub tid: usize,
     pub ptid: usize,
     /// The physical page number of the frame where the trap context is placed
-    #[cfg(target_arch = "riscv64")]
     pub trap_cx_ppn: PhysPageNum,
-    //每个线程都存在内核栈，其trap上下文位于内核栈上
-    #[cfg(target_arch = "loongarch64")]
-    pub kstack: KernelStack,
-
     /// Save task context, 线程上下文
     pub task_cx: TaskContext,
     /// Maintain the execution status of the current process
@@ -89,10 +80,6 @@ impl TaskControlBlockInner {
     fn get_status(&self) -> TaskStatus {
         self.task_status
     }
-    #[cfg(target_arch = "loongarch64")]
-    pub fn get_trap_addr(&self) -> usize {
-        self.kstack.get_trap_addr()
-    }
 }
 
 impl TaskControlBlock {
@@ -111,6 +98,18 @@ impl TaskControlBlock {
         va
     }
 
+    /// 
+    pub fn trap_cx_user_pa(&self) -> usize {
+        let process = self.process.upgrade().unwrap();
+        let process_inner = process.inner_exclusive_access();
+        let trap_cx_bottom_va: VirtAddr = trap_cx_bottom_from_tid(self.tid()).into();
+        let trap_cx_user_pa = process_inner
+            .memory_set
+            .translate(trap_cx_bottom_va.into())
+            .unwrap()
+            .ppn();
+        trap_cx_user_pa.0 << PAGE_SIZE_BITS
+    }
     /// Create a new task
     pub fn new(
         process: Arc<ProcessControlBlock>,
@@ -121,18 +120,14 @@ impl TaskControlBlock {
         let tid = process.inner_exclusive_access().alloc_tid();
         debug!("in tcb new, the tid is : {}", tid);
         let (kstack, kstack_top) = {
-            #[cfg(target_arch = "riscv64")]
-            {
-                let kstack = kstack_alloc();
-                let kstack_top = kstack.get_top();
-                (Some(kstack), kstack_top)
-            }
+            let kstack = kstack_alloc();
+            let kstack_top = kstack.get_top();
+            (Some(kstack), kstack_top)
         };
         let sig_mask = SignalFlags::empty();
         let sig_pending = SignalFlags::empty();
         let mut new_task = TaskControlBlock {
             process: Arc::downgrade(&process),
-            #[cfg(target_arch = "riscv64")]
             kstack: kstack.unwrap(),
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
@@ -140,9 +135,6 @@ impl TaskControlBlock {
                     ptid: parent_tid,
                     sig_mask,
                     sig_pending,
-                    #[cfg(target_arch = "loongarch64")]
-                    kstack: kstack.unwrap(),
-                    #[cfg(target_arch = "riscv64")]
                     trap_cx_ppn: PhysPageNum(0),
                     trap_va: VirtAddr(0),
                     ustack_top: VirtAddr(0),

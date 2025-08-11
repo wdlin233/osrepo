@@ -3,6 +3,7 @@ use crate::{
     task::{add_task, current_task, TaskControlBlock},
 };
 use alloc::sync::Arc;
+use crate::mm::kernel_token;
 /// thread create syscall
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     // trace!(
@@ -33,9 +34,6 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     }
     tasks[new_task_tid] = Some(Arc::clone(&new_task));
     let new_task_trap_cx = new_task_inner.get_trap_cx();
-    #[cfg(target_arch = "riscv64")]
-    {
-        use crate::mm::kernel_token;
         *new_task_trap_cx = TrapContext::app_init_context(
             entry,
             ustack_top,
@@ -43,13 +41,14 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
             new_task.kstack.get_top(),
             trap_handler as usize,
         );
-        (*new_task_trap_cx).x[10] = arg;
-    }
-    #[cfg(target_arch = "loongarch64")]
-    {
-        *new_task_trap_cx = TrapContext::app_init_context(entry, new_task_res.ustack_top(true));
-        new_task_trap_cx.x[4] = arg;
-    }
+        #[cfg(target_arch = "riscv64")]
+        {
+            (*new_task_trap_cx).gp.x[10] = arg;
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            (*new_task_trap_cx).gp.x[4] = arg;
+        }
     new_task_tid as isize
 }
 /// get current thread id syscall
