@@ -226,13 +226,17 @@ impl PageTable {
             }
             if !pte.is_valid() {
                 let frame = frame_alloc().unwrap();
+
                 #[cfg(target_arch = "riscv64")]
                 {
                     *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
                 }
                 #[cfg(target_arch = "loongarch64")]
                 {
-                    *pte = PageTableEntry::new(frame.ppn, PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P);
+                    *pte = PageTableEntry::new(
+                        frame.ppn,
+                        PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P,
+                    );
                 }
                 // debug!(
                 //     "(find_pte_create, alloc new frame) ppn: {:?}, pte: {:#x}",
@@ -281,7 +285,10 @@ impl PageTable {
         }
         #[cfg(target_arch = "loongarch64")]
         {
-            *pte = PageTableEntry::new(ppn, PTEFlags::from(flags) | PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P);
+            *pte = PageTableEntry::new(
+                ppn,
+                PTEFlags::from(flags) | PTEFlags::V | PTEFlags::MAT_CC | PTEFlags::P,
+            );
             if is_cow {
                 pte.set_cow();
             }

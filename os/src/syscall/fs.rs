@@ -3,9 +3,9 @@ use core::mem::transmute;
 //use crate::fs::ext4::ROOT_INO;
 use crate::fs::pipe::make_pipe;
 use crate::fs::{
-    convert_kstat_to_statx, find_device, fs_stat, open, open_device_file, remove_inode_idx, stat, sync, File,
-    FileClass, FileDescriptor, Kstat, OpenFlags, Statfs, Statx, StatxFlags, MAX_PATH_LEN,
-    MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_SET,
+    convert_kstat_to_statx, find_device, fs_stat, open, open_device_file, remove_inode_idx, stat,
+    sync, File, FileClass, FileDescriptor, Kstat, OpenFlags, Statfs, Statx, StatxFlags,
+    MAX_PATH_LEN, MNT_TABLE, NONE_MODE, SEEK_CUR, SEEK_END, SEEK_SET,
 }; //::{link, unlink}
 use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
@@ -758,11 +758,11 @@ pub fn sys_unlinkat(dirfd: isize, path: *const u8, _flags: u32) -> isize {
     if abs_path == "" {
         return -1;
     }
-    
+
     if find_device(&abs_path) {
         return SysErrNo::EPERM as isize;
     }
-    
+
     debug!("to open,the abs path is :{}", abs_path);
     let osfile = match open(&abs_path, OpenFlags::O_ASK_SYMLINK, NONE_MODE, "") {
         Ok(of) => of.file().unwrap(),
@@ -1535,11 +1535,11 @@ pub fn sys_renameat2(
         Ok(path) => path,
         Err(e) => return e as isize,
     };
-    
+
     if find_device(&old_abs_path) {
         return SysErrNo::EPERM as isize;
     }
-    
+
     let osfile = open(&old_abs_path, OpenFlags::O_RDWR, NONE_MODE, "")
         .unwrap()
         .file()
@@ -1567,7 +1567,10 @@ pub fn sys_copy_file_range(
     size: usize,
     flags: u32,
 ) -> isize {
-    warn!("sys_copy_file_range: fd_in: {}, fd_out: {}, size: {}", fd_in, fd_out, size);
+    warn!(
+        "sys_copy_file_range: fd_in: {}, fd_out: {}, size: {}",
+        fd_in, fd_out, size
+    );
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
@@ -1583,9 +1586,9 @@ pub fn sys_copy_file_range(
     if fd_in >= inner.fd_table.len() || fd_out >= inner.fd_table.len() {
         return SysErrNo::EBADF as isize;
     }
-    
+
     if fd_in == fd_out {
-        // According to man page, if fd_in and fd_out refer to the same file, 
+        // According to man page, if fd_in and fd_out refer to the same file,
         // then the source and target ranges are not allowed to overlap.
         // For simplicity, we just return EINVAL.
         return SysErrNo::EINVAL as isize;
@@ -1602,6 +1605,34 @@ pub fn sys_copy_file_range(
         Ok(file) => file,
         Err(_) => return SysErrNo::EBADF as isize,
     };
+
+    if size > 0 && off_out.is_null() {
+        let saved = out_file.lseek(0, SEEK_CUR).unwrap();
+        let current_out_size = out_file.lseek(0, SEEK_END).unwrap() as usize;
+        let _ = out_file.lseek(saved as isize, SEEK_SET).unwrap();
+        let write_start = if off_out.is_null() {
+            out_file.lseek(0, SEEK_CUR).unwrap() as usize
+        } else {
+            *translated_ref(token, off_out) as usize
+        };
+
+        if write_start > current_out_size {
+            let mut pad_len = write_start - current_out_size;
+            let mut zero_chunk = [0u8; 1024];
+            let mut pos = current_out_size as isize;
+
+            while pad_len > 0 {
+                let step = 1024.min(pad_len);
+                let buf = UserBuffer::new_single(unsafe {
+                    core::slice::from_raw_parts_mut(zero_chunk.as_mut_ptr(), step)
+                });
+                out_file.lseek(pos, SEEK_SET).unwrap();
+                let written = out_file.write(buf).unwrap();
+                pos += written as isize;
+                pad_len -= written;
+            }
+        }
+    }
 
     let mut buffer = vec![0u8; 1024.min(size)];
     let mut total_copied = 0;
@@ -1654,7 +1685,7 @@ pub fn sys_copy_file_range(
             bytes
         };
 
-        warn!("Read {} bytes, wrote {} bytes", read_bytes, written_bytes);
+        //warn!("Read {} bytes, wrote {} bytes", read_bytes, written_bytes);
         total_copied += written_bytes as usize;
         remaining -= written_bytes as usize;
 
@@ -1667,17 +1698,15 @@ pub fn sys_copy_file_range(
     total_copied as isize
 }
 
-pub fn sys_pread64(
-    fd: usize,
-    buf: *mut u8,
-    count: usize,
-    offset: isize,
-) -> isize {
-    warn!("sys_pread64: fd: {}, count: {}, offset: {}", fd, count, offset);
+pub fn sys_pread64(fd: usize, buf: *mut u8, count: usize, offset: isize) -> isize {
+    warn!(
+        "sys_pread64: fd: {}, count: {}, offset: {}",
+        fd, count, offset
+    );
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let memory_set = inner.memory_set.clone();
-    
+
     if count == 0 {
         return 0;
     }
@@ -1727,11 +1756,14 @@ pub fn sys_splice(
     size: usize,
     flags: u32,
 ) -> isize {
-    warn!("sys_splice: fd_in: {}, fd_out: {}, size: {}, flags: 0x{:x}", fd_in, fd_out, size, flags);
-    
-    use crate::syscall::SpliceFlags;
+    warn!(
+        "sys_splice: fd_in: {}, fd_out: {}, size: {}, flags: 0x{:x}",
+        fd_in, fd_out, size, flags
+    );
+
     use crate::fs::pipe::Pipe;
-    
+    use crate::syscall::SpliceFlags;
+
     let process = current_process();
     let inner = process.inner_exclusive_access();
 
@@ -1786,7 +1818,7 @@ pub fn sys_splice(
     }
 
     let splice_flags = SpliceFlags::from_bits_truncate(flags);
-    
+
     let chunk_size = 4096.min(size);
     let mut buffer = vec![0u8; chunk_size];
     let mut total_transferred = 0;
@@ -1802,7 +1834,7 @@ pub fn sys_splice(
             let buf = UserBuffer::new_single(unsafe {
                 core::slice::from_raw_parts_mut(buffer.as_mut_ptr(), current_chunk)
             });
-            
+
             if in_is_pipe {
                 let pipe = in_file.as_any().downcast_ref::<Pipe>().unwrap();
                 let ring_buffer = pipe.inner_lock();
@@ -1818,12 +1850,12 @@ pub fn sys_splice(
                 }
                 drop(ring_buffer);
             }
-            
+
             match in_file.read(buf) {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     if total_transferred > 0 {
-                        break; 
+                        break;
                     }
                     return e as isize;
                 }
@@ -1835,11 +1867,11 @@ pub fn sys_splice(
             let current_offset = *translated_ref(token, off_in);
             drop(inner);
             drop(process);
-            
+
             if current_offset < 0 {
                 return SysErrNo::EINVAL as isize;
             }
-            
+
             // read_at for normal file
             match in_file_desc.file() {
                 Ok(file) => {
@@ -1894,16 +1926,15 @@ pub fn sys_splice(
             let current_offset = *translated_ref(token, off_out);
             drop(inner);
             drop(process);
-            
+
             if current_offset < 0 {
                 return SysErrNo::EINVAL as isize;
             }
-            
+
             match out_file_desc.file() {
                 Ok(file) => {
-                    let buf_slice = unsafe {
-                        core::slice::from_raw_parts(buffer.as_ptr(), read_bytes)
-                    };
+                    let buf_slice =
+                        unsafe { core::slice::from_raw_parts(buffer.as_ptr(), read_bytes) };
                     match file.inode.write_at(current_offset as usize, buf_slice) {
                         Ok(bytes) => {
                             let process = current_process();
