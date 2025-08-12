@@ -1676,6 +1676,7 @@ pub fn sys_pread64(
     warn!("sys_pread64: fd: {}, count: {}, offset: {}", fd, count, offset);
     let process = current_process();
     let inner = process.inner_exclusive_access();
+    let memory_set = inner.memory_set.clone();
     
     if count == 0 {
         return 0;
@@ -1691,17 +1692,31 @@ pub fn sys_pread64(
         Err(_) => return SysErrNo::EBADF as isize,
     };
 
-    let buf = unsafe {
-        core::slice::from_raw_parts_mut(buf, count)
+    let buffer = match safe_translated_byte_buffer(memory_set, buf, count) {
+        Some(buffer) => buffer,
+        None => return SysErrNo::EFAULT as isize,
     };
 
     drop(inner);
     drop(process);
 
-    match file.inode.read_at(offset as usize, buf) {
-        Ok(bytes_read) => bytes_read as isize,
-        Err(e) => e as isize,
+    // Read directly at specified offset using the underlying inode
+    let mut total_read = 0;
+    for slice in buffer.iter() {
+        match file.inode.read_at(offset as usize + total_read, unsafe {
+            core::slice::from_raw_parts_mut(slice.as_ptr() as *mut u8, slice.len())
+        }) {
+            Ok(bytes_read) => {
+                total_read += bytes_read;
+                if bytes_read < slice.len() {
+                    break; // EOF or partial read
+                }
+            }
+            Err(e) => return e as isize,
+        }
     }
+
+    total_read as isize
 }
 
 pub fn sys_splice(
