@@ -46,6 +46,7 @@ pub mod hal;
 pub mod lang_items;
 pub mod logging;
 pub mod mm;
+pub mod net;
 pub mod signal;
 pub mod sync;
 pub mod syscall;
@@ -62,7 +63,7 @@ use crate::{
 pub mod system;
 pub mod users;
 
-use crate::hal::{utils::console::CONSOLE};
+use crate::hal::utils::console::CONSOLE;
 use config::FLAG;
 use core::arch::global_asm;
 
@@ -74,7 +75,7 @@ pub fn clear_bss() {
     unsafe {
         core::slice::from_raw_parts_mut(
             sbss as usize as *mut u128,
-             (ebss as usize - sbss as usize) / core::mem::size_of::<u128>(),
+            (ebss as usize - sbss as usize) / core::mem::size_of::<u128>(),
         )
         .fill(0);
     }
@@ -101,7 +102,7 @@ pub fn main(cpu: usize) -> ! {
     task::add_initproc();
     fs::init();
     hal::trap::enable_timer_interrupt();
-    
+
     task::run_tasks();
     panic!("Unreachable section for kernel!");
 }

@@ -4,7 +4,7 @@ pub mod ext4_lw;
 pub mod fsidx;
 pub mod fstruct;
 pub mod mount;
-pub mod net;
+
 pub mod pipe;
 pub mod stat;
 pub mod stdio;
@@ -28,7 +28,7 @@ pub use fstruct::*;
 use hashbrown::HashSet;
 use log::debug;
 pub use mount::MNT_TABLE;
-pub use net::*;
+
 pub use pipe::{make_pipe, Pipe};
 use spin::Lazy;
 pub use stat::*;
@@ -103,6 +103,7 @@ pub const NONE_MODE: u32 = 0;
 pub enum FileClass {
     File(Arc<OSInode>),
     Abs(Arc<dyn File>),
+    Sock(Arc<dyn Sock>),
 }
 
 impl FileClass {
@@ -110,24 +111,35 @@ impl FileClass {
         match self {
             FileClass::File(f) => Ok(f.clone()),
             FileClass::Abs(_) => Err(SysErrNo::EINVAL),
+            FileClass::Sock(_) => Err(SysErrNo::EINVAL),
         }
     }
     pub fn abs(&self) -> Result<Arc<dyn File>, SysErrNo> {
         match self {
             FileClass::File(_) => Err(SysErrNo::EINVAL),
             FileClass::Abs(f) => Ok(f.clone()),
+            FileClass::Sock(_) => Err(SysErrNo::EINVAL),
         }
     }
-    pub fn any(&self) -> Arc<dyn File> {
+    pub fn sock(&self) -> Result<Arc<dyn Sock>, SysErrNo> {
         match self {
-            FileClass::File(f) => f.clone(),
-            FileClass::Abs(f) => f.clone(),
+            FileClass::File(_) => Err(SysErrNo::EINVAL),
+            FileClass::Abs(f) => Err(SysErrNo::EINVAL),
+            FileClass::Sock(f) => Ok(f.clone()),
+        }
+    }
+    pub fn any(&self) -> Result<Arc<dyn File>, SysErrNo> {
+        match self {
+            FileClass::File(f) => Ok(f.clone()),
+            FileClass::Abs(f) => Ok(f.clone()),
+            FileClass::Sock(_) => Err(SysErrNo::EINVAL),
         }
     }
     pub fn fstat(&self) -> Kstat {
         match self {
             FileClass::File(f) => f.inode.fstat(),
             FileClass::Abs(f) => f.fstat(),
+            FileClass::Sock(f) => f.fstat(),
         }
     }
 }
@@ -284,10 +296,10 @@ Hugetlb:               0 kB
 ";
 const ADJTIME: &str = "0.000000 0.000000 UTC\n";
 const LOCALTIME: &str =
-    "lrwxrwxrwx 1 root root 33 11月 18  2023 /etc/localtime -> /usr/share/zoneinfo/Asia/Shanghai\n";
+    "lrwxrwxrwx 1 root root 33 5月 18  2025 /etc/localtime -> /usr/share/zoneinfo/Asia/Shanghai\n";
 const PRELOAD: &str = "";
 
-pub fn create_init_files() -> GeneralRet {
+pub fn create_init_files() -> GeneralRet<()> {
     //创建/proc文件夹
     open(
         "/proc",
