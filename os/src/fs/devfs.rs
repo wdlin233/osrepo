@@ -410,12 +410,18 @@ impl File for DevInterrupts {
         let timer_count = TIMER_INTERRUPT_COUNT.load(Ordering::Relaxed);
         let virtio_count = VIRTIO_INTERRUPT_COUNT.load(Ordering::Relaxed);
         
+        //info!("Reading /proc/interrupts - timer_count: {}, virtio_count: {}", timer_count, virtio_count);
+        
         let mut content = String::new();
         
-        content.push_str(&format!("{}:        {}\n", TIMER_IRQ, timer_count));
-        if virtio_count > 0 {
-            content.push_str(&format!("{}:        {}\n", VIRTIO_IRQ, virtio_count));
+        if timer_count > 0 {
+            content.push_str(&format!("{}: {}\n", TIMER_IRQ, timer_count));
         }
+        if virtio_count > 0 {
+            content.push_str(&format!("{}: {}\n", VIRTIO_IRQ, virtio_count));
+        }
+        
+        //info!("DEBUG: /proc/interrupts content: {:?}", content);
         
         let bytes = content.as_bytes();
         let len = min(user_buf.len(), bytes.len());
@@ -446,9 +452,11 @@ impl File for DevInterrupts {
 }
 
 pub fn increment_timer_interrupt() {
-    TIMER_INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
+    let old_count = TIMER_INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
+    //info!("DEBUG: Timer interrupt incremented: {} -> {}", old_count, old_count + 1);
 }
 
 pub fn increment_virtio_interrupt() {
-    VIRTIO_INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
+    let old_count = VIRTIO_INTERRUPT_COUNT.fetch_add(1, Ordering::Relaxed);
+    //info!("DEBUG: Virtio interrupt incremented: {} -> {}", old_count, old_count + 1);
 }

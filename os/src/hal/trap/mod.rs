@@ -246,6 +246,7 @@ pub fn trap_handler() -> ! {
             crate::timer::check_timer();
             increment_timer_interrupt();
             set_next_trigger();
+            suspend_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
             // Handle external interrupts (e.g., virtio devices)
