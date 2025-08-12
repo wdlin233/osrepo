@@ -24,7 +24,7 @@ impl Socket {
     //         .map_err(|_| SysErrNo::EINVAL.into())
     // }
 
-    fn send(&self, buf: &[u8]) -> AxResult<usize> {
+    pub fn send(&self, buf: &[u8]) -> AxResult<usize> {
         match self {
             Socket::Udp(udpsocket) => Ok(udpsocket.lock().send(buf)?),
             Socket::Tcp(tcpsocket) => Ok(tcpsocket.lock().send(buf)?),
@@ -73,7 +73,7 @@ impl Socket {
         }
     }
 
-    fn sendto(&self, buf: &[u8], addr: SocketAddr) -> SyscallRet {
+    pub fn sendto(&self, buf: &[u8], addr: SocketAddr) -> SyscallRet {
         match self {
             // diff: must bind before sendto
             Socket::Udp(udpsocket) => Ok(udpsocket.lock().send_to(buf, addr)?),
@@ -153,6 +153,102 @@ impl Sock for Socket {
             Socket::Tcp(tcpsocket) => tcpsocket.lock().set_nonblocking(nonblock),
         }
         Ok(0)
+    }
+
+    fn bind(&self, addr: SocketAddr) -> AxResult<()> {
+        self.bind(addr)
+    }
+
+    fn local_addr(&self) -> AxResult<SocketAddr> {
+        match self {
+            Socket::Udp(udpsocket) => udpsocket.lock().local_addr(),
+            Socket::Tcp(tcpsocket) => tcpsocket.lock().local_addr(),
+        }
+    }
+
+    fn sendto(&self, buf: &[u8], addr: SocketAddr) -> AxResult<usize> {
+        match self.sendto(buf, addr) {
+            Ok(sent) => Ok(sent),
+            Err(e) => Err(crate::net::AxError::from(e)),
+        }
+    }
+
+    fn recvfrom(&self, buf: &mut [u8]) -> AxResult<(usize, Option<SocketAddr>)> {
+        match self {
+            Socket::Udp(udpsocket) => {
+                match udpsocket.lock().recv_from(buf) {
+                    Ok((len, addr)) => Ok((len, Some(addr))),
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+            Socket::Tcp(tcpsocket) => {
+                match tcpsocket.lock().recv(buf) {
+                    Ok(len) => Ok((len, None)),
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+        }
+    }
+
+    fn recvfrom_timeout(&self, buf: &mut [u8], timeout_ms: u64) -> AxResult<(usize, Option<SocketAddr>)> {
+        match self {
+            Socket::Udp(udpsocket) => {
+                match udpsocket.lock().recv_from_timeout(buf, timeout_ms) {
+                    Ok((len, addr)) => Ok((len, Some(addr))),
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+            Socket::Tcp(tcpsocket) => {
+                match tcpsocket.lock().recv(buf) {
+                    Ok(len) => Ok((len, None)),
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+        }
+    }
+
+    fn listen(&self, backlog: i32) -> AxResult<()> {
+        match self {
+            Socket::Udp(_) => Err(SysErrNo::EOPNOTSUPP.into()),
+            Socket::Tcp(tcpsocket) => {
+                debug!("TCP socket listen with backlog: {}", backlog);
+                match tcpsocket.lock().listen() {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+        }
+    }
+
+    fn connect(&self, addr: core::net::SocketAddr) -> AxResult<()> {
+        match self {
+            Socket::Udp(_) => Err(SysErrNo::EOPNOTSUPP.into()),
+            Socket::Tcp(tcpsocket) => {
+                debug!("TCP socket connect to: {}", addr);
+                match tcpsocket.lock().connect(addr) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+        }
+    }
+
+    fn accept(&self) -> AxResult<(Arc<dyn Sock>, core::net::SocketAddr)> {
+        match self {
+            Socket::Udp(_) => Err(SysErrNo::EOPNOTSUPP.into()),
+            Socket::Tcp(tcpsocket) => {
+                debug!("TCP socket accept");
+                match tcpsocket.lock().accept() {
+                    Ok(new_tcp_socket) => {
+                        // Get peer address from the new socket
+                        let peer_addr = new_tcp_socket.peer_addr()?;
+                        let new_socket = Socket::Tcp(Mutex::new(new_tcp_socket));
+                        Ok((Arc::new(new_socket), peer_addr))
+                    }
+                    Err(e) => Err(crate::net::AxError::from(e)),
+                }
+            }
+        }
     }
 }
 

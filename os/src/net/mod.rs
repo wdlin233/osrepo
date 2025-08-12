@@ -4,7 +4,7 @@ pub mod socket_impl;
 pub use socket::*;
 pub use socket_impl::*;
 
-pub use crate::net::socket::TcpSocket;
+pub use crate::net::socket::{init as net_init, TcpSocket};
 pub use crate::net::socket::UdpSocket;
 pub use crate::net::socket::{
     add_membership, dns_query, from_core_sockaddr, into_core_sockaddr, poll_interfaces,

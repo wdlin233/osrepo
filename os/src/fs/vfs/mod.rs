@@ -173,4 +173,37 @@ pub trait Sock: Send + Sync {
     fn set_nonblocking(&self, nonblock: bool) -> AxResult<usize> {
         unimplemented!()
     }
+
+    fn bind(&self, addr: core::net::SocketAddr) -> AxResult<()> {
+        unimplemented!()
+    }
+
+    fn local_addr(&self) -> AxResult<core::net::SocketAddr> {
+        unimplemented!()
+    }
+
+    fn sendto(&self, buf: &[u8], addr: core::net::SocketAddr) -> AxResult<usize> {
+        unimplemented!()
+    }
+
+    fn recvfrom(&self, buf: &mut [u8]) -> AxResult<(usize, Option<core::net::SocketAddr>)> {
+        unimplemented!()
+    }
+
+    fn recvfrom_timeout(&self, buf: &mut [u8], timeout_ms: u64) -> AxResult<(usize, Option<core::net::SocketAddr>)> {
+        // Default implementation just calls recvfrom
+        self.recvfrom(buf)
+    }
+
+    fn listen(&self, backlog: i32) -> AxResult<()> {
+        unimplemented!()
+    }
+
+    fn connect(&self, addr: core::net::SocketAddr) -> AxResult<()> {
+        unimplemented!()
+    }
+
+    fn accept(&self) -> AxResult<(Arc<dyn Sock>, core::net::SocketAddr)> {
+        unimplemented!()
+    }
 }

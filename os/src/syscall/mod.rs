@@ -156,6 +156,8 @@ pub const SYSCALL_SOCKETPAIR: usize = 199;
 pub const SYSCALL_BIND: usize = 200;
 /// listen syscall
 pub const SYSCALL_LISTEN: usize = 201;
+/// accept syscall
+pub const SYSCALL_ACCEPT: usize = 202;
 /// connect syscall
 pub const SYSCALL_CONNECT: usize = 203;
 
@@ -163,6 +165,8 @@ pub const SYSCALL_CONNECT: usize = 203;
 pub const SYSCALL_GETSOCKNAME: usize = 204;
 /// send to syscall
 pub const SYSCALL_SENDTO: usize = 206;
+/// recv_from syscall
+pub const SYSCALL_RECVFROM: usize = 207;
 /// setsockopt syscall
 pub const SYSCALL_SETSOCKOPT: usize = 208;
 ///get socket opt syscall
@@ -265,6 +269,8 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_ACCEPT => sys_accept(args[0], args[1] as *mut u8, args[2] as *mut u32),
+        SYSCALL_RECVFROM => sys_recvfrom(args[0], args[1] as *mut u8, args[2], args[3] as u32, args[4] as *mut u8, args[5] as *mut u32),
         SYSCALL_SIGRETURN => sys_sig_return(),
         SYSCALL_GETSOCKETOPT => sys_getsocketopt(args[0], args[1], args[2], args[3], args[4]),
         SYSCALL_CONNECT => sys_connect(args[0], args[1] as *const u8, args[2] as u32),
@@ -299,7 +305,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[4] as *const u8,
             args[5] as u32,
         ),
-        SYSCALL_GETSOCKNAME => sys_getsockname(args[0], args[1] as *const u8, args[2] as u32),
+        SYSCALL_GETSOCKNAME => sys_getsockname(args[0], args[1] as *mut u8, args[2] as *mut u32),
         SYSCALL_PSELECT6 => sys_pselect6(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYSCALL_LISTEN => sys_listen(args[0], args[1] as u32),
         SYSCALL_BIND => sys_bind(args[0], args[1], args[2] as u32),

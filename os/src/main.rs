@@ -101,6 +101,7 @@ pub fn main(cpu: usize) -> ! {
     fs::list_apps();
     task::add_initproc();
     fs::init();
+    net::net_init();
     hal::trap::enable_timer_interrupt();
 
     task::run_tasks();

@@ -13,6 +13,7 @@ use core::ops::DerefMut;
 use crate::utils::SysErrNo;
 
 use super::lazy_init::LazyInit;
+use crate::drivers::{NetDeviceImpl, AxNetDeviceType, NetBufPtr, NetError, VirtIoHalImpl, NetTxBufPtr};
 
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
@@ -185,7 +186,7 @@ pub trait Write {
 struct SocketSetWrapper<'a>(Mutex<SocketSet<'a>>);
 
 struct DeviceWrapper {
-    inner: RefCell<AxNetDevice>, // use `RefCell` is enough since it's wrapped in `Mutex` in `InterfaceWrapper`.
+    inner: RefCell<AxNetDeviceType>, // use `RefCell` is enough since it's wrapped in `Mutex` in `InterfaceWrapper`.
 }
 
 struct InterfaceWrapper {
@@ -278,7 +279,7 @@ impl<'a> SocketSetWrapper<'a> {
 
 #[allow(unused)]
 impl InterfaceWrapper {
-    fn new(name: &'static str, dev: AxNetDevice, ether_addr: EthernetAddress) -> Self {
+    fn new(name: &'static str, dev: AxNetDeviceType, ether_addr: EthernetAddress) -> Self {
         let mut config = Config::new(HardwareAddress::Ethernet(ether_addr));
         config.random_seed = RANDOM_SEED;
 
@@ -328,7 +329,7 @@ impl InterfaceWrapper {
 }
 
 impl DeviceWrapper {
-    fn new(inner: AxNetDevice) -> Self {
+    fn new(inner: AxNetDeviceType) -> Self {
         Self {
             inner: RefCell::new(inner),
         }
@@ -358,9 +359,10 @@ impl Device for DeviceWrapper {
         let rx_buf = match dev.receive() {
             Ok(buf) => buf,
             Err(err) => {
-                if !matches!(err, DevError::Again) {
-                    warn!("receive failed: {:?}", err);
-                }
+                // if !matches!(err, DevError::Again) {
+                //     warn!("receive failed: {:?}", err);
+                // }
+                error!( "receive failed: {:?}", err);
                 return None;
             }
         };
@@ -389,8 +391,8 @@ impl Device for DeviceWrapper {
     }
 }
 
-struct AxNetRxToken<'a>(&'a RefCell<AxNetDevice>, NetBufPtr);
-struct AxNetTxToken<'a>(&'a RefCell<AxNetDevice>);
+struct AxNetRxToken<'a>(&'a RefCell<AxNetDeviceType>, NetBufPtr);
+struct AxNetTxToken<'a>(&'a RefCell<AxNetDeviceType>);
 
 impl<'a> RxToken for AxNetRxToken<'a> {
     fn preprocess(&self, sockets: &mut SocketSet<'_>) {
@@ -464,23 +466,24 @@ pub fn add_membership(_multicast_addr: IpAddress, _interface_addr: IpAddress) {
     );
 }
 
-// pub(crate) fn init(_net_dev: AxNetDevice) {
-//     let mut device = LoopbackDev::new(Medium::Ip);
-//     let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+/// Initialize the network stack
+pub fn init() {
+    let mut device = LoopbackDev::new(Medium::Ip);
+    let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
 
-//     let mut iface = Interface::new(
-//         config,
-//         &mut device,
-//         Instant::from_micros_const((current_time_nanos() / NANOS_PER_MICROS) as i64),
-//     );
-//     iface.update_ip_addrs(|ip_addrs| {
-//         ip_addrs
-//             .push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8))
-//             .unwrap();
-//     });
-//     LOOPBACK.init_by(Mutex::new(iface));
-//     LOOPBACK_DEV.init_by(Mutex::new(device));
+    let mut iface = Interface::new(
+        config,
+        &mut device,
+        Instant::from_micros_const((0 / NANOS_PER_MICROS) as i64),
+    );
+    iface.update_ip_addrs(|ip_addrs| {
+        ip_addrs
+            .push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8))
+            .unwrap();
+    });
+    LOOPBACK.init_by(Mutex::new(iface));
+    LOOPBACK_DEV.init_by(Mutex::new(device));
 
-//     SOCKET_SET.init_by(SocketSetWrapper::new());
-//     LISTEN_TABLE.init_by(ListenTable::new());
-// }
+    SOCKET_SET.init_by(SocketSetWrapper::new());
+    LISTEN_TABLE.init_by(ListenTable::new());
+}
