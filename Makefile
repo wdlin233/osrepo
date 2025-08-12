@@ -26,18 +26,18 @@ docker:
 build_docker: 
 	docker build -t ${DOCKER_NAME} .
 
-# all:
-# 	@cd user && make build ARCH=riscv64
-# 	@cd os && make build ARCH=riscv64
-# 	@cd user && make build ARCH=loongarch64
-# 	@cd os && make build ARCH=loongarch64
-# 	@cp ./os/target/riscv64gc-unknown-none-elf/release/os ./kernel-rv
-# 	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
-
 all:
 	@cd user && make build ARCH=riscv64
 	@cd os && make build ARCH=riscv64
+	@cd user && make build ARCH=loongarch64
+	@cd os && make build ARCH=loongarch64
 	@cp ./os/target/riscv64gc-unknown-none-elf/release/os ./kernel-rv
+	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
+
+# all:
+# 	@cd user && make build ARCH=riscv64
+# 	@cd os && make build ARCH=riscv64
+# 	@cp ./os/target/riscv64gc-unknown-none-elf/release/os ./kernel-rv
 
 # all:
 # 	@cd user && make build ARCH=loongarch64
