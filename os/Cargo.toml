@@ -22,6 +22,22 @@ hashbrown = "0.12.0"
 num_enum = { version = "0.7.2", default-features = false }
 buddy_system_allocator = "0.11.0"
 
+[dependencies.smoltcp]
+git = "https://github.com/rcore-os/smoltcp.git"
+rev = "b7134a3"
+default-features = false
+features = [
+  "alloc", "log",   # no std
+  "medium-ethernet",
+  "medium-ip",
+  "proto-ipv4",
+  "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dns", "proto-igmp",
+  # "fragmentation-buffer-size-65536", "proto-ipv4-fragmentation",
+  # "reassembly-buffer-size-65536", "reassembly-buffer-count-32",
+  # "assembler-max-segment-count-32",
+]
+
+
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 riscv = { version = "0.11.1" }
 
