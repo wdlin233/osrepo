@@ -78,6 +78,12 @@ impl Inode for Ext4Inode {
             } else {
                 nfile.file_close()?;
             }
+            
+            // timestamps
+            let current_time = (crate::timer::get_time_ms() / 1000) as u64;
+            if let Err(e) = nfile.set_time(Some(current_time), Some(current_time), Some(current_time)) {
+                warn!("Failed to set timestamps for {}: {}", path, e);
+            }
         }
         Ok(Arc::new(nf))
     }
@@ -90,13 +96,13 @@ impl Inode for Ext4Inode {
         self.inner.get_unchecked_mut().if_dir
     }
 
-    fn read_at(&self, off: usize, buf: &mut [u8]) -> SyscallRet {
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> SyscallRet {
         let file = &mut self.inner.get_unchecked_mut().f;
         let path = file.path();
         let path = path.to_str().unwrap();
         file.file_open(path, O_RDONLY)
             .map_err(|e| SysErrNo::from(e))?;
-        file.file_seek(off as i64, SEEK_SET)
+        file.file_seek(offset as i64, SEEK_SET)
             .map_err(|e| SysErrNo::from(e))?;
         let r = file.file_read(buf);
         r.map_err(|e| SysErrNo::from(e))
@@ -228,6 +234,15 @@ impl Inode for Ext4Inode {
     fn fstat(&self) -> Kstat {
         let file = &mut self.inner.get_unchecked_mut().f;
         let stat = file.fstat().unwrap();
+        
+        let current_time = (crate::timer::get_time_ms() / 1000) as isize;
+        
+        let is_corrupted_time = |t: isize| t > 4000000000; // After year 2096
+        
+        let fixed_atime = if is_corrupted_time(stat.st_atime) { current_time } else { stat.st_atime };
+        let fixed_mtime = if is_corrupted_time(stat.st_mtime) { current_time } else { stat.st_mtime };
+        let fixed_ctime = if is_corrupted_time(stat.st_ctime) { current_time } else { stat.st_ctime };
+        
         Kstat {
             st_dev: stat.st_dev,
             st_ino: stat.st_ino,
@@ -238,9 +253,9 @@ impl Inode for Ext4Inode {
             st_size: stat.st_size,
             st_blksize: stat.st_blksize,
             st_blocks: stat.st_blocks,
-            st_atime: stat.st_atime,
-            st_ctime: stat.st_ctime,
-            st_mtime: stat.st_mtime,
+            st_atime: fixed_atime,
+            st_ctime: fixed_ctime,
+            st_mtime: fixed_mtime,
             ..Kstat::default()
         }
     }

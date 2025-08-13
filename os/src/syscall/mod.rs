@@ -56,6 +56,8 @@ pub const SYSCALL_WRITE: usize = 64;
 pub const SYSCALL_READV: usize = 65;
 /// writev syscall
 pub const SYSCALL_WRITEV: usize = 66;
+/// pread64 syscall
+pub const SYSCALL_PREAD64: usize = 67;
 /// sendfile syscall
 pub const SYSCALL_SENDFILE: usize = 71;
 /// pselect6 syscall
@@ -138,6 +140,8 @@ pub const SYSCALL_GETUID: usize = 174;
 pub const SYSCALL_GETEUID: usize = 175;
 /// getgid syscall
 pub const SYSCALL_GETGID: usize = 176;
+/// getegid syscall
+pub const SYSCALL_GETEGID: usize = 177;
 /// gettid syscall
 pub const SYSCALL_GETTID: usize = 178;
 /// sysinfo syscall
@@ -269,6 +273,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_PREAD64 => sys_pread64(args[0], args[1] as *mut u8, args[2], args[3] as isize),
         SYSCALL_ACCEPT => sys_accept(args[0], args[1] as *mut u8, args[2] as *mut u32),
         SYSCALL_RECVFROM => sys_recvfrom(args[0], args[1] as *mut u8, args[2], args[3] as u32, args[4] as *mut u8, args[5] as *mut u32),
         SYSCALL_SIGRETURN => sys_sig_return(),
@@ -398,6 +403,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYSCALL_DUP3 => sys_dup3(args[0], args[1], args[2] as u32),
         SYSCALL_DUP => sys_dup(args[0]),
         SYSCALL_GETGID => sys_getgid(),
+        SYSCALL_GETEGID => sys_getegid(),
         SYSCALL_GETUID => sys_getuid(),
         SYSCALL_UNAME => sys_uname(args[0] as *mut UTSname),
         SYSCALL_TIMES => sys_tms(args[0] as *mut TmsInner),

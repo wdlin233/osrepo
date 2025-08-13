@@ -471,7 +471,12 @@ pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
             return -1;
         }
     };
-    let new_fd = inner.fd_table.alloc_fd().unwrap();
+    let new_fd = match inner.fd_table.alloc_fd() {
+        Ok(fd) => fd,
+        Err(_) => {
+            return SysErrNo::EMFILE as isize; 
+        }
+    };
     inner
         .fd_table
         .set(new_fd, FileDescriptor::new(flags, inode));
@@ -660,7 +665,9 @@ pub fn sys_dup3(old: usize, new: usize, flags: u32) -> isize {
         return -1;
     }
     if inner.fd_table.len() <= new {
-        inner.fd_table.resize(new + 1).unwrap();
+        if let Err(_) = inner.fd_table.resize(new + 1) {
+            return SysErrNo::ENOMEM as isize; 
+        }
     }
 
     let mut file = inner.fd_table.get(old);
@@ -995,13 +1002,19 @@ pub fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
 
     match cmd {
         FcntlCmd::F_DUPFD => {
-            let fd_new = inner.fd_table.alloc_fd_larger_than(arg).unwrap();
+            let fd_new = match inner.fd_table.alloc_fd_larger_than(arg) {
+                Ok(fd) => fd,
+                Err(_) => return SysErrNo::EMFILE as isize,
+            };
             inner.fd_table.set(fd_new, file);
             inner.fs_info.insert_with_glue(fd, fd_new);
             return fd_new as isize;
         }
         FcntlCmd::F_DUPFD_CLOEXEC => {
-            let fd_new = inner.fd_table.alloc_fd_larger_than(arg).unwrap();
+            let fd_new = match inner.fd_table.alloc_fd_larger_than(arg) {
+                Ok(fd) => fd,
+                Err(_) => return SysErrNo::EMFILE as isize,
+            };
             file.set_cloexec();
             inner.fd_table.set(fd_new, file);
             inner.fs_info.insert_with_glue(fd, fd_new);
@@ -1547,4 +1560,66 @@ pub fn sys_renameat2(
 pub fn sys_sync() -> isize {
     sync();
     0
+}
+
+pub fn sys_pread64(fd: usize, buf: *mut u8, count: usize, offset: isize) -> isize {
+    //debug!("in sys_pread64 with fd: {}, count: {}, offset: {}", fd, count, offset);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let memory_set = inner.memory_set.clone();
+    
+    if (fd as isize) < 0 || fd >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    if (buf as isize) < 0 || is_bad_address(buf as usize) || (buf.is_null() && count != 0) {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    if (count as isize) < 0 || offset < 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    
+    if let Some(file_desc) = inner.fd_table.try_get(fd) {
+        if let Ok(readfile) = file_desc.file() {
+            if readfile.inode.is_dir() {
+                return SysErrNo::EISDIR as isize;
+            }
+        }
+        
+        let file = file_desc.any();
+        if !file.readable() {
+            return SysErrNo::EBADF as isize;
+        }
+        
+        let current_offset = match file.lseek(0, SEEK_CUR) {
+            Ok(off) => off,
+            Err(e) => return e as isize,
+        };
+        
+        drop(inner);
+        drop(process);
+        
+        if let Err(e) = file.lseek(offset, SEEK_SET) {
+            return e as isize;
+        }
+        
+        let result = file.read(UserBuffer::new(
+            safe_translated_byte_buffer(memory_set, buf, count).unwrap(),
+        ));
+        
+        // restore offset
+        let _ = file.lseek(current_offset as isize, SEEK_SET);
+        
+        match result {
+            Ok(size) => size as isize,
+            Err(e) => {
+                error!("sys_pread64 read error: {:?}", e);
+                SysErrNo::EIO as isize
+            }
+        }
+    } else {
+        SysErrNo::EBADF as isize
+    }
 }

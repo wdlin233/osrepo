@@ -28,7 +28,10 @@ pub fn sys_socket(domain: u32, socktype: u32, protocol: u32) -> isize {
             let sock = Socket::Tcp(Mutex::new(TcpSocket::new()));
             let process = current_process();
             let inner = process.inner_exclusive_access();
-            let fd = inner.fd_table.alloc_fd().unwrap();
+            let fd = match inner.fd_table.alloc_fd() {
+                Ok(fd) => fd,
+                Err(_) => return SysErrNo::EMFILE as isize,
+            };
             inner.fd_table.set(
                 fd,
                 FileDescriptor::new(flags, FileClass::Sock(Arc::new(sock))),
@@ -39,7 +42,10 @@ pub fn sys_socket(domain: u32, socktype: u32, protocol: u32) -> isize {
             let sock = Socket::Udp(Mutex::new(UdpSocket::new()));
             let process = current_process();
             let inner = process.inner_exclusive_access();
-            let fd = inner.fd_table.alloc_fd().unwrap();
+            let fd = match inner.fd_table.alloc_fd() {
+                Ok(fd) => fd,
+                Err(_) => return SysErrNo::EMFILE as isize, 
+            };
             inner.fd_table.set(
                 fd,
                 FileDescriptor::new(flags, FileClass::Sock(Arc::new(sock))),
@@ -276,7 +282,10 @@ pub fn sys_accept(sockfd: usize, addr: *mut u8, addrlen: *mut u32) -> isize {
             let process = current_process();
             let inner = process.inner_exclusive_access();
             let flags = OpenFlags::empty();
-            let new_fd = inner.fd_table.alloc_fd().unwrap();
+            let new_fd = match inner.fd_table.alloc_fd() {
+                Ok(fd) => fd,
+                Err(_) => return SysErrNo::EMFILE as isize, 
+            };
             inner.fd_table.set(
                 new_fd,
                 FileDescriptor::new(flags, FileClass::Sock(new_socket)),

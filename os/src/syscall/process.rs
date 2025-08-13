@@ -731,3 +731,7 @@ pub fn sys_clock_nano_sleep(
     }
     0
 }
+
+pub fn sys_getegid() -> isize {
+    0
+}
