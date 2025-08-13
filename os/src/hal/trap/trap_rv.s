@@ -17,6 +17,7 @@ FP_START = 32
     .section .text.trampoline
     .globl __alltraps
     .globl __restore
+
     .align 2
 # user -> kernel
 __alltraps:
@@ -100,6 +101,9 @@ __restore:
     ld sp, 2*8(sp)
     sret
 
+
+
+
     .section .data
     # emergency stack for kernel trap
     # in order to print trap info even if the kernel stack is corrupted.
@@ -107,6 +111,13 @@ __emergency:
     .align 4
     .space 1024 * 4
 __emergency_end:
+
+    .section .text
+    .align 12
+    .global __sigreturn
+__sigreturn:
+    li a7,139
+    ecall
 
 
     .section .text

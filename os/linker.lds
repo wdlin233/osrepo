@@ -14,9 +14,6 @@ SECTIONS
         strampoline = .;
         *(.text.trampoline);
         . = ALIGN(4K);
-        sigreturn = .;
-        *(.text.sigreturn);
-        . = ALIGN(4K);
         *(.text .text.*)
     }
 
@@ -49,7 +46,7 @@ SECTIONS
     . = ALIGN(4K);
     ebss = .;
     ekernel = .;
-
+    
     /DISCARD/ : {
         *(.eh_frame)
     }

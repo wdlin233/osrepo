@@ -15,16 +15,17 @@
 mod context;
 
 use crate::config::{MSEC_PER_SEC, TICKS_PER_SEC};
+use crate::fs::increment_timer_interrupt;
 use crate::hal::strampoline;
 use crate::mm::VirtAddr;
 use crate::println;
-use crate::fs::increment_timer_interrupt;
 pub use crate::signal::SignalFlags;
 use crate::signal::{check_if_any_sig_for_current_task, handle_signal};
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_process, current_trap_cx,
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, current_trap_cx_user_va,
+    current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
+    suspend_current_and_run_next,
 };
 use crate::timer::check_timer;
 pub use context::{MachineContext, UserContext};
@@ -32,9 +33,7 @@ pub use context::{MachineContext, UserContext};
 use crate::config::TRAMPOLINE;
 
 #[cfg(target_arch = "riscv64")]
-use crate::{
-    timer::{get_time, set_next_trigger},
-};
+use crate::timer::{get_time, set_next_trigger};
 #[cfg(target_arch = "loongarch64")]
 use crate::{
     mm::{PageTable, VirtPageNum},
@@ -57,7 +56,7 @@ use riscv::register::{
     mtvec::TrapMode,
     satp,
     scause::{self, Exception, Interrupt, Trap},
-    sie, stval, stvec,
+    sie, sstatus, stval, stvec,
 };
 
 #[cfg(target_arch = "riscv64")]
@@ -69,6 +68,10 @@ global_asm!(include_str!("trap_la.s"));
 pub fn init() {
     #[cfg(target_arch = "riscv64")]
     set_kernel_trap_entry();
+    unsafe {
+        // 允许内核态访问用户内存
+        sstatus::set_sum();
+    }
     #[cfg(target_arch = "loongarch64")]
     {
         // make sure that the interrupt is enabled when first task returns user mode
@@ -87,9 +90,12 @@ pub fn init() {
 
         // 设置普通异常和中断入口
         // 设置TLB重填异常地址
-        println!("(trap::init) __trap_from_kernel: {:#x}", __trap_from_kernel as usize);
+        println!(
+            "(trap::init) __trap_from_kernel: {:#x}",
+            __trap_from_kernel as usize
+        );
         set_kernel_trap_entry();
-        tlbrentry::set_tlbrentry(__tlb_refill as usize); // 设置重填tlb地址    
+        tlbrentry::set_tlbrentry(__tlb_refill as usize); // 设置重填tlb地址
         stlbps::set_ps(0xc); // 设置TLB的页面大小为4KiB
         tlbrehi::set_ps(0xc); // 设置TLB的页面大小为4KiB
 
@@ -183,7 +189,14 @@ pub fn trap_handler() -> ! {
             // );
             let result = syscall(
                 cx.gp.x[17],
-                [cx.gp.x[10], cx.gp.x[11], cx.gp.x[12], cx.gp.x[13], cx.gp.x[14], cx.gp.x[15]],
+                [
+                    cx.gp.x[10],
+                    cx.gp.x[11],
+                    cx.gp.x[12],
+                    cx.gp.x[13],
+                    cx.gp.x[14],
+                    cx.gp.x[15],
+                ],
             );
             // cx is changed during sys_exec, so we have to call it again
             //debug!("after syscall, to get cx");
@@ -218,6 +231,7 @@ pub fn trap_handler() -> ! {
                 // }
                 // drop to avoid deadlock and exit exception
             }
+            warn!("va = {:#x}, satp = {:#x}", stval, satp::read().bits());
             //if !res {
             error!(
                         "[kernel] trap_handler: {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
@@ -269,6 +283,7 @@ pub fn trap_handler() -> ! {
     current_process()
         .inner_exclusive_access()
         .set_stime(in_kernel_time, out_kernel_time);
+
     trap_return();
 }
 
@@ -279,7 +294,12 @@ pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
     let estat = estat::read();
     let crmd = crmd::read();
-    warn!("pgdl: {:#x}, pgdh: {:#x}, pgd: {:#x}", pgdl::read().raw(), pgdh::read().raw(), pgd::read().raw());
+    warn!(
+        "pgdl: {:#x}, pgdh: {:#x}, pgd: {:#x}",
+        pgdl::read().raw(),
+        pgdh::read().raw(),
+        pgd::read().raw()
+    );
     if crmd.ie() {
         // 全局中断会在中断处理程序被关掉
         panic!("kerneltrap: global interrupt enable");
@@ -297,7 +317,9 @@ pub fn trap_handler() -> ! {
             // INFO!("call id:{}, {} {} {}",cx.x[11], cx.x[4], cx.x[5], cx.x[6]);
             let result = syscall(
                 cx.gp.x[11],
-                [cx.gp.x[4], cx.gp.x[5], cx.gp.x[6], cx.gp.x[7], cx.gp.x[8], cx.gp.x[9]],
+                [
+                    cx.gp.x[4], cx.gp.x[5], cx.gp.x[6], cx.gp.x[7], cx.gp.x[8], cx.gp.x[9],
+                ],
             ) as usize;
             cx = current_trap_cx();
             cx.gp.x[4] = result;
@@ -318,11 +340,17 @@ pub fn trap_handler() -> ! {
                 info!("[kernel] trap_handler: {:?} at {:#x} as virtadd", t, add.0);
                 let add = add.floor();
                 info!("[kernel] trap_handler: {:?} at {:#x} as vpn", t, add.0);
-                
+
                 // debug
                 let pte = inner.memory_set.get_ref().page_table.find_pte(add).unwrap();
                 let token = inner.memory_set.token();
-                info!("[kernel] trap_handler: {:?} at {:#x} as pte, pte ppn: {:#x}, pte flags: {:?}", t, add.0, pte.ppn().0, pte.flags());
+                info!(
+                    "[kernel] trap_handler: {:?} at {:#x} as pte, pte ppn: {:#x}, pte flags: {:?}",
+                    t,
+                    add.0,
+                    pte.ppn().0,
+                    pte.flags()
+                );
                 info!("[kernel] trap_handler, current user token: {:#x}", token);
 
                 // drop to avoid deadlock and exit exception
@@ -399,6 +427,7 @@ pub fn trap_return() -> ! {
         debug!("found signo in trap_return");
         handle_signal(signo);
     }
+
     //disable_supervisor_interrupt();
     set_user_trap_entry();
     let trap_cx_user_va = current_trap_cx_user_va();
@@ -428,7 +457,12 @@ pub fn trap_return() -> ! {
     set_user_trap_entry();
     let trap_cx_ptr = current_trap_cx_user_pa();
     //debug!("in trap return, get trap va");
-    warn!("era: {:#x}, prmd: {:#x}, crmd: {:#x}", era::read().pc(), prmd::read().raw(), crmd::read().raw());
+    warn!(
+        "era: {:#x}, prmd: {:#x}, crmd: {:#x}",
+        era::read().pc(),
+        prmd::read().raw(),
+        crmd::read().raw()
+    );
     prmd::set_pplv(CpuMode::Ring3);
     prmd::set_pie(true);
     let user_satp = current_user_token();
@@ -470,7 +504,6 @@ pub fn trap_from_kernel() -> ! {
             estat.is(),
         );
     }
-    
 }
 
 #[cfg(target_arch = "loongarch64")]

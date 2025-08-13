@@ -127,7 +127,6 @@ pub const SYSCALL_SETSID: usize = 157;
 pub const SYSCALL_UNAME: usize = 160;
 /// gettimeofday syscall
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
-
 /// getpid syscall
 pub const SYSCALL_GETPID: usize = 172;
 /// getppid syscall
@@ -271,9 +270,23 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
-        SYSCALL_SPLICE => sys_splice(args[0] as isize, args[1] as *mut isize, args[2] as isize, args[3] as *mut isize, args[4], args[5] as u32),
+        SYSCALL_SPLICE => sys_splice(
+            args[0] as isize,
+            args[1] as *mut isize,
+            args[2] as isize,
+            args[3] as *mut isize,
+            args[4],
+            args[5] as u32,
+        ),
         SYSCALL_PREAD64 => sys_pread64(args[0], args[1] as *mut u8, args[2], args[3] as isize),
-        SYSCALL_COPY_FILE_RANGE => sys_copy_file_range(args[0], args[1] as *mut isize, args[2], args[3] as *mut isize, args[4], args[5] as u32),
+        SYSCALL_COPY_FILE_RANGE => sys_copy_file_range(
+            args[0],
+            args[1] as *mut isize,
+            args[2],
+            args[3] as *mut isize,
+            args[4],
+            args[5] as u32,
+        ),
         SYSCALL_SIGRETURN => sys_sig_return(),
         SYSCALL_GETSOCKETOPT => sys_getsocketopt(args[0], args[1], args[2], args[3], args[4]),
         SYSCALL_CONNECT => sys_connect(args[0], args[1] as *const u8, args[2] as u32),
