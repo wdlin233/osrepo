@@ -20,7 +20,11 @@
 
 ## 使用说明
 
-克隆项目后，在项目根目录下运行 `make run [LOG=<日志级别>] [ARCH=<目标架构>]` 即可启动 QEMU 运行内核，需要在根目录准备 `sdcard-rv.img` 和 `sdcard-la.img` 两个镜像文件，可以选择 `riscv64` 和 `loongarch64` 两个架构。
+克隆项目后，在项目根目录下运行 `make run [LOG=<日志级别>] [ARCH=<目标架构>]` 即可启动 QEMU 运行内核，需要在根目录准备 `sdcard-rv.img` 和 `sdcard-la.img` 两个镜像文件，可以选择 `riscv64` 和 `loongarch64` 两个架构，例如：
+
+```shell
+make run LOG=DEBUG ARCH=riscv64
+```
 
 `make all` 可以在根目录下构建 `kernel-rv` 和 `kernel-la` 两个 ELF 文件。
 
