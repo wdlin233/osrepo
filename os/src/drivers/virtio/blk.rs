@@ -71,11 +71,45 @@ impl<H: Hal, T: Transport> BlockDriver for VirtIoBlkDev<H, T> {
     }
 
     fn read_block(&mut self, block_id: usize, buf: &mut [u8]) {
-        self.inner.lock().read_blocks(block_id, buf).unwrap();
+        // 暂时特判处理
+        match self.inner.lock().read_blocks(block_id, buf) {
+            Ok(_) => return,
+            Err(virtio_drivers::Error::NotReady) => {
+                buf.fill(0);
+                return;
+            }
+            Err(e) => {
+                self.inner.lock().ack_interrupt();
+                match self.inner.lock().read_blocks(block_id, buf) {
+                    Ok(_) => return,
+                    Err(virtio_drivers::Error::NotReady) => {
+                        buf.fill(0);
+                        return;
+                    }
+                    Err(e) => panic!("VirtIO block read error: {:?}", e),
+                }
+            }
+        }
     }
 
     fn write_block(&mut self, block_id: usize, buf: &[u8]) {
-        self.inner.lock().write_blocks(block_id, buf).unwrap()
+        // 暂时特判处理
+        match self.inner.lock().write_blocks(block_id, buf) {
+            Ok(_) => return,
+            Err(virtio_drivers::Error::NotReady) => {
+                return;
+            }
+            Err(e) => {
+                self.inner.lock().ack_interrupt();
+                match self.inner.lock().write_blocks(block_id, buf) {
+                    Ok(_) => return,
+                    Err(virtio_drivers::Error::NotReady) => {
+                        return;
+                    }
+                    Err(e) => panic!("VirtIO block write error: {:?}", e),
+                }
+            }
+        }
     }
 
     fn flush(&mut self) {}
