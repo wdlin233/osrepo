@@ -1,54 +1,106 @@
-use alloc::{format, string::ToString, sync::Arc};
+use alloc::{format, string::ToString};
+use alloc::{sync::Arc, vec, vec::Vec};
+use core::ffi::{c_char, c_int, c_void};
+use core::mem::size_of;
+use core::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use spin::Mutex;
 
 use crate::{
-    fs::{
-        make_socket, make_socketpair, udp_connect, File, FileClass, FileDescriptor, OpenFlags,
-        SockAddrIn, TcpSocket, UdpSocket, AF_INET,
-    },
+    fs::{File, FileClass, FileDescriptor, OpenFlags},
     mm::{translated_byte_buffer, translated_ref, translated_refmut, UserBuffer},
+    net::{socket::PollState, Socket, TcpSocket, UdpSocket},
+    net::socket_impl::SockaddrIn,
     task::current_process,
     utils::{SysErrNo, SyscallRet},
 };
 
 use log::debug;
 
-pub fn sys_socket(domain: u32, _type: u32, _protocol: u32) -> isize {
-    const AF_INET: u32 = 2;
-    const SOCK_DGRAM: u32 = 2;
-    const SOCK_STREAM: u32 = 1;
+const AF_INET: u32 = 2;
 
-    if domain != AF_INET {
-        return SysErrNo::EAFNOSUPPORT as isize;
-    }
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
-    let new_fd = inner.fd_table.alloc_fd().unwrap();
-    let close_on_exec = (_type & 0o2000000) == 0o2000000;
-    let non_block = (_type & 0o4000) == 0o4000;
-    let mut flags = OpenFlags::empty();
-    if close_on_exec {
-        flags |= OpenFlags::O_CLOEXEC;
-    }
-    if non_block {
-        flags |= OpenFlags::O_NONBLOCK;
-    }
-    let sock: Arc<dyn File> = match _type & 0xF {
-        SOCK_DGRAM => UdpSocket::new(),
-        SOCK_STREAM => TcpSocket::new(),
-        _ => return SysErrNo::EPROTONOSUPPORT as isize,
-    };
+pub fn sys_socket(domain: u32, socktype: u32, protocol: u32) -> isize {
+    debug!("sys_socket <= {} {} {}", domain, socktype, protocol);
+    let (domain, socktype, protocol) = (domain as u32, socktype as u32, protocol as u32);
+    let flags = OpenFlags::empty(); // Define flags here for both branches
 
-    inner
-        .fd_table
-        .set(new_fd, FileDescriptor::new(flags, FileClass::Abs(sock)));
-    inner
-        .fs_info
-        .insert(format!("socket{}", new_fd).to_string(), new_fd);
-    new_fd as isize
+    match (domain, socktype, protocol) {
+        (AF_INET, SOCK_STREAM, IPPROTO_TCP) | (AF_INET, SOCK_STREAM, 0) => {
+            let sock = Socket::Tcp(Mutex::new(TcpSocket::new()));
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            let fd = inner.fd_table.alloc_fd().unwrap();
+            inner.fd_table.set(
+                fd,
+                FileDescriptor::new(flags, FileClass::Sock(Arc::new(sock))),
+            );
+            fd as isize
+        }
+        (AF_INET, SOCK_DGRAM, IPPROTO_UDP) | (AF_INET, SOCK_DGRAM, 0) => {
+            let sock = Socket::Udp(Mutex::new(UdpSocket::new()));
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            let fd = inner.fd_table.alloc_fd().unwrap();
+            inner.fd_table.set(
+                fd,
+                FileDescriptor::new(flags, FileClass::Sock(Arc::new(sock))),
+            );
+            fd as isize
+        }
+        _ => SysErrNo::EINVAL as isize,
+    }
 }
 
-pub fn sys_getsockname(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
-    unimplemented!()
+pub fn sys_getsockname(sockfd: usize, addr: *mut u8, addrlen: *mut u32) -> isize {
+    debug!("sys_getsockname <= sockfd: {}, addr: {:?}, addrlen: {:?}", sockfd, addr, addrlen);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    let socket = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
+    };
+    
+    let local_addr = match socket.local_addr() {
+        Ok(addr) => addr,
+        Err(_) => return SysErrNo::EINVAL as isize,
+    };
+    
+    let sockaddr_in = match local_addr {
+        SocketAddr::V4(addr) => SockaddrIn {
+            sin_family: AF_INET as u16,
+            sin_port: addr.port().to_be(),
+            sin_addr: crate::net::socket_impl::Inaddr {
+                s_addr: u32::from_ne_bytes(addr.ip().octets()),
+            },
+            sin_zero: [0; 8],
+        },
+        SocketAddr::V6(_) => return SysErrNo::EAFNOSUPPORT as isize,
+    };
+    
+    let sockaddr_len = size_of::<SockaddrIn>() as u32;
+    
+    if addr.is_null() || addrlen.is_null() {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    let addrlen_ref = translated_refmut(token, addrlen);
+    let provided_len = *addrlen_ref;
+    if provided_len < sockaddr_len {
+        return SysErrNo::EINVAL as isize;
+    }
+    
+    let addr_ref = translated_refmut(token, addr as *mut SockaddrIn);
+    *addr_ref = sockaddr_in;
+    *addrlen_ref = sockaddr_len;
+    
+    debug!("sys_getsockname addr: {:?}, len: {}", local_addr, sockaddr_len);
+    0
 }
 
 pub fn sys_getpeername(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
@@ -56,18 +108,216 @@ pub fn sys_getpeername(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize
 }
 
 pub fn sys_sendto(
-    _sockfd: usize,
-    _buf: *const u8,
-    _len: usize,
-    _flags: u32,
-    _dest_addr: *const u8,
-    _addrlen: u32,
+    sockfd: usize,
+    buf: *const u8,
+    len: usize,
+    flags: u32,
+    dest_addr: *const u8,
+    addrlen: u32,
 ) -> isize {
-    unimplemented!()
+    debug!("sys_sendto <= sockfd: {}, buf: {:?}, len: {}, flags: {}, dest_addr: {:?}, addrlen: {}", 
+           sockfd, buf, len, flags, dest_addr, addrlen);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    let socket_arc = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
+    };
+    
+    if buf.is_null() || len == 0 {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    let dest_socket_addr = if !dest_addr.is_null() && addrlen > 0 {
+        if addrlen < size_of::<SockaddrIn>() as u32 {
+            return SysErrNo::EINVAL as isize;
+        }
+        
+        // Safely read sockaddr_in structure by using safe copy
+        if dest_addr as usize + size_of::<SockaddrIn>() < dest_addr as usize {
+            return SysErrNo::EFAULT as isize;
+        }
+        
+        let sockaddr_bytes = match translated_byte_buffer(token, dest_addr, size_of::<SockaddrIn>()) {
+            buffer if !buffer.is_empty() => {
+                let mut data = [0u8; size_of::<SockaddrIn>()];
+                let mut offset = 0;
+                for slice in buffer {
+                    let copy_len = (data.len() - offset).min(slice.len());
+                    data[offset..offset + copy_len].copy_from_slice(&slice[..copy_len]);
+                    offset += copy_len;
+                    if offset >= data.len() {
+                        break;
+                    }
+                }
+                if offset < data.len() {
+                    return SysErrNo::EFAULT as isize;
+                }
+                data
+            }
+            _ => return SysErrNo::EFAULT as isize,
+        };
+        
+        let sockaddr_in = unsafe { *(sockaddr_bytes.as_ptr() as *const SockaddrIn) };
+        
+        if sockaddr_in.sin_family as u32 != AF_INET {
+            return SysErrNo::EAFNOSUPPORT as isize;
+        }
+        
+        // Convert from network byte order
+        let port = u16::from_be(sockaddr_in.sin_port);
+        let ip = Ipv4Addr::from(u32::from_be(sockaddr_in.sin_addr.s_addr));
+        
+        Some(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+    } else {
+        None
+    };
+    
+    let user_buf = translated_byte_buffer(token, buf, len);
+    let mut data = Vec::new();
+    for slice in user_buf {
+        data.extend_from_slice(slice);
+    }
+    
+    debug!("sys_sendto: sending {} bytes to {:?}", data.len(), dest_socket_addr);
+    
+    drop(inner);
+    
+    match dest_socket_addr {
+        Some(addr) => {
+            // For UDP sockets, ensure they are bound before sending
+            if let Err(e) = socket_arc.local_addr() {
+                debug!("sys_sendto: socket not bound, attempting to bind to any address");
+                let any_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0));
+                if let Err(bind_err) = socket_arc.bind(any_addr) {
+                    debug!("sys_sendto: failed to auto-bind socket: {:?}", bind_err);
+                    return -(SysErrNo::EADDRNOTAVAIL as isize);
+                }
+            }
+            
+            // Use sendto with specific destination address
+            match socket_arc.sendto(&data, addr) {
+                Ok(sent_bytes) => {
+                    debug!("sys_sendto: sent {} bytes to {}", sent_bytes, addr);
+                    sent_bytes as isize
+                }
+                Err(e) => {
+                    debug!("sys_sendto: sendto failed with error {:?}", e);
+                    match e {
+                        crate::net::AxError::WouldBlock => -(SysErrNo::EAGAIN as isize),
+                        crate::net::AxError::NotConnected => -(SysErrNo::ENOTCONN as isize),
+                        crate::net::AxError::ConnectionReset => -(SysErrNo::ECONNRESET as isize),
+                        crate::net::AxError::NoMemory => -(SysErrNo::ENOMEM as isize),
+                        crate::net::AxError::InvalidInput => -(SysErrNo::EINVAL as isize),
+                        _ => -(SysErrNo::EIO as isize),
+                    }
+                }
+            }
+        }
+        None => {
+            // Use regular write (for connected sockets)
+            match socket_arc.write(&data) {
+                Ok(sent_bytes) => {
+                    debug!("sys_sendto: sent {} bytes via write", sent_bytes);
+                    sent_bytes as isize
+                }
+                Err(e) => {
+                    debug!("sys_sendto: write failed with error {:?}", e);
+                    match e {
+                        crate::net::AxError::WouldBlock => -(SysErrNo::EAGAIN as isize),
+                        crate::net::AxError::NotConnected => -(SysErrNo::ENOTCONN as isize),
+                        crate::net::AxError::ConnectionReset => -(SysErrNo::ECONNRESET as isize),
+                        crate::net::AxError::NoMemory => -(SysErrNo::ENOMEM as isize),
+                        crate::net::AxError::InvalidInput => -(SysErrNo::EINVAL as isize),
+                        _ => -(SysErrNo::EIO as isize),
+                    }
+                }
+            }
+        }
+    }
 }
 
-pub fn sys_accept(_sockfd: usize, _addr: *const u8, _addrlen: u32) -> isize {
-    unimplemented!()
+pub fn sys_accept(sockfd: usize, addr: *mut u8, addrlen: *mut u32) -> isize {
+    debug!("sys_accept <= sockfd: {}, addr: {:?}, addrlen: {:?}", sockfd, addr, addrlen);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    let socket_arc = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
+    };
+    
+    let need_peer_addr = !addr.is_null() && !addrlen.is_null();
+    let provided_len = if need_peer_addr {
+        Some(*translated_refmut(token, addrlen))
+    } else {
+        None
+    };
+    
+    drop(inner);
+    
+    match socket_arc.accept() {
+        Ok((new_socket, peer_addr)) => {
+            debug!("sys_accept: accepted connection from {:?}", peer_addr);
+            
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            let flags = OpenFlags::empty();
+            let new_fd = inner.fd_table.alloc_fd().unwrap();
+            inner.fd_table.set(
+                new_fd,
+                FileDescriptor::new(flags, FileClass::Sock(new_socket)),
+            );
+            
+            // peer address?
+            if need_peer_addr {
+                let token = inner.get_user_token();
+                if let Some(len) = provided_len {
+                    if len >= size_of::<SockaddrIn>() as u32 {
+                        if let SocketAddr::V4(addr_v4) = peer_addr {
+                            let sockaddr_in = SockaddrIn {
+                                sin_family: AF_INET as u16,
+                                sin_port: addr_v4.port().to_be(),
+                                sin_addr: crate::net::socket_impl::Inaddr {
+                                    s_addr: u32::from_be_bytes(addr_v4.ip().octets()),
+                                },
+                                sin_zero: [0; 8],
+                            };
+                            
+                            let addr_ref = translated_refmut(token, addr as *mut SockaddrIn);
+                            *addr_ref = sockaddr_in;
+                            let addrlen_ref = translated_refmut(token, addrlen);
+                            *addrlen_ref = size_of::<SockaddrIn>() as u32;
+                        }
+                    }
+                }
+            }
+            
+            new_fd as isize
+        }
+        Err(e) => {
+            debug!("sys_accept: accept failed with error {:?}", e);
+            match e {
+                crate::net::AxError::WouldBlock => -(SysErrNo::EAGAIN as isize),
+                crate::net::AxError::InvalidInput => -(SysErrNo::EINVAL as isize),
+                crate::net::AxError::NotConnected => -(SysErrNo::ENOTCONN as isize),
+                _ => -(SysErrNo::EIO as isize),
+            }
+        }
+    }
 }
 
 pub fn sys_accept4(_sockfd: usize, _addr: *const u8, _addrlen: u32, _flags: u32) -> isize {
@@ -78,148 +328,211 @@ pub fn sys_sendmsg(_sockfd: usize, _addr: *const u8, _flags: u32) -> isize {
     unimplemented!()
 }
 pub fn sys_recvfrom(
-    _sockfd: usize,
+    sockfd: usize,
     buf: *mut u8,
-    _len: usize,
-    _flags: u32,
-    _src_addr: *const u8,
-    _addrlen: u32,
+    len: usize,
+    flags: u32,
+    src_addr: *mut u8,
+    addrlen: *mut u32,
 ) -> isize {
-    unimplemented!()
+    debug!("sys_recvfrom <= sockfd: {}, buf: {:?}, len: {}, flags: {}, src_addr: {:?}, addrlen: {:?}", 
+           sockfd, buf, len, flags, src_addr, addrlen);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    let socket_arc = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
+    };
+    
+    if buf.is_null() || len == 0 {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    let user_buf = translated_byte_buffer(token, buf, len);
+    let mut receive_buffer = vec![0u8; len];
+    
+    drop(inner);
+    
+    match socket_arc.recvfrom(&mut receive_buffer) {
+        Ok((received_bytes, src_socket_addr)) => {
+            debug!("sys_recvfrom: received {} bytes from {:?}", received_bytes, src_socket_addr);
+            
+            // user buffer
+            let mut offset = 0;
+            for slice in user_buf {
+                let copy_len = (received_bytes - offset).min(slice.len());
+                slice[..copy_len].copy_from_slice(&receive_buffer[offset..offset + copy_len]);
+                offset += copy_len;
+                if offset >= received_bytes {
+                    break;
+                }
+            }
+            
+            if !src_addr.is_null() && !addrlen.is_null() && src_socket_addr.is_some() {
+                let process = current_process();
+                let inner = process.inner_exclusive_access();
+                let token = inner.get_user_token();
+                
+                let addrlen_ref = translated_refmut(token, addrlen);
+                let provided_len = *addrlen_ref;
+                
+                if let Some(addr) = src_socket_addr {
+                    if provided_len >= size_of::<SockaddrIn>() as u32 {
+                        if let SocketAddr::V4(addr_v4) = addr {
+                            let sockaddr_in = SockaddrIn {
+                                sin_family: AF_INET as u16,
+                                sin_port: addr_v4.port().to_be(),
+                                sin_addr: crate::net::socket_impl::Inaddr {
+                                    s_addr: u32::from_ne_bytes(addr_v4.ip().octets()),
+                                },
+                                sin_zero: [0; 8],
+                            };
+                            
+                            let addr_ref = translated_refmut(token, src_addr as *mut SockaddrIn);
+                            *addr_ref = sockaddr_in;
+                            *addrlen_ref = size_of::<SockaddrIn>() as u32;
+                        }
+                    }
+                }
+            }
+            
+            received_bytes as isize
+        }
+        Err(e) => {
+            debug!("sys_recvfrom: recvfrom failed with error {:?}", e);
+            match e {
+                crate::net::AxError::WouldBlock => -(SysErrNo::EAGAIN as isize),
+                crate::net::AxError::NotConnected => -(SysErrNo::ENOTCONN as isize),
+                crate::net::AxError::ConnectionReset => -(SysErrNo::ECONNRESET as isize),
+                crate::net::AxError::NoMemory => -(SysErrNo::ENOMEM as isize),
+                crate::net::AxError::InvalidInput => -(SysErrNo::EINVAL as isize),
+                _ => -(SysErrNo::EIO as isize),
+            }
+        }
+    }
 }
 
 pub fn sys_listen(sockfd: usize, backlog: u32) -> isize {
-    // 验证 backlog 参数有效性
-    if backlog < 0 {
-        return SysErrNo::EINVAL as isize;
-    }
-
+    debug!("sys_listen <= sockfd: {}, backlog: {}", sockfd, backlog);
+    
     let process = current_process();
     let inner = process.inner_exclusive_access();
-
-    // 获取文件描述符对应的文件
-    let file = match inner.fd_table.try_get(sockfd) {
-        Some(file_desc) if file_desc.is_socket() => file_desc.clone(),
-        Some(_) => return SysErrNo::ENOTSOCK as isize, // 不是套接字类型
-        None => return SysErrNo::EBADF as isize,       // 无效的文件描述符
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    let socket_arc = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
     };
-
-    // 释放进程锁，因为后面需要操作套接字
+    
     drop(inner);
-    drop(process);
-
-    // 获取 TCP 套接字内部结构
-    let tcp_socket = file.as_socket::<TcpSocket>().unwrap();
-    match tcp_socket.listen(backlog) {
-        Ok(()) => 0,          // 成功返回0
-        Err(e) => e as isize, // 错误返回错误码
+    
+    match socket_arc.listen(backlog as i32) {
+        Ok(_) => {
+            debug!("sys_listen: successfully set socket to listen mode with backlog {}", backlog);
+            0
+        }
+        Err(e) => {
+            debug!("sys_listen: listen failed with error {:?}", e);
+            match e {
+                crate::net::AxError::InvalidInput => SysErrNo::EINVAL as isize,
+                crate::net::AxError::Unsupported => SysErrNo::EOPNOTSUPP as isize,
+                crate::net::AxError::BadState => SysErrNo::EINVAL as isize,
+                _ => SysErrNo::EINVAL as isize,
+            }
+        }
     }
 }
 
-pub fn sys_socketpair(domain: u32, stype: u32, protocol: u32, sv: *mut u32) -> isize {
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
-    let token = inner.get_user_token();
-    let (socket1, socket2) = make_socketpair();
-    let close_on_exec = (stype & 0o2000000) == 0o2000000;
-    let non_block = (stype & 0o4000) == 0o4000;
-    let mut flags = OpenFlags::empty();
-    if close_on_exec {
-        flags |= OpenFlags::O_CLOEXEC;
-    }
-    if non_block {
-        flags |= OpenFlags::O_NONBLOCK;
-    }
-
-    let new_fd1 = inner.fd_table.alloc_fd().unwrap();
-    inner
-        .fd_table
-        .set(new_fd1, FileDescriptor::new(flags, FileClass::Abs(socket1)));
-    inner
-        .fs_info
-        .insert(format!("socket{}", new_fd1).to_string(), new_fd1);
-
-    let new_fd2 = inner.fd_table.alloc_fd().unwrap();
-    inner
-        .fd_table
-        .set(new_fd2, FileDescriptor::new(flags, FileClass::Abs(socket2)));
-    inner
-        .fs_info
-        .insert(format!("socket{}", new_fd2).to_string(), new_fd2);
-
-    *translated_refmut(token, sv) = new_fd1 as u32;
-    *translated_refmut(token, unsafe { sv.add(1) }) = new_fd2 as u32;
-    0
+pub fn sys_socketpair(_domain: u32, _stype: u32, _protocol: u32, _sv: *mut u32) -> isize {
+    unimplemented!()
 }
 
 pub fn sys_connect(sockfd: usize, addr: *const u8, addrlen: u32) -> isize {
+    debug!("sys_connect <= sockfd: {}, addr: {:?}, addrlen: {}", sockfd, addr, addrlen);
+    
     let process = current_process();
     let inner = process.inner_exclusive_access();
     let token = inner.get_user_token();
-
-    // 1. 验证地址长度
-    let sockaddr_in_size = size_of::<SockAddrIn>() as u32;
-    if addrlen < sockaddr_in_size {
-        return SysErrNo::EINVAL as isize;
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
     }
-    // 2. 创建临时缓冲区
-    let mut addr_buf = [0u8; size_of::<SockAddrIn>()];
-
-    debug!("to 3");
-    // 3. 从用户空间读取数据到内核缓冲区
-    {
-        // 计算实际需要读取的字节数
-        let read_size = sockaddr_in_size as usize;
-
-        // 安全地读取用户空间数据
-        let user_buffers = translated_byte_buffer(token, addr as *const u8, read_size);
-
-        // 创建UserBuffer用于读取用户空间
-        let mut user_buf = UserBuffer::new(user_buffers);
-
-        // 使用read方法读取数据
-        let read_data = user_buf.read(read_size);
-
-        // 检查是否读取了足够的数据
-        if read_data.len() != read_size {
-            return SysErrNo::EFAULT as isize;
+    
+    let socket_arc = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
+    };
+    
+    if addr.is_null() || addrlen < size_of::<SockaddrIn>() as u32 {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    if addr as usize + size_of::<SockaddrIn>() < addr as usize {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    let sockaddr_bytes = match translated_byte_buffer(token, addr, size_of::<SockaddrIn>()) {
+        buffer if !buffer.is_empty() => {
+            let mut data = [0u8; size_of::<SockaddrIn>()];
+            let mut offset = 0;
+            for slice in buffer {
+                let copy_len = (data.len() - offset).min(slice.len());
+                data[offset..offset + copy_len].copy_from_slice(&slice[..copy_len]);
+                offset += copy_len;
+                if offset >= data.len() {
+                    break;
+                }
+            }
+            if offset < data.len() {
+                return SysErrNo::EFAULT as isize;
+            }
+            data
         }
-
-        // 将数据复制到内核缓冲区
-        addr_buf[..read_size].copy_from_slice(&read_data[..read_size]);
-    }
-
-    debug!("3 ok");
-    // 4. 解释为 sockaddr_in 结构
-    let sockaddr_in = unsafe { &*(addr_buf.as_ptr() as *const SockAddrIn) };
-
-    // 5. 验证地址族
-    if sockaddr_in.sin_family != AF_INET {
+        _ => return SysErrNo::EFAULT as isize,
+    };
+    
+    let sockaddr_in = unsafe { *(sockaddr_bytes.as_ptr() as *const SockaddrIn) };
+    
+    if sockaddr_in.sin_family as u32 != AF_INET {
         return SysErrNo::EAFNOSUPPORT as isize;
     }
-
-    // 6. 获取当前任务的文件描述符表
-
-    let file = match inner.fd_table.try_get(sockfd) {
-        Some(f) => f,
-        None => return SysErrNo::EBADF as isize,
-    };
-
-    // 7. 转换端口和地址到主机字节序
+    
     let port = u16::from_be(sockaddr_in.sin_port);
-    let ip = u32::from_be(sockaddr_in.sin_addr);
-    let addr = (ip, port);
-
-    // 8. 根据套接字类型执行连接操作
-    if let Some(tcp_socket) = file.any().as_any().downcast_ref::<TcpSocket>() {
-        //tcp_connect(tcp_socket, addr)
-        0
-    } else if let Some(udp_socket) = file.any().as_any().downcast_ref::<UdpSocket>() {
-        //udp_connect(udp_socket, addr)
-        0
-    } else {
-        debug!("error socket");
-        SysErrNo::ENOTSOCK as isize
+    let ip = Ipv4Addr::from(u32::from_be(sockaddr_in.sin_addr.s_addr));
+    let dest_addr = SocketAddr::V4(SocketAddrV4::new(ip, port));
+    
+    debug!("sys_connect: connecting to address {:?}", dest_addr);
+    
+    drop(inner);
+    
+    match socket_arc.connect(dest_addr) {
+        Ok(_) => {
+            debug!("sys_connect: successfully connected to {}", dest_addr);
+            0
+        }
+        Err(e) => {
+            debug!("sys_connect: connect failed with error {:?}", e);
+            match e {
+                crate::net::AxError::WouldBlock => -(SysErrNo::EINPROGRESS as isize),
+                crate::net::AxError::AddrInUse => -(SysErrNo::EADDRINUSE as isize),
+                crate::net::AxError::BadAddress => -(SysErrNo::EADDRNOTAVAIL as isize),
+                crate::net::AxError::ConnectionRefused => -(SysErrNo::ECONNREFUSED as isize),
+                crate::net::AxError::ConnectionReset => -(SysErrNo::ECONNRESET as isize),
+                crate::net::AxError::InvalidInput => -(SysErrNo::EINVAL as isize),
+                crate::net::AxError::NotFound => -(SysErrNo::ENETUNREACH as isize),
+                _ => -(SysErrNo::ECONNREFUSED as isize),
+            }
+        }
     }
 }
 
@@ -230,410 +543,252 @@ pub fn sys_setsockopt(
     optval: usize,
     optlen: u32,
 ) -> isize {
-    // 检查参数有效性
+    debug!("sys_setsockopt <= sockfd: {}, level: {}, optname: {}, optval: {:#x}, optlen: {}", 
+           sockfd, level, optname, optval, optlen);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    
+    if sockfd >= inner.fd_table.len() || inner.fd_table.try_get(sockfd).is_none() {
+        return SysErrNo::EBADF as isize;
+    }
+    
+    let _socket = match inner.fd_table.get(sockfd).file.sock() {
+        Ok(socket_arc) => socket_arc,
+        Err(_) => return SysErrNo::ENOTSOCK as isize,
+    };
+    
     if optval == 0 || optlen == 0 {
         return SysErrNo::EFAULT as isize;
     }
-
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
-
-    // 获取文件描述符对应的文件
-    let file = match inner.fd_table.try_get(sockfd) {
-        Some(file_desc) => file_desc.any(),
-        None => return SysErrNo::EBADF as isize,
-    };
-
-    // 处理不同层级的选项
+    
+    // 比较复杂的 level 处理
     match level {
         SOL_SOCKET => {
-            // 暂时只支持部分选项
             match optname {
-                SO_REUSEADDR | SO_KEEPALIVE | SO_BROADCAST => {
-                    // 验证选项值长度
-                    if optlen != 4 {
+                SO_REUSEADDR => {
+                    // SO_REUSEADDR expects an int (4 bytes)
+                    if optlen < 4 {
                         return SysErrNo::EINVAL as isize;
                     }
+                    
+                    let value = unsafe { *translated_ref(token, optval as *const u32) };
+                    let enable = value != 0;
+                    
+                    debug!("sys_setsockopt: SO_REUSEADDR = {}", enable);
 
-                    // 读取用户空间的整数值
-                    let mut value: u32 = 0;
-                    if let Err(e) = inner
-                        .memory_set
-                        .copy_from_user(optval, &mut value.to_ne_bytes())
-                    {
-                        return e as isize;
+                    // temp impl                
+                    0
+                }
+                SO_BROADCAST => {
+                    // SO_BROADCAST expects an int (4 bytes)
+                    if optlen < 4 {
+                        return SysErrNo::EINVAL as isize;
                     }
-
-                    // 记录设置（实际实现应存储这些值）
-                    log::debug!(
-                        "Set SOL_SOCKET option: optname={}, value={}",
-                        optname,
-                        value
-                    );
-
-                    // 成功
+                    
+                    let value = unsafe { *translated_ref(token, optval as *const u32) };
+                    let enable = value != 0;
+                    
+                    debug!("sys_setsockopt: SO_BROADCAST = {}", enable);
+                    
+                    // For now, just return success
+                    0
+                }
+                SO_KEEPALIVE => {
+                    // SO_KEEPALIVE expects an int (4 bytes)
+                    if optlen < 4 {
+                        return SysErrNo::EINVAL as isize;
+                    }
+                    
+                    let value = unsafe { *translated_ref(token, optval as *const u32) };
+                    let enable = value != 0;
+                    
+                    debug!("sys_setsockopt: SO_KEEPALIVE = {}", enable);
+                    
+                    // For now, just return success
+                    0
+                }
+                SO_RCVBUF | SO_SNDBUF => {
+                    // Buffer size options expect an int (4 bytes)
+                    if optlen < 4 {
+                        return SysErrNo::EINVAL as isize;
+                    }
+                    
+                    let value = unsafe { *translated_ref(token, optval as *const u32) };
+                    
+                    debug!("sys_setsockopt: {} = {}", 
+                           if optname == SO_RCVBUF { "SO_RCVBUF" } else { "SO_SNDBUF" }, 
+                           value);
+                    
+                    // For now, just return success
+                    0
+                }
+                SO_RCVTIMEO | SO_SNDTIMEO => {
+                    // Timeout options expect a struct timeval (8 bytes on 32-bit, 16 bytes on 64-bit)
+                    if optlen < 8 {
+                        return SysErrNo::EINVAL as isize;
+                    }
+                    
+                    debug!("sys_setsockopt: {} with optlen {}", 
+                           if optname == SO_RCVTIMEO { "SO_RCVTIMEO" } else { "SO_SNDTIMEO" }, 
+                           optlen);
+                    
+                    // For now, just return success
                     0
                 }
                 _ => {
-                    log::warn!("Unsupported SOL_SOCKET option: {}", optname);
+                    debug!("sys_setsockopt: unsupported SOL_SOCKET option {}", optname);
                     SysErrNo::ENOPROTOOPT as isize
                 }
             }
         }
-
         IPPROTO_TCP => {
-            // 尝试转换为 TCP 套接字
-            if let Some(tcp_socket) = file.as_any().downcast_ref::<TcpSocket>() {
-                match optname {
-                    TCP_NODELAY => {
-                        // 验证选项值长度
-                        if optlen != 4 {
-                            return SysErrNo::EINVAL as isize;
-                        }
-
-                        // 读取用户空间的整数值
-                        let mut value: u32 = 0;
-                        if let Err(e) = inner
-                            .memory_set
-                            .copy_from_user(optval, &mut value.to_ne_bytes())
-                        {
-                            return e as isize;
-                        }
-
-                        // 设置 TCP_NODELAY 选项
-                        tcp_socket.set_tcp_nodelay(value != 0);
-                        log::debug!("Set TCP_NODELAY: {}", value != 0);
-                        0
+            match optname {
+                TCP_NODELAY => {
+                    // TCP_NODELAY expects an int (4 bytes)
+                    if optlen < 4 {
+                        return SysErrNo::EINVAL as isize;
                     }
-                    _ => {
-                        log::warn!("Unsupported TCP option: {}", optname);
-                        SysErrNo::ENOPROTOOPT as isize
-                    }
+                    
+                    let value = unsafe { *translated_ref(token, optval as *const u32) };
+                    let enable = value != 0;
+                    
+                    debug!("sys_setsockopt: TCP_NODELAY = {}", enable);
+                    
+                    // For now, just return success
+                    0
                 }
-            } else {
-                // 不是 TCP 套接字
-                SysErrNo::ENOTSOCK as isize
+                _ => {
+                    debug!("sys_setsockopt: unsupported IPPROTO_TCP option {}", optname);
+                    SysErrNo::ENOPROTOOPT as isize
+                }
             }
         }
-
         IPPROTO_IP => {
-            // 定义设置 IP 选项的通用函数
-            let set_ip_option = || -> Result<u8, SysErrNo> {
-                // 验证选项值长度
-                if optlen != 1 {
-                    return Err(SysErrNo::EINVAL);
+            match optname {
+                IP_TOS | IP_TTL => {
+                    // These options expect an int (4 bytes)
+                    if optlen < 4 {
+                        return SysErrNo::EINVAL as isize;
+                    }
+                    
+                    let value = unsafe { *translated_ref(token, optval as *const u32) };
+                    
+                    debug!("sys_setsockopt: IP option {} = {}", optname, value);
+                    
+                    // For now, just return success
+                    0
                 }
-
-                // 读取用户空间的值
-                let mut buffer = [0u8];
-                if let Err(_) = inner.memory_set.copy_from_user(optval, &mut buffer) {
-                    return Err(SysErrNo::EFAULT);
+                _ => {
+                    debug!("sys_setsockopt: unsupported IPPROTO_IP option {}", optname);
+                    SysErrNo::ENOPROTOOPT as isize
                 }
-
-                Ok(buffer[0])
-            };
-
-            // 分别处理 TCP 和 UDP 套接字
-            if let Some(tcp_socket) = file.as_any().downcast_ref::<TcpSocket>() {
-                match optname {
-                    IP_TOS => {
-                        let tos = set_ip_option().unwrap() as u8;
-                        tcp_socket.set_ip_tos(tos);
-                        log::debug!("Set TCP IP_TOS: {}", tos);
-                        0
-                    }
-                    IP_TTL => {
-                        let ttl = set_ip_option().unwrap() as u8;
-                        // 验证 TTL 范围
-                        if ttl < 1 || ttl > 255 {
-                            return SysErrNo::EINVAL as isize;
-                        }
-                        tcp_socket.set_ip_ttl(ttl);
-                        log::debug!("Set TCP IP_TTL: {}", ttl);
-                        0
-                    }
-                    _ => {
-                        log::warn!("Unsupported IP option for TCP socket: {}", optname);
-                        SysErrNo::ENOPROTOOPT as isize
-                    }
-                }
-            } else if let Some(udp_socket) = file.as_any().downcast_ref::<UdpSocket>() {
-                match optname {
-                    IP_TOS => {
-                        let tos = set_ip_option().unwrap() as u8;
-                        udp_socket.set_ip_tos(tos);
-                        log::debug!("Set UDP IP_TOS: {}", tos);
-                        0
-                    }
-                    IP_TTL => {
-                        let ttl = set_ip_option().unwrap() as u8;
-                        // 验证 TTL 范围
-                        if ttl < 1 || ttl > 255 {
-                            return SysErrNo::EINVAL as isize;
-                        }
-                        udp_socket.set_ip_ttl(ttl);
-                        log::debug!("Set UDP IP_TTL: {}", ttl);
-                        0
-                    }
-                    _ => {
-                        log::warn!("Unsupported IP option for UDP socket: {}", optname);
-                        SysErrNo::ENOPROTOOPT as isize
-                    }
-                }
-            } else {
-                // 既不是 TCP 也不是 UDP 套接字
-                SysErrNo::ENOTSOCK as isize
             }
         }
-
         _ => {
-            log::warn!("Unsupported option level: {}", level);
+            debug!("sys_setsockopt: unsupported level {}", level);
             SysErrNo::ENOPROTOOPT as isize
         }
     }
 }
 
 pub fn sys_bind(sockfd: usize, addr: usize, addrlen: u32) -> isize {
-    // 检查参数有效性
-    if addr == 0 || addrlen == 0 {
-        return SysErrNo::EFAULT as isize;
-    }
-
-    // 最小需要16字节 (sockaddr_in的大小)
-    if addrlen < 16 {
-        return SysErrNo::EINVAL as isize;
-    }
-
+    debug!("sys_bind <= sockfd: {}, addr: {:#x}, addrlen: {}", sockfd, addr, addrlen);
+    
     let process = current_process();
     let inner = process.inner_exclusive_access();
-
-    // 获取文件描述符对应的文件
-    let file = match inner.fd_table.try_get(sockfd) {
-        Some(file_desc) => file_desc.any(),
-        None => return SysErrNo::EBADF as isize,
-    };
-
-    // 从用户空间复制sockaddr结构体
-    let mut sockaddr_buf = [0u8; 16]; // 只需要前16字节
-    if let Err(e) = inner.memory_set.copy_from_user(addr, &mut sockaddr_buf) {
-        return e as isize;
+    let token = inner.get_user_token();
+    
+    if sockfd >= inner.fd_table.len() {
+        return SysErrNo::EBADF as isize;
     }
-
-    // 安全地将字节数组转换为SockAddrIn引用
-    let sockaddr_in = unsafe { &*(sockaddr_buf.as_ptr() as *const SockAddrIn) };
-
-    // 验证地址族
-    if sockaddr_in.sin_family != AF_INET as u16 {
-        log::warn!("Unsupported address family: {}", sockaddr_in.sin_family);
-        return SysErrNo::EAFNOSUPPORT as isize;
-    }
-
-    // 提取地址信息
-    let socket_addr = sockaddr_in.to_socket_addr();
-
-    // 根据套接字类型进行处理
-    if let Some(tcp_socket) = file.as_any().downcast_ref::<TcpSocket>() {
-        match tcp_socket.bind(socket_addr) {
-            Ok(_) => {
-                log::debug!(
-                    "Bound TCP socket to {}:{}",
-                    socket_addr.ip,
-                    socket_addr.port
-                );
-                0
+    
+    let file = inner.fd_table.get(sockfd);
+    match file.file.sock() {
+        Ok(socket_arc) => {
+            if addrlen < size_of::<SockaddrIn>() as u32 {
+                return SysErrNo::EINVAL as isize;
             }
-            Err(e) => {
-                log::warn!("TCP bind error: {:?}", e);
-                e as isize
+            
+            if addr as usize + size_of::<SockaddrIn>() < addr as usize {
+                return SysErrNo::EFAULT as isize;
+            }
+            
+            let sockaddr_bytes = match translated_byte_buffer(token, addr as *const u8, size_of::<SockaddrIn>()) {
+                buffer if !buffer.is_empty() => {
+                    let mut data = [0u8; size_of::<SockaddrIn>()];
+                    let mut offset = 0;
+                    for slice in buffer {
+                        let copy_len = (data.len() - offset).min(slice.len());
+                        data[offset..offset + copy_len].copy_from_slice(&slice[..copy_len]);
+                        offset += copy_len;
+                        if offset >= data.len() {
+                            break;
+                        }
+                    }
+                    if offset < data.len() {
+                        return SysErrNo::EFAULT as isize;
+                    }
+                    data
+                }
+                _ => return SysErrNo::EFAULT as isize,
+            };
+            
+            let sockaddr_in = unsafe { *(sockaddr_bytes.as_ptr() as *const SockaddrIn) };
+            
+            if sockaddr_in.sin_family as u32 != AF_INET {
+                return SysErrNo::EAFNOSUPPORT as isize;
+            }
+            
+            let port = u16::from_be(sockaddr_in.sin_port);
+            let ip_addr = Ipv4Addr::from(u32::from_be(sockaddr_in.sin_addr.s_addr));
+            
+            let socket_addr = SocketAddr::V4(SocketAddrV4::new(ip_addr, port));
+            
+            debug!("sys_bind: binding to address {:?}", socket_addr);
+            
+            match socket_arc.bind(socket_addr) {
+                Ok(_) => 0,
+                Err(e) => {
+                    debug!("sys_bind: bind failed with error {:?}", e);
+                    match e {
+                        crate::net::AxError::AddrInUse => SysErrNo::EADDRINUSE as isize,
+                        crate::net::AxError::InvalidInput => SysErrNo::EINVAL as isize,
+                        crate::net::AxError::PermissionDenied => SysErrNo::EACCES as isize,
+                        _ => SysErrNo::EINVAL as isize,
+                    }
+                }
             }
         }
-    } else if let Some(udp_socket) = file.as_any().downcast_ref::<UdpSocket>() {
-        match udp_socket.bind(socket_addr) {
-            Ok(_) => {
-                log::debug!(
-                    "Bound UDP socket to {}:{}",
-                    socket_addr.ip,
-                    socket_addr.port
-                );
-                0
-            }
-            Err(e) => {
-                log::warn!("UDP bind error: {:?}", e);
-                e as isize
-            }
-        }
-    } else {
-        log::warn!("File descriptor is not a socket: {}", sockfd);
-        SysErrNo::ENOTSOCK as isize
+        Err(_) => SysErrNo::ENOTSOCK as isize,
     }
 }
-pub fn sys_getsocketopt(
-    fd: usize,
-    level: usize,
-    optname: usize,
-    optval: usize,     // 用户空间缓冲区的虚拟地址
-    optlen_ptr: usize, // 用户空间指向optlen的指针的虚拟地址
+
+pub fn sys_getsockopt(
+    _fd: usize,
+    _level: usize,
+    _optname: usize,
+    _optval: usize,     
+    _optlen_ptr: usize, 
 ) -> isize {
-    // 检查参数有效性
-    if optval == 0 || optlen_ptr == 0 {
-        return SysErrNo::EFAULT as isize;
-    }
+    unimplemented!()
+}
 
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
-
-    // 从用户空间读取optlen值
-    let mut kernel_opt_len: u32 = 0;
-    {
-        match inner
-            .memory_set
-            .copy_from_user(optlen_ptr, &mut kernel_opt_len.to_ne_bytes())
-        {
-            Ok(_) => {}
-            Err(e) => return e as isize,
-        };
-    }
-
-    // 检查缓冲区长度
-    if kernel_opt_len == 0 || kernel_opt_len > 1000 {
-        return SysErrNo::EINVAL as isize;
-    }
-
-    // 获取当前任务和文件描述符
-    let file = match inner.fd_table.try_get(fd) {
-        Some(file_desc) => file_desc.any(), // 获取FileDescriptor中的file字段
-        _ => return SysErrNo::EBADF as isize,
-    };
-
-    // 处理不同层级的选项
-    match level as u32 {
-        SOL_SOCKET => {
-            if optname as u32 != SO_TYPE {
-                return SysErrNo::ENOPROTOOPT as isize;
-            }
-
-            // SO_TYPE 选项总是返回 SOCK_STREAM
-            let sock_type = SOCK_STREAM.to_ne_bytes();
-            let actual_len = sock_type.len() as u32;
-
-            // 复制选项值
-            match inner.memory_set.copy_to_user(&sock_type, optval) {
-                Ok(_) => {}
-                Err(e) => return e as isize,
-            };
-
-            // 更新实际长度
-            match inner
-                .memory_set
-                .copy_to_user(&actual_len.to_ne_bytes(), optlen_ptr)
-            {
-                Ok(_) => {}
-                Err(e) => return e as isize,
-            };
-
-            0
-        }
-
-        IPPROTO_TCP => {
-            // 转换为TcpSocket类型
-            let socket = match file.as_any().downcast_ref::<TcpSocket>() {
-                Some(socket) => socket,
-                None => return SysErrNo::ENOTSOCK as isize,
-            };
-
-            if optname as u32 != TCP_NODELAY {
-                return SysErrNo::ENOPROTOOPT as isize;
-            }
-
-            // 获取选项值
-            let value = if socket.get_tcp_nodelay() { 1u32 } else { 0u32 };
-            let value_bytes = value.to_ne_bytes();
-            let actual_len = value_bytes.len() as u32;
-
-            // 复制选项值
-            match inner.memory_set.copy_to_user(&value_bytes, optval) {
-                Ok(_) => {}
-                Err(e) => return e as isize,
-            };
-
-            // 更新实际长度
-            match inner
-                .memory_set
-                .copy_to_user(&actual_len.to_ne_bytes(), optlen_ptr)
-            {
-                Ok(_) => {}
-                Err(e) => return e as isize,
-            };
-
-            0
-        }
-
-        IPPROTO_IP => {
-            // 尝试转换为支持IP选项的套接字类型
-            let handle_ip_option = |value: u8| -> isize {
-                let value_bytes = [value];
-                let actual_len = value_bytes.len() as u32;
-
-                // 检查用户缓冲区是否足够
-                if kernel_opt_len < actual_len {
-                    // 更新实际长度信息
-                    if let Err(e) = inner
-                        .memory_set
-                        .copy_to_user(&actual_len.to_ne_bytes(), optlen_ptr)
-                    {
-                        return e as isize;
-                    }
-                    return SysErrNo::ENOBUFS as isize;
-                }
-
-                // 复制选项值到用户空间
-                if let Err(e) = inner.memory_set.copy_to_user(&value_bytes, optval) {
-                    return e as isize;
-                }
-
-                // 更新实际长度
-                if let Err(e) = inner
-                    .memory_set
-                    .copy_to_user(&actual_len.to_ne_bytes(), optlen_ptr)
-                {
-                    return e as isize;
-                }
-
-                0
-            };
-
-            // 分别处理TCP和UDP套接字
-            if let Some(tcp_socket) = file.as_any().downcast_ref::<TcpSocket>() {
-                match optname as u32 {
-                    IP_TOS | IP_RECVTTL => handle_ip_option(tcp_socket.get_ip_tos()),
-                    IP_TTL => handle_ip_option(tcp_socket.get_ip_ttl()),
-                    _ => {
-                        log::warn!("Unsupported IP option for TCP socket: {}", optname);
-                        SysErrNo::ENOPROTOOPT as isize
-                    }
-                }
-            } else if let Some(udp_socket) = file.as_any().downcast_ref::<UdpSocket>() {
-                match optname as u32 {
-                    IP_TOS | IP_RECVTTL => handle_ip_option(udp_socket.get_ip_tos()),
-                    IP_TTL => handle_ip_option(udp_socket.get_ip_ttl()),
-                    _ => {
-                        log::warn!("Unsupported IP option for UDP socket: {}", optname);
-                        SysErrNo::ENOPROTOOPT as isize
-                    }
-                }
-            } else {
-                // 既不是TCP也不是UDP套接字
-                SysErrNo::ENOTSOCK as isize
-            }
-        }
-
-        _ => SysErrNo::ENOPROTOOPT as isize,
-    }
+pub fn sys_getsocketopt(
+    _fd: usize,
+    _level: usize,
+    _optname: usize,
+    _optval: usize,     
+    _optlen_ptr: usize, 
+) -> isize {
+    unimplemented!()
 }
 
 // 套接字选项层级常量
 pub const SOL_SOCKET: u32 = 1;
 pub const IPPROTO_TCP: u32 = 6;
+pub const IPPROTO_UDP: u32 = 17;
 pub const IPPROTO_IP: u32 = 0;
 
 // 套接字选项常量
@@ -658,6 +813,8 @@ pub const TCP_KEEPCNT: u32 = 6;
 
 // 套接字类型常量
 pub const SOCK_STREAM: u32 = 1;
+pub const SOCK_DGRAM: u32 = 2;
+pub const SOCK_RAW: u32 = 3;
 
 // 添加IP选项常量定义（通常来自Linux netinet/in.h）
 pub const IP_TOS: u32 = 1; // IP服务类型

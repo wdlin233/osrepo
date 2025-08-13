@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+pub use crate::net::AxError;
 use num_enum::FromPrimitive;
 
 #[derive(Debug, Clone, Copy, FromPrimitive, PartialEq, Eq)]
@@ -423,6 +424,35 @@ impl SysErrNo {
         }
     }
 }
-
+impl From<AxError> for SysErrNo {
+    fn from(err: AxError) -> SysErrNo {
+        match err {
+            AxError::AddrInUse => SysErrNo::EADDRINUSE,
+            AxError::AlreadyExists => SysErrNo::EEXIST,
+            AxError::BadAddress => SysErrNo::EFAULT,
+            AxError::BadState => SysErrNo::EBADF, // 亦可 EINVAL
+            AxError::ConnectionRefused => SysErrNo::ECONNREFUSED,
+            AxError::ConnectionReset => SysErrNo::ECONNRESET,
+            AxError::DirectoryNotEmpty => SysErrNo::ENOTEMPTY,
+            AxError::InvalidData => SysErrNo::EILSEQ, // 或者 EDOM
+            AxError::InvalidInput => SysErrNo::EINVAL,
+            AxError::Io => SysErrNo::EIO,
+            AxError::IsADirectory => SysErrNo::EISDIR,
+            AxError::NoMemory => SysErrNo::ENOMEM,
+            AxError::NotADirectory => SysErrNo::ENOTDIR,
+            AxError::NotConnected => SysErrNo::ENOTCONN,
+            AxError::NotFound => SysErrNo::ENOENT,
+            AxError::PermissionDenied => SysErrNo::EACCES,
+            AxError::ResourceBusy => SysErrNo::EBUSY,
+            AxError::StorageFull => SysErrNo::ENOSPC,
+            AxError::UnexpectedEof => SysErrNo::EOVERFLOW, // 亦可 EIO
+            AxError::Unsupported => SysErrNo::ENOSYS,
+            AxError::WouldBlock => SysErrNo::EAGAIN,
+            AxError::WriteZero => SysErrNo::EPIPE,
+            AxError::Interrupted => SysErrNo::EINTR,
+            AxError::Timeout => SysErrNo::ETIMEDOUT,
+        }
+    }
+}
 pub type SyscallRet = Result<usize, SysErrNo>;
-pub type GeneralRet = Result<(), SysErrNo>;
+pub type GeneralRet<T> = Result<T, SysErrNo>;

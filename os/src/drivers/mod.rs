@@ -1,5 +1,6 @@
 mod device;
 mod disk;
+
 pub use device::*;
 pub use disk::*;
 
@@ -28,10 +29,10 @@ pub use disk::*;
 // }
 
 mod virtio;
-use virtio_drivers::transport::mmio::VirtIOHeader;
+pub use virtio::*;
 use virtio_drivers::transport::mmio::MmioTransport;
+use virtio_drivers::transport::mmio::VirtIOHeader;
 use virtio_drivers::transport::pci::PciTransport;
-use virtio::*;
 #[cfg(target_arch = "riscv64")]
 pub const VIRTIO0: usize = 0x1000_1000; // rvv64 virtio base address
 #[cfg(target_arch = "loongarch64")]
@@ -42,19 +43,41 @@ pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, MmioTransport>;
 #[cfg(target_arch = "loongarch64")]
 pub type BlockDeviceImpl = VirtIoBlkDev<VirtIoHalImpl, PciTransport>;
 
+#[cfg(target_arch = "riscv64")]
+pub type NetDeviceImpl = VirtIoNetDev<VirtIoHalImpl, MmioTransport>;
+#[cfg(target_arch = "loongarch64")]
+pub type NetDeviceImpl = VirtIoNetDev<VirtIoHalImpl, PciTransport>;
+
+#[cfg(target_arch = "riscv64")]
+pub type AxNetDeviceType = crate::drivers::virtio::net::AxNetDevice<VirtIoHalImpl, MmioTransport>;
+#[cfg(target_arch = "loongarch64")]
+pub type AxNetDeviceType = crate::drivers::virtio::net::AxNetDevice<VirtIoHalImpl, PciTransport>;
+
 impl BlockDeviceImpl {
     pub fn new_device() -> Self {
         #[cfg(target_arch = "riscv64")]
-        unsafe { 
-            VirtIoBlkDev::<VirtIoHalImpl, MmioTransport>::new(
-                &mut *(VIRTIO0 as *mut VirtIOHeader)
-            ) 
+        unsafe {
+            VirtIoBlkDev::<VirtIoHalImpl, MmioTransport>::new(&mut *(VIRTIO0 as *mut VirtIOHeader))
         }
         #[cfg(target_arch = "loongarch64")]
-        unsafe { 
-            VirtIoBlkDev::<VirtIoHalImpl, PciTransport>::new(
-                &mut *(VIRTIO0 as *mut u8)
-            ) 
+        unsafe {
+            VirtIoBlkDev::<VirtIoHalImpl, PciTransport>::new(&mut *(VIRTIO0 as *mut u8))
+        }
+    }
+}
+
+impl NetDeviceImpl {
+    pub fn new_device() -> Self {
+        #[cfg(target_arch = "riscv64")]
+        unsafe {
+            // Use a different virtio address for network device (typically VIRTIO0 + 0x1000)
+            const NET_VIRTIO: usize = VIRTIO0 + 0x1000;
+            VirtIoNetDev::<VirtIoHalImpl, MmioTransport>::new(&mut *(NET_VIRTIO as *mut VirtIOHeader))
+        }
+        #[cfg(target_arch = "loongarch64")]
+        unsafe {
+            // For LoongArch, we'd typically scan PCI bus for net devices
+            VirtIoNetDev::<VirtIoHalImpl, PciTransport>::new(&mut *(VIRTIO0 as *mut u8))
         }
     }
 }

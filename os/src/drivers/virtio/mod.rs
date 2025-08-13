@@ -1,6 +1,8 @@
 mod blk;
+pub mod net;
 
-pub use blk::*;
+pub use blk::VirtIoBlkDev;
+pub use net::{VirtIoNetDev, AxNetDevice, NetBufPtr, NetTxBufPtr, NetError};
 use spin::{Lazy, Mutex};
 use virtio_drivers::{Hal, BufferDirection};
 

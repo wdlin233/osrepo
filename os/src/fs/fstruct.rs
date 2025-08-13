@@ -1,5 +1,5 @@
 use crate::{
-    fs::{TcpSocket, UdpSocket},
+    net::AxResult,
     sync::UPSafeCell,
     utils::{GeneralRet, SysErrNo, SyscallRet},
 };
@@ -40,7 +40,7 @@ impl FileDescriptor {
         self.file.abs()
     }
     pub fn any(&self) -> Arc<dyn File> {
-        self.file.any()
+        self.file.any().unwrap()
     }
 
     pub fn unset_cloexec(&mut self) {
@@ -60,22 +60,6 @@ impl FileDescriptor {
     }
     pub fn set_nonblock(&mut self) {
         self.flags |= OpenFlags::O_NONBLOCK;
-    }
-
-    pub fn is_socket(&self) -> bool {
-        match &self.file {
-            FileClass::Abs(file) => {
-                file.as_any().is::<TcpSocket>() || file.as_any().is::<UdpSocket>()
-            }
-            _ => false,
-        }
-    }
-
-    pub fn as_socket<T: Any>(&self) -> Option<&T> {
-        match &self.file {
-            FileClass::Abs(file) => file.as_any().downcast_ref::<T>(),
-            _ => None,
-        }
     }
 }
 
@@ -177,9 +161,9 @@ impl FdTable {
         self.get_ref().files.len()
     }
 
-    pub fn resize(&self, size: usize) -> GeneralRet {
+    pub fn resize(&self, size: usize) -> AxResult {
         if size > self.get_soft_limit() {
-            return Err(SysErrNo::EMFILE);
+            return Err(SysErrNo::EMFILE.into());
         }
         self.get_mut().files.resize(size, None);
         Ok(())
