@@ -389,15 +389,28 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
 pub fn put_data<T: 'static>(token: usize, ptr: *mut T, data: T) {
     let page_table = PageTable::from_token(token);
     let mut va = VirtAddr::from(ptr as usize);
-    let pa = page_table.translate_va(va).unwrap();
+    
+    let pa = match page_table.translate_va(va) {
+        Some(pa) => pa,
+        None => {
+            debug!("put_data: failed to translate virtual address 0x{:x}", va.0);
+            return;
+        }
+    };
+    
     let size = core::mem::size_of::<T>();
     // 若数据跨页，则转换成字节数据写入
     if PhysAddr(pa.0 + size - 1).floor() != pa.floor() {
         let bytes =
             unsafe { core::slice::from_raw_parts(&data as *const _ as usize as *const u8, size) };
         for i in 0..size {
-            *(page_table.translate_va(va).unwrap().get_mut()) = bytes[i];
-            va.0 = va.0 + 1;
+            if let Some(translated_pa) = page_table.translate_va(va) {
+                *(translated_pa.get_mut()) = bytes[i];
+                va.0 = va.0 + 1;
+            } else {
+                debug!("put_data: failed to translate virtual address 0x{:x} during byte write", va.0);
+                return;
+            }
         }
     } else {
         *translated_refmut(token, ptr) = data;

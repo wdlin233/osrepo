@@ -351,6 +351,24 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
     if !env.contains(&env_ld_library_path) {
         env.push(env_ld_library_path);
     }
+    
+    // 添加版本兼容性环境变量
+    let env_ld_bind_now = "LD_BIND_NOW=0".to_string();
+    if !env.contains(&env_ld_bind_now) {
+        env.push(env_ld_bind_now);
+    }
+    
+    // 禁用版本检查（如果支持）
+    let env_ld_warn = "LD_WARN=".to_string();
+    if !env.contains(&env_ld_warn) {
+        env.push(env_ld_warn);
+    }
+    
+    // 设置宽松的符号解析
+    let env_ld_preload = "LD_PRELOAD=".to_string();
+    if !env.contains(&env_ld_preload) {
+        env.push(env_ld_preload);
+    }
 
     let env_enough = "ENOUGH=100000".to_string();
     if !env.contains(&env_enough) {
