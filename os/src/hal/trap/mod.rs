@@ -68,6 +68,7 @@ global_asm!(include_str!("trap_la.s"));
 pub fn init() {
     #[cfg(target_arch = "riscv64")]
     set_kernel_trap_entry();
+    #[cfg(target_arch = "riscv64")]
     unsafe {
         // 允许内核态访问用户内存
         sstatus::set_sum();

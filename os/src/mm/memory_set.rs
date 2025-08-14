@@ -33,8 +33,6 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::error;
 use core::iter::Map;
-#[cfg(target_arch = "loongarch64")]
-use core::iter::Map;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::register::estat::*;
