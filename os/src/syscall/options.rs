@@ -231,6 +231,33 @@ pub struct RLimit {
     pub rlim_max: usize, /* Hard limit (ceiling for rlim_cur) */
 }
 
+// rusage
+#[allow(unused)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Rusage {
+    pub ru_utime: crate::timer::TimeVal,     /* user CPU time used */
+    pub ru_stime: crate::timer::TimeVal,     /* system CPU time used */
+    pub ru_maxrss: isize,                    /* maximum resident set size */
+    pub ru_ixrss: isize,                     /* integral shared memory size */
+    pub ru_idrss: isize,                     /* integral unshared data size */
+    pub ru_isrss: isize,                     /* integral unshared stack size */
+    pub ru_minflt: isize,                    /* page reclaims (soft page faults) */
+    pub ru_majflt: isize,                    /* page faults (hard page faults) */
+    pub ru_nswap: isize,                     /* swaps */
+    pub ru_inblock: isize,                   /* block input operations */
+    pub ru_oublock: isize,                   /* block output operations */
+    pub ru_msgsnd: isize,                    /* IPC messages sent */
+    pub ru_msgrcv: isize,                    /* IPC messages received */
+    pub ru_nsignals: isize,                  /* signals received */
+    pub ru_nvcsw: isize,                     /* voluntary context switches */
+    pub ru_nivcsw: isize,                    /* involuntary context switches */
+}
+
+// rusage constants
+pub const RUSAGE_SELF: i32 = 0;
+pub const RUSAGE_CHILDREN: i32 = -1;
+
 bitflags! {
     pub struct SignalMaskFlag: u32 {
         const SIG_BLOCK = 0;

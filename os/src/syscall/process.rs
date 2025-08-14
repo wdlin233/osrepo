@@ -746,3 +746,102 @@ pub fn sys_clock_nano_sleep(
 pub fn sys_getegid() -> isize {
     0
 }
+
+pub fn sys_get_rusage(who: i32, usage: *mut crate::syscall::options::Rusage) -> isize {
+    use crate::syscall::options::{Rusage, RUSAGE_SELF, RUSAGE_CHILDREN};
+    use crate::mm::{translated_refmut, copy_to_virt};
+    use crate::timer::TimeVal;
+    use crate::utils::SysErrNo;
+
+    debug!("sys_get_rusage: who={}, usage={:?}", who, usage);
+
+    if usage.is_null() {
+        return SysErrNo::EFAULT as isize;
+    }
+
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+
+    let rusage = match who {
+        RUSAGE_SELF => {
+            // Return resource usage for the calling process
+            let current_time_ms = crate::timer::get_time_ms();
+            
+            Rusage {
+                ru_utime: TimeVal {
+                    sec: current_time_ms / 1000,
+                    usec: (current_time_ms % 1000) * 1000,
+                },
+                ru_stime: TimeVal {
+                    sec: current_time_ms / 2000,  // Simplified: assume half time spent in system
+                    usec: ((current_time_ms / 2) % 1000) * 1000,
+                },
+                ru_maxrss: inner.memory_set.get_ref().areas.len() as isize * 4, // Simplified: page count * 4KB
+                ru_ixrss: 0,     // Not implemented
+                ru_idrss: 0,     // Not implemented  
+                ru_isrss: 0,     // Not implemented
+                ru_minflt: 0,    // Not implemented
+                ru_majflt: 0,    // Not implemented
+                ru_nswap: 0,     // Not implemented
+                ru_inblock: 0,   // Not implemented
+                ru_oublock: 0,   // Not implemented
+                ru_msgsnd: 0,    // Not implemented
+                ru_msgrcv: 0,    // Not implemented
+                ru_nsignals: 0,  // Could track signals if needed
+                ru_nvcsw: 0,     // Not implemented
+                ru_nivcsw: 0,    // Not implemented
+            }
+        },
+        RUSAGE_CHILDREN => {
+            // Return resource usage for terminated children
+            // For simplicity, return zeros since we don't track child resource usage
+            Rusage {
+                ru_utime: TimeVal { sec: 0, usec: 0 },
+                ru_stime: TimeVal { sec: 0, usec: 0 },
+                ru_maxrss: 0,
+                ru_ixrss: 0,
+                ru_idrss: 0,
+                ru_isrss: 0,
+                ru_minflt: 0,
+                ru_majflt: 0,
+                ru_nswap: 0,
+                ru_inblock: 0,
+                ru_oublock: 0,
+                ru_msgsnd: 0,
+                ru_msgrcv: 0,
+                ru_nsignals: 0,
+                ru_nvcsw: 0,
+                ru_nivcsw: 0,
+            }
+        },
+        _ => {
+            return SysErrNo::EINVAL as isize;
+        }
+    };
+
+    // Copy the rusage structure to user space
+    *translated_refmut(token, usage) = rusage;
+    
+    drop(inner);
+    drop(process);
+    
+    debug!("sys_get_rusage: returning 0");
+    0
+}
+
+pub fn sys_umask(mask: u32) -> isize {
+    debug!("sys_umask: mask={:#o}", mask);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    
+    // 设置新的umask并返回旧的umask值
+    let old_umask = inner.fs_info.set_umask(mask & 0o777); // 只保留权限位
+    
+    drop(inner);
+    drop(process);
+    
+    debug!("sys_umask: old_umask={:#o}, new_umask={:#o}", old_umask, mask & 0o777);
+    old_umask as isize
+}

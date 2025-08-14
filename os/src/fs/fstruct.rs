@@ -236,6 +236,8 @@ pub struct FsInfoInner {
     pub exe: String,
     /// 一个文件对应多个fd
     pub fd2path: HashMap<usize, String>,
+    /// 文件创建权限掩码
+    pub umask: u32,
 }
 
 pub struct FsInfo {
@@ -261,6 +263,7 @@ impl FsInfo {
                     cwd,
                     fd2path,
                     exe: String::from("/initproc"),
+                    umask: 0o022, // 默认umask: rw-r--r--
                 }),
             }
         }
@@ -273,6 +276,7 @@ impl FsInfo {
                     cwd: another.get_cwd(),
                     exe: another.get_exe(),
                     fd2path: another.inner.get_unchecked_ref().fd2path.clone(),
+                    umask: another.get_umask(),
                 }),
             }
         }
@@ -325,6 +329,16 @@ impl FsInfo {
     }
     pub fn remove(&self, fd: usize) {
         self.get_mut().fd2path.remove(&fd);
+    }
+
+    pub fn get_umask(&self) -> u32 {
+        self.get_ref().umask
+    }
+
+    pub fn set_umask(&self, umask: u32) -> u32 {
+        let old_umask = self.get_umask();
+        self.get_mut().umask = umask;
+        old_umask
     }
 
     fn get_mut(&self) -> &mut FsInfoInner {

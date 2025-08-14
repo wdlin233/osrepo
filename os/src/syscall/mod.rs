@@ -129,6 +129,10 @@ pub const SYSCALL_TIMES: usize = 153;
 pub const SYSCALL_SETSID: usize = 157;
 /// get system name
 pub const SYSCALL_UNAME: usize = 160;
+/// get rustage
+pub const SYSCALL_GETRUSAGE: usize = 165;
+/// umask syscall
+pub const SYSCALL_UMASK: usize = 166;
 /// gettimeofday syscall
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
 
@@ -275,6 +279,8 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_UMASK => sys_umask(args[0] as u32),
+        SYSCALL_GETRUSAGE => sys_get_rusage(args[0] as i32, args[1] as *mut Rusage),
         SYSCALL_GETROBUSTLIST => sys_get_robust_list(args[0] as isize, args[1] as *mut usize, args[2] as *mut usize),
         SYSCALL_PREAD64 => sys_pread64(args[0], args[1] as *mut u8, args[2], args[3] as isize),
         SYSCALL_ACCEPT => sys_accept(args[0], args[1] as *mut u8, args[2] as *mut u32),
