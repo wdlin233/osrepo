@@ -32,11 +32,11 @@ pre:
 	@$(foreach t, $(APPS), cp $(t) $(BUILD_DIR)/app/;)
 
 ifeq ($(ARCH),riscv64)
-build: clean pre binary
+build: env clean pre binary
 	@$(foreach t, $(ELFS), cp $(t).bin $(BUILD_DIR)/bin/;)
 	@$(foreach t, $(ELFS), cp $(t) $(BUILD_DIR)/elf/;)
 else ifeq ($(ARCH),loongarch64)
-build: clean
+build: env clean
 	@echo "It is running on loongarch64 architecture"
 	@cargo build --release --target $(TARGET)
 endif
@@ -49,6 +49,9 @@ config:
 clean:
 	@cargo clean
 	@rm -rf $(BUILD_DIR)
+
+env:
+	rustup target add $(TARGET)
 
 all: build
 

@@ -152,6 +152,13 @@ __restore:
     ertn
 
     .section .text
+    .align 12
+    .global __sigreturn
+__sigreturn:
+    li.w $a7, 139    
+    syscall 0           
+
+    .section .text
     .globl __trap_from_kernel
     .balign 4096
 __trap_from_kernel:
