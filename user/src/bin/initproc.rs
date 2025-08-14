@@ -25,7 +25,14 @@ extern crate user_lib;
     "/musl/splice_testcode.sh\0",
     "/musl/interrupts_testcode.sh\0",
 */
-const TESTS: &[&str] = &["/glibc/basic_testcode.sh\0"];
+const TESTS: &[&str] = &[
+    "/musl/copy-file-range_testcode.sh\0",
+    "/musl/splice_testcode.sh\0",
+    "/musl/interrupts_testcode.sh\0",
+    "/glibc/copy-file-range_testcode.sh\0",
+    "/glibc/splice_testcode.sh\0",
+    "/glibc/interrupts_testcode.sh\0",
+];
 
 const TEST_NUM: usize = TESTS.len();
 
