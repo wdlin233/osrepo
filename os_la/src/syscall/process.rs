@@ -2,7 +2,10 @@ use crate::alloc::string::ToString;
 use crate::{
     config::PAGE_SIZE,
     fs::{open, vfs::File, OpenFlags, NONE_MODE},
-    mm::{copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref, translated_refmut, translated_str, MapPermission},
+    mm::{
+        copy_to_virt, insert_bad_address, is_bad_address, remove_bad_address, translated_ref,
+        translated_refmut, translated_str, MapPermission,
+    },
     signal::SignalFlags,
     syscall::{process, MmapFlags, MmapProt},
     task::{
@@ -346,10 +349,7 @@ pub fn sys_tms(tms: *mut TmsInner) -> isize {
 /// mmap syscall ref: https://man7.org/linux/man-pages/man2/mmap.2.html
 /// `flags` determins whether updates mapping,
 /// `fd` as file descriptor, `off` as offset in file
-pub fn sys_mmap(
-    addr: usize, len: usize, port: u32, 
-    flags: u32, fd: usize, off: usize
-) -> isize {
+pub fn sys_mmap(addr: usize, len: usize, port: u32, flags: u32, fd: usize, off: usize) -> isize {
     if flags == 0 {
         return SysErrNo::EINVAL as isize;
     }
@@ -374,18 +374,16 @@ pub fn sys_mmap(
     let inner = process.inner_exclusive_access();
     let len = page_round_up(len);
     if fd == usize::MAX {
-        let ret = inner.memory_set.mmap(
-            addr, len, permission, 
-            flags, None, usize::MAX
-        );
+        let ret = inner
+            .memory_set
+            .mmap(addr, len, permission, flags, None, usize::MAX);
         return ret as isize;
     }
     if flags.contains(MmapFlags::MAP_ANONYMOUS) {
         // anonymous mapping
-        let ret = inner.memory_set.mmap(
-            0, 1, MapPermission::empty(), 
-            flags, None, usize::MAX
-        );
+        let ret = inner
+            .memory_set
+            .mmap(0, 1, MapPermission::empty(), flags, None, usize::MAX);
         insert_bad_address(ret);
         debug!("bad address is {:x}", ret);
         return ret as isize;

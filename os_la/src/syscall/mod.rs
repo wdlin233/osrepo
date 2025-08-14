@@ -94,6 +94,8 @@ pub const SYSCALL_BRK: usize = 214;
 pub const SYSCALL_MUNMAP: usize = 215;
 /// mmap syscall
 pub const SYSCALL_MMAP: usize = 222;
+/// mprotect syscall
+pub const SYSCALL_MPROTECT: usize = 226;
 /// waitpid syscall
 pub const SYSCALL_WAITPID: usize = 260;
 /// spawn syscall
@@ -133,6 +135,7 @@ pub const SYSCALL_CONDVAR_WAIT: usize = 473;
 pub const SYSCALL_STATX: usize = 291;
 
 mod fs;
+mod mem;
 mod options;
 mod process;
 mod sync;
@@ -142,6 +145,7 @@ pub mod sys_result;
 mod uname;
 
 use fs::*;
+use mem::*;
 use process::*;
 use sync::*;
 use thread::*;
@@ -149,11 +153,17 @@ use thread::*;
 pub use options::*;
 use uname::*;
 
-use crate::{fs::{Kstat, Statx}, system::UTSname, task::TmsInner};
+use crate::{
+    fs::{Kstat, Statx},
+    system::UTSname,
+    task::TmsInner,
+};
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
+        SYSCALL_MPROTECT => sys_mprotect(args[0], args[1], args[2] as u32),
+
         SYSCALL_MOUNT => sys_mount(
             args[0] as *const u8,
             args[1] as *const u8,

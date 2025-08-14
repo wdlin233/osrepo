@@ -1,4 +1,4 @@
-ARCH ?= riscv64
+ARCH ?= loongarch64
 DOCKER_NAME ?= docker.educg.net/cg/os-contest:20250516
 ifeq ($(ARCH), riscv64)
 	KERNEL_BIN := kernel-rv
@@ -41,8 +41,8 @@ build_docker:
 
 all:
 	@cd user && make build ARCH=loongarch64
-	@cd os && make build ARCH=loongarch64
-	@cp ./os/target/loongarch64-unknown-none/release/os ./kernel-la
+	@cd os_la && make build ARCH=loongarch64
+	@cp ./os_la/target/loongarch64-unknown-none/release/os ./kernel-la
 
 clean:
 	@cd ./os && make clean
