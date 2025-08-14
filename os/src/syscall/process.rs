@@ -657,6 +657,17 @@ pub fn sys_set_robust_list(head: usize, len: usize) -> isize {
     0
 }
 
+pub fn sys_get_robust_list(pid: isize, head_ptr: *mut usize, len_ptr: *mut usize) -> isize {
+    // 简化处理
+    debug!("sys_get_robust_list called with pid={}, head_ptr={:?}, len_ptr={:?}", pid, head_ptr, len_ptr);
+    
+    if head_ptr.is_null() || len_ptr.is_null() {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    SysErrNo::ENOSYS as isize
+}
+
 pub fn sys_sched_getaffinity(_pid: usize, _cpusetsize: usize, _mask: usize) -> isize {
     0
 }

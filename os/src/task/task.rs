@@ -249,7 +249,7 @@ impl TaskControlBlock {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 /// The execution status of the current process
 pub enum TaskStatus {
     /// ready to run

@@ -513,7 +513,7 @@ impl ProcessControlBlock {
         user_sp -= user_sp % size;
 
         // initialize trap_cx
-        debug!("init context");
+        debug!("init context, entry_point = 0x{:x}", entry_point);
         let kstack_top = task.kstack.get_top();
         let mut trap_cx = TrapContext::app_init_context(
             entry_point,

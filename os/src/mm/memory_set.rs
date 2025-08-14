@@ -341,6 +341,7 @@ impl MemorySetInner {
     }
 
     fn load_dl_interp_if_needed(&mut self, elf: &ElfFile, cwd: &str) -> Option<usize> {
+        debug!("[load_dl_interp_if_needed] cwd = {}", cwd);
         let elf_header = elf.header;
         let ph_count = elf_header.pt2.ph_count();
 
@@ -359,6 +360,7 @@ impl MemorySetInner {
             let mut interp = String::from_utf8(section.raw_data(&elf).to_vec()).unwrap();
             interp = interp.strip_suffix("\0").unwrap_or(&interp).to_string();
             debug!("[load_dl] interp {}", interp);
+            
             let pre: &str = if cwd.contains("musl") {
                 "/musl"
             } else {
@@ -366,19 +368,53 @@ impl MemorySetInner {
             };
 
             let interp = map_dynamic_link_file(&interp, pre);
+            debug!("[load_dl] mapped interp path: {}", interp);
 
-            // log::info!("interp {}", interp);
+            // 特殊处理：如果是musl程序试图使用glibc动态链接器，发出警告
+            if cwd.contains("musl") && interp.contains("glibc") {
+                debug!("[load_dl] WARNING: musl program using glibc linker, may have compatibility issues");
+            }
 
             let interp_inode = match open(&interp, OpenFlags::O_RDONLY, NONE_MODE, "") {
                 Ok(f) => f.file().ok(),
-                Err(e) => return None,
+                Err(_e) => {
+                    debug!("[load_dl] failed to open interp: {}, falling back to static", interp);
+                    return None;
+                }
             };
-            let interp_file = interp_inode.unwrap();
-            let interp_elf_data = interp_file.inode.read_all().unwrap();
-            let interp_elf = xmas_elf::ElfFile::new(&interp_elf_data).unwrap();
+            let interp_file = match interp_inode {
+                Some(file) => file,
+                None => {
+                    debug!("[load_dl] failed to get file from inode: {}, falling back to static", interp);
+                    return None;
+                }
+            };
+            let interp_elf_data = match interp_file.inode.read_all() {
+                Ok(data) => data,
+                Err(_e) => {
+                    debug!("[load_dl] failed to read interp data: {}, falling back to static", interp);
+                    return None;
+                }
+            };
+            let interp_elf = match xmas_elf::ElfFile::new(&interp_elf_data) {
+                Ok(elf) => elf,
+                Err(_e) => {
+                    debug!("[load_dl] failed to parse ELF: {}, falling back to static", interp);
+                    return None;
+                }
+            };
             self.map_elf(&interp_elf, DL_INTERP_OFFSET.into());
 
-            Some(interp_elf.header.pt2.entry_point() as usize + DL_INTERP_OFFSET)
+            let entry_point = interp_elf.header.pt2.entry_point() as usize + DL_INTERP_OFFSET;
+            debug!("[load_dl] interp entry point: 0x{:x}", entry_point);
+            
+            // 检查entry_point是否有效（不应该是0或接近0xffffffffffffffff的值）
+            if entry_point == 0 || entry_point == usize::MAX || entry_point == usize::MAX - 1 {
+                debug!("[load_dl] invalid entry point 0x{:x}, falling back to static", entry_point);
+                return None;
+            }
+            
+            Some(entry_point)
         } else {
             debug!("[load_dl] encounter a static elf");
             None
@@ -546,6 +582,7 @@ impl MemorySetInner {
         let ph_count = elf_header.pt2.ph_count();
         let max_end_vpn = VirtPageNum(0);
         let mut entry_point = elf.header.pt2.entry_point() as usize;
+        debug!("[from_elf] original entry_point = 0x{:x}", entry_point);
 
         auxv.push(Aux::new(
             AuxType::PHENT,
@@ -555,9 +592,11 @@ impl MemorySetInner {
         auxv.push(Aux::new(AuxType::PAGESZ, PAGE_SIZE as usize));
         //设置动态链接
         if let Some(interp_entry_point) = memory_set.load_dl_interp_if_needed(&elf, cwd) {
+            debug!("[from_elf] using dynamic linker, interp_entry_point = 0x{:x}", interp_entry_point);
             auxv.push(Aux::new(AuxType::BASE, DL_INTERP_OFFSET));
             entry_point = interp_entry_point;
         } else {
+            debug!("[from_elf] static linking, using original entry_point = 0x{:x}", entry_point);
             auxv.push(Aux::new(AuxType::BASE, 0));
         }
         auxv.push(Aux::new(AuxType::FLAGS, 0 as usize));

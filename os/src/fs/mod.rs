@@ -478,17 +478,16 @@ pub fn is_dynamic_link_file(path: &str) -> bool {
 }
 
 pub fn map_dynamic_link_file<'a>(path: &'a str, prefix: &'a str) -> &'a str {
-    //if !DYNAMIC_PATH.contains(path) {
     let (_, file_name) = path.rsplit_once("/").unwrap();
     debug!("[map_dynamic] file_name={}", file_name);
 
-    //let full_path = format!("{}{}", prefix, file_name);
     let full_path = format!("{}/lib/{}", prefix, file_name);
-    debug!("[map_dynamic] full_path={}", full_path);
+    debug!("[map_dynamic] trying full_path={}", full_path);
     if DYNAMIC_PATH.contains(full_path.as_str()) {
         return full_path.leak();
     }
-    //}
+    
+    debug!("[map_dynamic] no mapping found, using original path={}", path);
     path
 }
 
@@ -581,6 +580,7 @@ static DYNAMIC_PATH: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "/musl/lib/tls_get_new-dtv_dso.so",
         "/musl/lib/tls_init_dso.so",
         "/musl/lib/ld-musl-riscv64-sf.so.1",
+        "/musl/lib/ld-linux-riscv64-lp64d.so.1",
         // // lib/
         // "/lib/tls_get_new-dtv_dso.so",
         // "/lib/tls_align_dso.so",

@@ -86,6 +86,8 @@ pub const SYSCALL_TID_ADDRESS: usize = 96;
 pub const SYSCALL_FUTEX: usize = 98;
 /// set tobustlist syscall
 pub const SYSCALL_SETROBUSTLIST: usize = 99;
+/// get robust list syscall
+pub const SYSCALL_GETROBUSTLIST: usize = 100;
 /// sleep syscall
 pub const SYSCALL_SLEEP: usize = 101;
 /// set timer syscall
@@ -273,6 +275,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_GETROBUSTLIST => sys_get_robust_list(args[0] as isize, args[1] as *mut usize, args[2] as *mut usize),
         SYSCALL_PREAD64 => sys_pread64(args[0], args[1] as *mut u8, args[2], args[3] as isize),
         SYSCALL_ACCEPT => sys_accept(args[0], args[1] as *mut u8, args[2] as *mut u32),
         SYSCALL_RECVFROM => sys_recvfrom(args[0], args[1] as *mut u8, args[2], args[3] as u32, args[4] as *mut u8, args[5] as *mut u32),
@@ -357,7 +360,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[2] as *const u8,
             args[3],
         ),
-        SYSCALL_SETROBUSTLIST => sys_set_robust_list(args[0], args[1]),
         SYSCALL_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
         SYSCALL_SYSINFO => sys_sysinfo(args[0] as *mut SysInfo),
         SYSCALL_READV => sys_readv(args[0], args[1] as *const u8, args[2]),

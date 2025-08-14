@@ -163,6 +163,14 @@ pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
     let scause = scause::read();
     let stval = stval::read();
+    let sepc = current_trap_cx().sepc;
+    debug!(
+        "[kernel] trap_handler: trap type: {:?}, stval: {:#x}, sepc: {:#x}",
+        scause.cause(),
+        stval,
+        sepc
+    );
+    
     // trace!("into {:?}", scause.cause());
     // to get kernel time
     let in_kernel_time = get_time();
@@ -237,6 +245,12 @@ pub fn trap_handler() -> ! {
                 current_trap_cx().sepc,
             );
             exit_current_and_run_next(-2);
+            // This task should never run again, but due to the scheduling design,
+            // __switch might return. Loop forever to prevent returning to user space.
+            loop {
+                // Never return to this task
+                core::hint::spin_loop();
+            }
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             current_add_signal(SignalFlags::SIGILL);
@@ -258,6 +272,12 @@ pub fn trap_handler() -> ! {
     if let Some((errno, msg)) = check_signals_of_current() {
         trace!("[kernel] trap_handler: .. check signals {}", msg);
         exit_current_and_run_next(errno);
+        // This task should never run again, but due to the scheduling design,
+        // __switch might return. Loop forever to prevent returning to user space.
+        loop {
+            // Never return to this task
+            core::hint::spin_loop();
+        }
     }
     let out_kernel_time = get_time();
     current_process()
