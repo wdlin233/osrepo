@@ -135,7 +135,6 @@ pub const SYSCALL_GETRUSAGE: usize = 165;
 pub const SYSCALL_UMASK: usize = 166;
 /// gettimeofday syscall
 pub const SYSCALL_GETTIMEOFDAY: usize = 169;
-
 /// getpid syscall
 pub const SYSCALL_GETPID: usize = 172;
 /// getppid syscall

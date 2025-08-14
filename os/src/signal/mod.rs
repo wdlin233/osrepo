@@ -1,7 +1,10 @@
 pub mod sigact;
 pub mod signal;
 
-use core::{arch::global_asm, mem::size_of};
+use core::{
+    arch::{asm, global_asm},
+    mem::size_of,
+};
 
 use alloc::sync::Arc;
 use log::debug;
@@ -10,7 +13,7 @@ pub use signal::*;
 
 pub use super::signal::SigInfo;
 use crate::{
-    config::USER_STACK_SIZE,
+    config::{SIGRETURN, TRAMPOLINE, USER_STACK_SIZE},
     hal::trap::{MachineContext, UserContext},
     mm::{translated_ref, translated_refmut},
     task::{
@@ -34,10 +37,9 @@ pub const SIG_ERR: usize = usize::MAX;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
-#[cfg(target_arch = "riscv64")]
-global_asm!(include_str!("sig_handle.s"));
 extern "C" {
-    pub fn sigreturn();
+    pub fn __sigreturn();
+    pub fn __alltraps();
 }
 
 pub fn check_if_any_sig_for_current_task() -> Option<usize> {
@@ -52,6 +54,7 @@ pub fn check_if_any_sig_for_current_task() -> Option<usize> {
 
 pub fn handle_signal(signo: usize) {
     let task = current_task().unwrap();
+    debug!("handle task tid is : {}", task.tid());
     let process = task.process.upgrade().unwrap();
     let inner = process.inner_exclusive_access();
     let signal = SignalFlags::from_sig(signo);
@@ -78,16 +81,18 @@ pub fn handle_signal(signo: usize) {
 /// 并恢复原来内核栈的内容
 pub fn setup_frame(signo: usize, sig_action: KSigAction) {
     debug!("customed sa_handler={:#x}", sig_action.act.sa_handler);
+    debug!("customed sa_restore={:#x}", sig_action.act.sa_restore);
 
     let task = current_task().unwrap();
+    debug!("task tid is : {}", task.tid());
     let token = task.get_user_token();
     let mut task_inner = task.inner_exclusive_access();
 
-    let trap_cx = task_inner.get_trap_cx();
+    let mut trap_cx = task_inner.get_trap_cx();
     let mut user_sp = trap_cx.gp.x[2];
 
     // if this syscall wants to restart
-    #[cfg(target_arch = "riscv64")]
+    //#[cfg(target_arch = "riscv64")]
     if scause::read().cause() == Trap::Exception(Exception::UserEnvCall)
         && trap_cx.gp.x[10] == SysErrNo::ERESTART as usize
     {
@@ -161,6 +166,7 @@ pub fn setup_frame(signo: usize, sig_action: KSigAction) {
     trap_cx.set_sp(user_sp);
     // 修改Trap
     trap_cx.sepc = sig_action.act.sa_handler;
+
     // ra
     trap_cx.gp.x[1] = if sig_action
         .act
@@ -169,7 +175,9 @@ pub fn setup_frame(signo: usize, sig_action: KSigAction) {
     {
         sig_action.act.sa_restore
     } else {
-        sigreturn as usize
+        debug!("return sig return ");
+        //__sigreturn as usize - __alltraps as usize + TRAMPOLINE
+        SIGRETURN
     };
     task_inner.sig_mask |= sig_action.act.sa_mask | SignalFlags::from_sig(signo);
 }

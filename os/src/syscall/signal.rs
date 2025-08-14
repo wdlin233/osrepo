@@ -56,9 +56,6 @@ pub fn sys_sigaction(signo: usize, act: *const SigAction, old_act: *mut SigActio
     let inner = process.inner_exclusive_access();
     if old_act as usize != 0 {
         let sig_act = inner.sig_table.action(signo).act;
-        // data_flow!({
-        //     *old_act = sig_act;
-        // });
         *translated_refmut(inner.get_user_token(), old_act) = sig_act;
     }
     if act as usize != 0 {

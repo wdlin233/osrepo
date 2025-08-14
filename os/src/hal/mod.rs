@@ -13,5 +13,4 @@ extern "C" {
     pub fn ebss();
     pub fn ekernel();
     pub fn strampoline();
-    pub fn sigreturn();
 }

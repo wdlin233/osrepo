@@ -18,7 +18,7 @@ use core::arch::asm;
 //use core::str::next_code_point;
 use lazy_static::*;
 #[cfg(target_arch = "loongarch64")]
-use loongarch64::register::{asid, pgdl, pgdh};
+use loongarch64::register::{asid, pgdh, pgdl};
 
 /// Processor management structure
 pub struct Processor {
@@ -87,9 +87,20 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
-            info!("idle task cx ptr: {:p}, next task cx ptr: {:p}", idle_task_cx_ptr, next_task_cx_ptr);
-            warn!("idle_task_cx_ptr ra: {:#x}, next_task_cx_ptr ra: {:#x}", unsafe { (*idle_task_cx_ptr).get_ra() }, unsafe { (*next_task_cx_ptr).get_ra() });
-            warn!("idle_task_cx_ptr sp: {:#x}, next_task_cx_ptr sp: {:#x}", unsafe { (*idle_task_cx_ptr).get_sp() }, unsafe { (*next_task_cx_ptr).get_sp() });
+            info!(
+                "idle task cx ptr: {:p}, next task cx ptr: {:p}",
+                idle_task_cx_ptr, next_task_cx_ptr
+            );
+            warn!(
+                "idle_task_cx_ptr ra: {:#x}, next_task_cx_ptr ra: {:#x}",
+                unsafe { (*idle_task_cx_ptr).get_ra() },
+                unsafe { (*next_task_cx_ptr).get_ra() }
+            );
+            warn!(
+                "idle_task_cx_ptr sp: {:#x}, next_task_cx_ptr sp: {:#x}",
+                unsafe { (*idle_task_cx_ptr).get_sp() },
+                unsafe { (*next_task_cx_ptr).get_sp() }
+            );
             #[cfg(target_arch = "loongarch64")]
             {
                 let (tlbrsave, sp) = read_tlbrsave_and_sp();
@@ -136,11 +147,12 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 
 /// get the user virtual address of trap context
 pub fn current_trap_cx_user_va() -> usize {
+    debug!("current task tid is : {}", current_task().unwrap().tid());
     current_task().unwrap().trap_cx_user_va()
 }
 
 pub fn current_trap_cx_user_pa() -> usize {
-   current_task().unwrap().trap_cx_user_pa()
+    current_task().unwrap().trap_cx_user_pa()
 }
 
 /// get the top addr of kernel stack

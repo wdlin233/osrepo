@@ -11,14 +11,13 @@ use crate::fs::{
     map_dynamic_link_file, open, root_inode, File, OSInode, OpenFlags, NONE_MODE, SEEK_CUR,
     SEEK_SET,
 };
+use crate::hal::{
+    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, srodata, stext, strampoline,
+};
 use crate::mm::group::GROUP_SHARE;
-use crate::mm::map_area::{MapType, MapArea, MapAreaType, MapPermission};
+use crate::mm::map_area::{MapArea, MapAreaType, MapPermission, MapType};
 use crate::mm::page_fault_handler::{
     cow_page_fault, lazy_page_fault, mmap_read_page_fault, mmap_write_page_fault,
-};
-use crate::hal::{
-    ebss, edata, ekernel, erodata, etext, sbss_with_stack, sdata, sigreturn, srodata, stext,
-    strampoline,
 };
 use crate::mm::page_table::flush_tlb;
 use crate::mm::{safe_translated_byte_buffer, translated_byte_buffer, UserBuffer};
@@ -33,6 +32,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::error;
+use core::iter::Map;
 #[cfg(target_arch = "loongarch64")]
 use core::iter::Map;
 use lazy_static::*;
@@ -460,23 +460,65 @@ impl MemorySetInner {
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
         use crate::config::SIGRETURN;
-
+        use crate::signal::__sigreturn;
+        //debug!("map signal");
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
             MapPermission::R | MapPermission::X,
             false,
         );
+        // debug!("va: {:#x}, pa : {:#x}", SIGRETURN, sigreturn as usize);
         self.page_table.map(
             VirtAddr::from(SIGRETURN).into(),
-            PhysAddr::from(sigreturn as usize).into(),
-            MapPermission::R | MapPermission::X,
+            PhysAddr::from(__sigreturn as usize).into(),
+            MapPermission::R | MapPermission::X | MapPermission::U,
             false,
         );
+        // let s_sig_trap = sigreturn as usize;
+        // let e_sig_trap = sigreturn as usize + PAGE_SIZE;
+        // self.push(
+        //     MapArea::new(
+        //         (s_sig_trap).into(),
+        //         (e_sig_trap).into(),
+        //         MapType::Framed,
+        //         MapPermission::R | MapPermission::X | MapPermission::U,
+        //         MapAreaType::SIG,
+        //     ),
+        //     None,
+        // )
+        // // use crate::signal::sigreturn_end;
+        // // use core::ptr;
+        // // unsafe {
+        // //     let start = sigreturn as usize as *const usize as *const u8;
+        // //     let len = sigreturn_end as usize - sigreturn as usize;
+        // //     let frame = frame_alloc().unwrap();
+        // //     let ppn = frame.ppn;
+        // //     src: &[u8; 10] 或 &[u8]
+        // //     let src = unsafe { core::slice::from_raw_parts(sigreturn as *const u8, len) };
+        // //     let dst = ppn.get_bytes_array(); // len == 4096
+
+        // //     1. 拷 10 字节
+        // //     dst[..10].copy_from_slice(src); // 或者 ptr::copy_nonoverlapping
+
+        // //     2. 把剩余 4096-10 字节清零（可选）
+        // //     dst[10..].fill(0);
+
+        // //     let data = core::slice::from_raw_parts(start, len);
+
+        // //     ppn.get_bytes_array().copy_from_slice(data);
+        // //     self.page_table.map(
+        // //         VirtAddr::from(SIGRETURN).into(),
+        // //         ppn,
+        // //         MapPermission::R | MapPermission::X | MapPermission::U,
+        // //         false,
+        // //     );
+        // // }
     }
 
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
+        use crate::signal::__sigreturn;
         use core::iter::Map;
 
         use crate::mm::map_area::MapAreaType;
@@ -492,8 +534,56 @@ impl MemorySetInner {
             ".bss [{:#x}, {:#x})",
             sbss_with_stack as usize, ebss as usize
         );
-        info!("ekernel(physical memory) : [{:#x}, {:#x})", ekernel as usize, MEMORY_END);
+        info!(
+            "ekernel(physical memory) : [{:#x}, {:#x})",
+            ekernel as usize, MEMORY_END
+        );
         info!("mapping .text section");
+
+        // memory_set.push(
+        //     MapArea::new(
+        //         (s_sig_trap).into(),
+        //         (e_sig_trap).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X | MapPermission::U,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        let s_sig_trap = __sigreturn as usize;
+        let e_sig_trap = __sigreturn as usize + PAGE_SIZE;
+
+        // memory_set.push(
+        //     MapArea::new(
+        //         (s_sig_trap).into(),
+        //         (e_sig_trap).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X | MapPermission::U,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // memory_set.push(
+        //     MapArea::new(
+        //         (stext as usize).into(),
+        //         (s_sig_trap).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+        // memory_set.push(
+        //     MapArea::new(
+        //         (e_sig_trap).into(),
+        //         (etext as usize).into(),
+        //         MapType::Identical,
+        //         MapPermission::R | MapPermission::X,
+        //         MapAreaType::Elf,
+        //     ),
+        //     None,
+        // );
+
         memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
@@ -631,7 +721,7 @@ impl MemorySetInner {
         );
         let user_heap_top: usize = user_heap_bottom;
         let perm = MapPermission::R | MapPermission::W | MapPermission::U;
-        
+
         memory_set.insert_framed_area(
             user_heap_bottom.into(),
             user_heap_top.into(),
@@ -682,7 +772,7 @@ impl MemorySetInner {
                     map_perm,
                     MapAreaType::Elf,
                 );
-                
+
                 max_end_vpn = map_area.vpn_range.get_end();
                 debug!("before page offset, max end vpn is : {}", max_end_vpn.0);
                 // A optimization for mapping data, keep aligned
@@ -787,8 +877,8 @@ impl MemorySetInner {
             unsafe {
                 asm!("invtlb 0x0,$zero, $zero");
             }
-            use loongarch64::register::pgdl;
-            use crate::config::PAGE_SIZE_BITS; // 4K aligned
+            use crate::config::PAGE_SIZE_BITS;
+            use loongarch64::register::pgdl; // 4K aligned
             pgdl::set_base(satp << PAGE_SIZE_BITS);
         }
     }
@@ -1282,8 +1372,7 @@ impl MemorySetInner {
         }
         for area in new_areas {
             for (vpn, _) in area.data_frames.iter() {
-                self.page_table
-                    .set_map_flags((*vpn).into(), map_perm)
+                self.page_table.set_map_flags((*vpn).into(), map_perm)
             }
             self.areas.push(area);
         }
