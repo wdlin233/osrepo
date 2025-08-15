@@ -193,6 +193,8 @@ pub const SYSCALL_EXEC: usize = 221;
 pub const SYSCALL_MMAP: usize = 222;
 /// mprotect syscall
 pub const SYSCALL_MPROTECT: usize = 226;
+/// msync syscall
+pub const SYSCALL_MSYNC: usize = 227;
 /// madvise syscall
 pub const SYSCALL_MADVISE: usize = 233;
 /// get mempolicy syscall
@@ -206,6 +208,8 @@ pub const SYSCALL_PRLIMIT: usize = 261;
 pub const SYSCALL_RENAMEAT2: usize = 276;
 /// getrandom syscall
 pub const SYSCALL_GETRANDOM: usize = 278;
+/// membarrier syscall
+pub const SYSCALL_MEMBARRIER: usize = 283;
 /// statx syscall
 pub const SYSCALL_STATX: usize = 291;
 /// spawn syscall
@@ -278,6 +282,8 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_MSYNC => sys_msync(args[0], args[1], args[2] as i32),
+        SYSCALL_MEMBARRIER => sys_membarrier(args[0] as i32, args[1] as u32),
         SYSCALL_UMASK => sys_umask(args[0] as u32),
         SYSCALL_GETRUSAGE => sys_get_rusage(args[0] as i32, args[1] as *mut Rusage),
         SYSCALL_GETROBUSTLIST => sys_get_robust_list(args[0] as isize, args[1] as *mut usize, args[2] as *mut usize),

@@ -9,7 +9,7 @@ use crate::fs::{
 }; //::{link, unlink}
 use crate::mm::{
     copy_to_virt, is_bad_address, safe_translated_byte_buffer, translated_byte_buffer,
-    translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer,
+    translated_ref, translated_refmut, translated_str, PhysAddr, UserBuffer, VirtAddr,
 };
 use core::cmp::min;
 
@@ -1622,4 +1622,86 @@ pub fn sys_pread64(fd: usize, buf: *mut u8, count: usize, offset: isize) -> isiz
     } else {
         SysErrNo::EBADF as isize
     }
+}
+
+pub fn sys_msync(addr: usize, length: usize, flags: i32) -> isize {
+    use crate::mm::VirtAddr;
+    use crate::utils::SysErrNo;
+    use core::sync::atomic::{fence, Ordering};
+    
+    //debug!("sys_msync: addr={:#x}, length={}, flags={}", addr, length, flags);
+    
+    const MS_ASYNC: i32 = 1;
+    const MS_SYNC: i32 = 4;
+    const MS_INVALIDATE: i32 = 2;
+    
+    if flags & !(MS_ASYNC | MS_SYNC | MS_INVALIDATE) != 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    
+    if (flags & MS_ASYNC != 0) && (flags & MS_SYNC != 0) {
+        return SysErrNo::EINVAL as isize;
+    }
+    
+    if addr % crate::config::PAGE_SIZE != 0 {
+        return SysErrNo::EINVAL as isize;
+    }
+    
+    if length == 0 {
+        return 0;
+    }
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    
+    let start_va = VirtAddr::from(addr);
+    let end_va = VirtAddr::from(addr + length);
+    
+    let mut found_mapping = false;
+    let memory_set_inner = inner.memory_set.inner.exclusive_access();
+    for area in &memory_set_inner.areas {
+        let area_start = area.vpn_range.get_start().into();
+        let area_end = area.vpn_range.get_end().into();
+        
+        if start_va >= area_start && end_va <= area_end {
+            // 检查是否是内存映射文件
+            if area.mmap_file.file.is_some() {
+                found_mapping = true;
+                
+                if flags & MS_SYNC != 0 {
+                    // debug!("msync: synchronous write requested - performing SeqCst fence");
+                    fence(Ordering::SeqCst);
+                }
+                
+                if flags & MS_ASYNC != 0 {
+                    // debug!("msync: asynchronous write requested - performing Release fence");
+                    fence(Ordering::Release);
+                }
+                
+                if flags & MS_INVALIDATE != 0 {
+                    // debug!("msync: cache invalidation requested - performing Acquire fence");
+                    fence(Ordering::Acquire);
+                }
+                
+                if flags & (MS_SYNC | MS_ASYNC) == 0 {
+                    // debug!("msync: default mode - performing SeqCst fence");
+                    fence(Ordering::SeqCst);
+                }
+                
+                break;
+            }
+        }
+    }
+    
+    drop(memory_set_inner);
+    drop(inner);
+    drop(process);
+    
+    if !found_mapping {
+        return SysErrNo::ENOMEM as isize;
+    }
+    
+    fence(Ordering::SeqCst);
+    
+    0
 }

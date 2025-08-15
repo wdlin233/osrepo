@@ -236,3 +236,57 @@ pub fn sys_mprotect(addr: usize, len: usize, prot: u32) -> isize {
     memory_set.mprotect(start_vpn, end_vpn, map_perm);
     return 0;
 }
+
+pub fn sys_membarrier(cmd: i32, flags: u32) -> isize {
+    use crate::utils::SysErrNo;
+    use core::sync::atomic::{fence, Ordering};
+    
+    debug!("[sys_membarrier] cmd={}, flags={}", cmd, flags);
+    
+    const MEMBARRIER_CMD_QUERY: i32 = 0;
+    const MEMBARRIER_CMD_GLOBAL: i32 = 1;
+    const MEMBARRIER_CMD_GLOBAL_EXPEDITED: i32 = 2;
+    const MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED: i32 = 3;
+    const MEMBARRIER_CMD_PRIVATE_EXPEDITED: i32 = 4;
+    const MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED: i32 = 5;
+    
+    const SUPPORTED_COMMANDS: i32 = 
+        (1 << MEMBARRIER_CMD_GLOBAL) |
+        (1 << MEMBARRIER_CMD_GLOBAL_EXPEDITED);
+    
+    match cmd {
+        MEMBARRIER_CMD_QUERY => {
+            // Return supported commands
+            debug!("[sys_membarrier] Query: returning supported commands");
+            SUPPORTED_COMMANDS as isize
+        },
+        
+        MEMBARRIER_CMD_GLOBAL | MEMBARRIER_CMD_GLOBAL_EXPEDITED => {
+            // Basic validation
+            if flags != 0 {
+                debug!("[sys_membarrier] Invalid flags: {}", flags);
+                return SysErrNo::EINVAL as isize;
+            }
+            
+            // Perform memory barrier
+            // In a single-core system, this ensures compiler ordering
+            // and memory synchronization within the current processor
+            fence(Ordering::SeqCst);
+            
+            debug!("[sys_membarrier] Global memory barrier executed");
+            0
+        },
+        
+        MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED |
+        MEMBARRIER_CMD_PRIVATE_EXPEDITED |
+        MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED => {
+            debug!("[sys_membarrier] Unsupported command: {}", cmd);
+            SysErrNo::ENOSYS as isize
+        },
+        
+        _ => {
+            debug!("[sys_membarrier] Invalid command: {}", cmd);
+            SysErrNo::EINVAL as isize
+        }
+    }
+}
