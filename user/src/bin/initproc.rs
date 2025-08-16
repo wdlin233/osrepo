@@ -21,7 +21,10 @@ extern crate user_lib;
     // "/glibc/basic_testcode.sh\0",
     //"/glibc/busybox_testcode.sh\0",
 */
-const TESTS: &[&str] = &["/glibc/busybox_testcode.sh\0"];
+const TESTS: &[&str] = &[
+    "/musl/run_testcases_musl.sh\0"
+//    "/musl/git_testcode.sh\0"
+];
 
 const TEST_NUM: usize = TESTS.len();
 
@@ -52,6 +55,6 @@ pub fn main() -> i32 {
             test, pids[i], xstate
         );
     }
-    println!("[usertest] Basic usertests passed!");
+    println!("[usertest] usertest end");
     0
 }

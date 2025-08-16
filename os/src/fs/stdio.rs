@@ -120,7 +120,8 @@ impl File for Stdout {
         info!("kernel: write to stdout");
         for buffer in user_buf.buffers.iter() {
             //info!("kernel: write to stdout buffer: {:?}", buffer);
-            print!("{}", core::str::from_utf8(*buffer).unwrap());
+            // TODO: fix Utf8Error, fgetwc_buffering
+            print!("{}", core::str::from_utf8(*buffer).unwrap_or(""));
         }
         info!("kernel: write to stdout done");
         Ok(user_buf.len())
