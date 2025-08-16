@@ -34,4 +34,3 @@ kernel-rv
 kernel-la
 **/linker_*.lds
 testsuits/**
-**/*.txt
