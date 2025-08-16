@@ -35,7 +35,9 @@ static mut DEV_NO: usize = 1;
 
 pub fn register_device(abs_path: &str) {
     unsafe {
-        DEVICES.lock().insert(abs_path.to_string(), DEV_NO);
+        let devno = DEV_NO;
+        DEVICES.lock().insert(abs_path.to_string(), devno);
+        log::debug!("registered device: {} with devno: {}", abs_path, devno);
         DEV_NO += 1;
     }
 }
@@ -45,7 +47,9 @@ pub fn unregister_device(abs_path: &str) {
 }
 
 pub fn find_device(abs_path: &str) -> bool {
-    DEVICES.lock().get(abs_path).is_some()
+    let result = DEVICES.lock().get(abs_path).is_some();
+    log::debug!("find_device({}): {}", abs_path, result);
+    result
 }
 
 pub fn get_devno(abs_path: &str) -> usize {

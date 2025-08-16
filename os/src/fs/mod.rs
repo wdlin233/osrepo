@@ -68,12 +68,12 @@ bitflags! {
 
 impl OpenFlags {
     pub fn read_write(&self) -> (bool, bool) {
-        if self.is_empty() {
-            (true, false)
-        } else if self.contains(Self::O_WRONLY) {
-            (false, true)
-        } else {
-            (true, true)
+        let access_mode = self.bits() & Self::O_ACCMODE.bits();
+        match access_mode {
+            0 => (true, false),   // O_RDONLY
+            1 => (false, true),   // O_WRONLY  
+            2 => (true, true),    // O_RDWR
+            _ => (true, false),   // fallback to read-only
         }
     }
 
@@ -378,6 +378,22 @@ pub fn create_init_files() -> GeneralRet<()> {
         DEFAULT_DIR_MODE,
         "",
     )?;
+    
+    //创建/home文件夹
+    open(
+        "/home",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+    
+    //创建/home/root文件夹
+    open(
+        "/home/root",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
     //创建/etc/adjtime记录时间偏差
     let adjtimefile = open(
         "/etc/adjtime",
@@ -453,12 +469,181 @@ pub fn create_init_files() -> GeneralRet<()> {
     let preloadsize = preloadfile.write(preloadbuf)?;
     debug!("create /etc/ld.so.preload with {} sizes", preloadsize);
 
+    //创建/etc/gitconfig for git
+    let gitconfigfile = open(
+        "/etc/gitconfig",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR,
+        DEFAULT_FILE_MODE,
+        "",
+    )?
+    .file()?;
+    let mut gitconfig = String::from("[user]\n\tname = root\n\temail = root@localhost\n[init]\n\tdefaultBranch = main\n");
+    let mut gitconfigvec = Vec::new();
+    unsafe {
+        let git = gitconfig.as_bytes_mut();
+        gitconfigvec.push(core::slice::from_raw_parts_mut(git.as_mut_ptr(), git.len()));
+    }
+    let gitconfigbuf = UserBuffer::new(gitconfigvec);
+    let gitconfigsize = gitconfigfile.write(gitconfigbuf)?;
+    debug!("create /etc/gitconfig with {} sizes", gitconfigsize);
+
+    //创建/home/root/.gitconfig for git HOME directory
+    let homegitconfigfile = open(
+        "/home/root/.gitconfig",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR,
+        DEFAULT_FILE_MODE,
+        "",
+    )?
+    .file()?;
+    let mut homegitconfig = String::from("[user]\n\tname = root\n\temail = root@localhost\n[init]\n\tdefaultBranch = main\n");
+    let mut homegitconfigvec = Vec::new();
+    unsafe {
+        let homegit = homegitconfig.as_bytes_mut();
+        homegitconfigvec.push(core::slice::from_raw_parts_mut(homegit.as_mut_ptr(), homegit.len()));
+    }
+    let homegitconfigbuf = UserBuffer::new(homegitconfigvec);
+    let homegitconfigsize = homegitconfigfile.write(homegitconfigbuf)?;
+    debug!("create /home/root/.gitconfig with {} sizes", homegitconfigsize);
+
+    //创建/usr目录
+    open(
+        "/usr",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/usr/share目录
+    open(
+        "/usr/share",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/usr/share/git-core目录
+    open(
+        "/usr/share/git-core",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/usr/share/git-core/templates目录
+    open(
+        "/usr/share/git-core/templates",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/usr/share/git-core/templates/hooks目录
+    open(
+        "/usr/share/git-core/templates/hooks",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/usr/share/git-core/templates/info目录
+    open(
+        "/usr/share/git-core/templates/info",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/usr/share/git-core/templates/info/exclude文件
+    let excludefile = open(
+        "/usr/share/git-core/templates/info/exclude",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR,
+        DEFAULT_FILE_MODE,
+        "",
+    )?
+    .file()?;
+    let mut exclude = String::from("# git ls-files --others --exclude-from=.git/info/exclude\n# Lines that start with '#' are comments.\n# For a project mostly in C, the following would be a good set of\n# exclude patterns (uncomment them if you want to use them):\n# *.[oa]\n# *~\n");
+    let mut excludevec = Vec::new();
+    unsafe {
+        let exc = exclude.as_bytes_mut();
+        excludevec.push(core::slice::from_raw_parts_mut(exc.as_mut_ptr(), exc.len()));
+    }
+    let excludebuf = UserBuffer::new(excludevec);
+    let excludesize = excludefile.write(excludebuf)?;
+    debug!("create /usr/share/git-core/templates/info/exclude with {} sizes", excludesize);
+
+    //创建/usr/share/git-core/templates/config文件
+    let templateconfigfile = open(
+        "/usr/share/git-core/templates/config",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR,
+        DEFAULT_FILE_MODE,
+        "",
+    )?
+    .file()?;
+    let mut templateconfig = String::from("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n");
+    let mut templateconfigvec = Vec::new();
+    unsafe {
+        let tmpl = templateconfig.as_bytes_mut();
+        templateconfigvec.push(core::slice::from_raw_parts_mut(tmpl.as_mut_ptr(), tmpl.len()));
+    }
+    let templateconfigbuf = UserBuffer::new(templateconfigvec);
+    let templateconfigsize = templateconfigfile.write(templateconfigbuf)?;
+    debug!("create /usr/share/git-core/templates/config with {} sizes", templateconfigsize);
+
+    //创建/musl目录 (工作目录)
+    open(
+        "/musl",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/musl/.git目录 (Git仓库目录)
+    open(
+        "/musl/.git",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR | OpenFlags::O_DIRECTORY,
+        DEFAULT_DIR_MODE,
+        "",
+    )?;
+
+    //创建/musl/.git/config文件
+    let gitrepoconfig = open(
+        "/musl/.git/config",
+        OpenFlags::O_CREATE | OpenFlags::O_RDWR,
+        DEFAULT_FILE_MODE,
+        "",
+    )?
+    .file()?;
+    let mut gitrepoconfig_content = String::from("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n");
+    let mut gitrepoconfigvec = Vec::new();
+    unsafe {
+        let gitrepo = gitrepoconfig_content.as_bytes_mut();
+        gitrepoconfigvec.push(core::slice::from_raw_parts_mut(gitrepo.as_mut_ptr(), gitrepo.len()));
+    }
+    let gitrepoconfigbuf = UserBuffer::new(gitrepoconfigvec);
+    let gitrepoconfigsize = gitrepoconfig.write(gitrepoconfigbuf)?;
+    debug!("create /musl/.git/config with {} sizes", gitrepoconfigsize);
+
     println!("create_init_files success!");
     Ok(())
 }
 
 fn create_file(abs_path: &str, flags: OpenFlags, mode: u32) -> Result<FileClass, SysErrNo> {
     //debug!("to creat file, the file is :{}", abs_path);
+    
+    // 处理 O_EXCL 标志：如果文件已存在且设置了 O_EXCL，则返回错误
+    if flags.contains(OpenFlags::O_EXCL) {
+        if has_inode(abs_path) {
+            debug!("file {} already exists with O_EXCL", abs_path);
+            return Err(SysErrNo::EEXIST);
+        }
+        // 检查文件系统中是否存在
+        let found_res = root_inode().find(abs_path, OpenFlags::O_RDONLY, 0);
+        if found_res.is_ok() {
+            debug!("file {} already exists in filesystem with O_EXCL", abs_path);
+            return Err(SysErrNo::EEXIST);
+        }
+    }
+    
     // 一定能找到,因为除了RootInode外都有父结点
     let parent_dir = root_inode();
     debug!("in create file, get root inode ok");
@@ -499,7 +684,9 @@ pub fn open<'a>(
 ) -> Result<FileClass, SysErrNo> {
     // log::info!("[open] abs_path={}", abs_path);
     //判断是否是设备文件
+    debug!("checking if {} is a device file", abs_path);
     if find_device(abs_path) {
+        debug!("found device {}, attempting to open", abs_path);
         let device = open_device_file(abs_path)?;
         debug!("find device ok");
         return Ok(FileClass::Abs(device));
@@ -539,10 +726,30 @@ pub fn open<'a>(
     debug!("open file: {}, flags: {:?}", abs_path, flags);
     if let Some(inode) = inode {
         debug!("in some inode");
+        
+        // 处理 O_EXCL 标志：如果文件已存在且设置了 O_EXCL，则返回错误
+        // 但是对于目录的某些操作（如Git锁定机制）需要特殊处理
+        if flags.contains(OpenFlags::O_EXCL) && flags.contains(OpenFlags::O_CREATE) {
+            // 如果是目录且路径以斜杠结尾，这可能是Git的锁定机制，允许操作
+            if inode.is_dir() && abs_path.ends_with('/') {
+                debug!("allowing O_EXCL on directory {} for Git compatibility", abs_path);
+            } else {
+                debug!("file {} already exists with O_EXCL", abs_path);
+                return Err(SysErrNo::EEXIST);
+            }
+        }
+        
         if flags.contains(OpenFlags::O_DIRECTORY) && !inode.is_dir() {
             return Err(SysErrNo::ENOTDIR);
         }
+        
+        // 不允许以写入模式打开目录，除非是用于创建的目录操作
         let (readable, writable) = flags.read_write();
+        if writable && inode.is_dir() && !flags.contains(OpenFlags::O_CREATE) {
+            debug!("cannot open directory {} for writing without O_CREATE", abs_path);
+            return Err(SysErrNo::EISDIR);
+        }
+        
         let osfile = OSInode::new(readable, writable, inode);
         if flags.contains(OpenFlags::O_APPEND) {
             osfile.lseek(0, SEEK_END)?;

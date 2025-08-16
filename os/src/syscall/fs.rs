@@ -250,17 +250,24 @@ pub fn sys_readlinkat(dirfd: isize, path: *const u8, buf: *const u8, bufsize: us
         let res = buffer.write(inner.fs_info.exe_as_bytes());
         return res as isize;
     }
-    debug!("[sys_read_linkat] got path : {}", inner.fs_info.get_cwd());
+    debug!("[sys_read_linkat] got path : {}", path);
     let abs_path = match inner.get_abs_path(dirfd, &path) {
         Ok(path) => path,
         Err(e) => return e as isize,
     };
+    debug!("[sys_read_linkat] abs_path : {}", abs_path);
     let mut linkbuf = vec![0u8; bufsize];
-    let file = open(&abs_path, OpenFlags::empty(), NONE_MODE, "")
-        .unwrap()
-        .file()
-        .unwrap();
-    let readcnt = file.inode.read_link(&mut linkbuf, bufsize).unwrap();
+    let file = match open(&abs_path, OpenFlags::empty(), NONE_MODE, "") {
+        Ok(file) => match file.file() {
+            Ok(f) => f,
+            Err(e) => return e as isize,
+        },
+        Err(e) => return e as isize,
+    };
+    let readcnt = match file.inode.read_link(&mut linkbuf, bufsize) {
+        Ok(cnt) => cnt,
+        Err(e) => return e as isize,
+    };
     // let mut buffer = UserBuffer::new(translated_byte_buffer(token, buf, readcnt).unwrap());
     let mut buffer =
         UserBuffer::new_single(unsafe { core::slice::from_raw_parts_mut(buf as *mut _, readcnt) });
@@ -467,8 +474,9 @@ pub fn sys_open(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     }
     let inode = match open(&abs_path, flags, mode, "") {
         Ok(i) => i,
-        Err(_) => {
-            return -1;
+        Err(e) => {
+            debug!("sys_open failed for {}: {:?}", abs_path, e);
+            return e as isize;
         }
     };
     let new_fd = match inner.fd_table.alloc_fd() {
@@ -1354,7 +1362,7 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
         open(&abs_path, OpenFlags::O_CREATE, NONE_MODE, "");
     }
     let (parent_path, _) = rsplit_once(abs_path.as_str(), "/");
-    let parent_inode = match open(&parent_path, OpenFlags::O_RDWR, NONE_MODE, "") {
+    let parent_inode = match open(&parent_path, OpenFlags::O_RDONLY, NONE_MODE, "") {
         Ok(pi) => pi.file().unwrap(),
         Err(num) => return num as isize,
     };
@@ -1372,7 +1380,7 @@ pub fn sys_faccessat(dirfd: isize, path: *const u8, mode: u32, _flags: usize) ->
         return SysErrNo::EACCES as isize;
     }
     info!("in sys faccessat , the abs path is : {}", abs_path);
-    let inode = match open(&abs_path, OpenFlags::O_RDWR, NONE_MODE, "") {
+    let inode = match open(&abs_path, OpenFlags::O_RDONLY, NONE_MODE, "") {
         Ok(i) => i.file().unwrap(),
         Err(num) => {
             return num as isize;
@@ -1704,4 +1712,69 @@ pub fn sys_msync(addr: usize, length: usize, flags: i32) -> isize {
     fence(Ordering::SeqCst);
     
     0
+}
+
+pub fn sys_fchmodat(dirfd: isize, path: *const u8, mode: u32, flags: u32) -> isize {
+    debug!("in sys_fchmodat: dirfd={}, mode={:#o}, flags={}", dirfd, mode, flags);
+    
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    let token = inner.get_user_token();
+    
+    // 检查参数
+    if path.is_null() {
+        return SysErrNo::EFAULT as isize;
+    }
+    
+    let path_str = translated_str(token, path);
+    if path_str.is_empty() {
+        return SysErrNo::ENOENT as isize;
+    }
+    
+    // 获取绝对路径
+    let abs_path = match inner.get_abs_path(dirfd, &path_str) {
+        Ok(path) => path,
+        Err(e) => return e as isize,
+    };
+    
+    debug!("fchmodat: absolute path is {}", abs_path);
+    
+    // 检查标志 - 忽略未知标志，只处理 AT_SYMLINK_NOFOLLOW
+    const AT_SYMLINK_NOFOLLOW: u32 = 0x100;
+    debug!("fchmodat: processing flags: {}", flags);
+    
+    // 设置打开标志 - 对于权限修改，使用只读模式即可
+    let mut open_flags = OpenFlags::O_RDONLY;
+    if flags & AT_SYMLINK_NOFOLLOW != 0 {
+        open_flags |= OpenFlags::O_ASK_SYMLINK;
+    }
+    
+    // 打开文件
+    let file = match open(&abs_path, open_flags, NONE_MODE, "") {
+        Ok(f) => f,
+        Err(e) => return e as isize,
+    };
+    
+    // 获取文件 inode
+    let osinode = match file.file() {
+        Ok(f) => f,
+        Err(e) => return e as isize,
+    };
+    
+    // 检查权限 - 只有文件所有者或 root 可以修改权限
+    let current_uid = process.getuid() as u32;
+    drop(inner);
+    
+    let stat = file.fstat();
+    let file_uid = stat.st_uid;
+    
+    if current_uid != 0 && current_uid != file_uid {
+        return SysErrNo::EPERM as isize;
+    }
+    
+    // 设置文件模式
+    match osinode.inode.fmode_set(mode) {
+        Ok(_) => 0,
+        Err(e) => e as isize,
+    }
 }

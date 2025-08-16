@@ -347,6 +347,11 @@ pub fn sys_exec(pathp: *const u8, mut args: *const usize, mut envp: *const usize
         env.push(env_path);
     }
 
+    let env_home = "HOME=/home/root".to_string();
+    if !env.contains(&env_home) {
+        env.push(env_home);
+    }
+
     let env_ld_library_path = "LD_LIBRARY_PATH=/lib:/glibc/lib:/musl/lib:".to_string();
     if !env.contains(&env_ld_library_path) {
         env.push(env_ld_library_path);

@@ -38,6 +38,8 @@ pub const SYSCALL_FTUNCATE: usize = 46;
 pub const SYSCALL_FACCESSAT: usize = 48;
 /// chdir syscall
 pub const SYSCALL_CHDIR: usize = 49;
+/// fchmodat syscall
+pub const SYSCALL_FCHMODAT: usize = 53;
 /// openat syscall
 pub const SYSCALL_OPENAT: usize = 56;
 /// close syscall
@@ -282,6 +284,7 @@ use crate::{
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     info!("##### syscall with id {} #####", syscall_id);
     match syscall_id {
+        SYSCALL_FCHMODAT => sys_fchmodat(args[0] as isize, args[1] as *const u8, args[2] as u32, args[3] as u32),
         SYSCALL_MSYNC => sys_msync(args[0], args[1], args[2] as i32),
         SYSCALL_MEMBARRIER => sys_membarrier(args[0] as i32, args[1] as u32),
         SYSCALL_UMASK => sys_umask(args[0] as u32),
